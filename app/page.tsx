@@ -14,10 +14,13 @@ import {
   RotateCcw,
   Satellite,
   Sparkles,
+  Sun,
+  Moon,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { Body, GeoVector, Illumination } from "astronomy-engine";
 
 type Sample = {
   observed: number;
@@ -35,7 +38,124 @@ type Telemetry = Sample & {
   significance: number;
   grbActive: boolean;
   detector: number[];
+  simulatedDate: string;
+  sunDirection: [number, number, number];
+  moonDirection: [number, number, number];
+  sunSeparation: number;
+  moonSeparation: number;
+  sunNoise: number;
+  moonNoise: number;
+  sunInFov: boolean;
+  moonInFov: boolean;
+  moonDistanceKm: number;
+  moonPhase: number;
 };
+
+type PixelLayout = {
+  id: string;
+  index: number;
+  ring: number;
+  slot: number;
+  count: number;
+  angle: number;
+  radius: number;
+};
+
+const PIXEL_RING_COUNTS = [1, 6, 12, 18, 24, 30, 35] as const;
+const PIXEL_LAYOUT: PixelLayout[] = PIXEL_RING_COUNTS.flatMap((count, ring) =>
+  Array.from({ length: count }, (_, slot) => {
+    const index =
+      PIXEL_RING_COUNTS.slice(0, ring).reduce((sum, value) => sum + value, 0) +
+      slot;
+    const offset = ring % 2 === 0 ? Math.PI / Math.max(1, count) : 0;
+    return {
+      id: `PX-${String(index + 1).padStart(3, "0")}`,
+      index,
+      ring,
+      slot,
+      count,
+      angle: count === 1 ? 0 : (slot / count) * Math.PI * 2 + offset,
+      radius: ring / (PIXEL_RING_COUNTS.length - 1),
+    };
+  }),
+);
+
+const SIMULATION_EPOCH_MS = Date.UTC(2026, 6, 23, 12, 0, 0);
+const AU_KM = 149_597_870.7;
+const EFFECTIVE_FOV_DEG = 130;
+const EFFECTIVE_HALF_ANGLE_DEG = EFFECTIVE_FOV_DEG / 2;
+
+function normalizeVector(x: number, y: number, z: number): [number, number, number] {
+  const length = Math.hypot(x, y, z) || 1;
+  return [x / length, y / length, z / length];
+}
+
+function angleBetween(
+  a: [number, number, number],
+  b: [number, number, number],
+) {
+  const cosine = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
+  return THREE.MathUtils.radToDeg(Math.acos(cosine));
+}
+
+function getCelestialGeometry(
+  elapsedSeconds: number,
+  phase: number,
+  inclination: number,
+  altitude: number,
+) {
+  const date = new Date(SIMULATION_EPOCH_MS + elapsedSeconds * 1000);
+  const sun = GeoVector(Body.Sun, date, true);
+  const moon = GeoVector(Body.Moon, date, true);
+  const moonIllumination = Illumination(Body.Moon, date);
+  const inclinationRad = THREE.MathUtils.degToRad(inclination);
+  const satelliteDirection = normalizeVector(
+    Math.cos(phase) * Math.cos(inclinationRad),
+    Math.cos(phase) * Math.sin(inclinationRad),
+    Math.sin(phase),
+  );
+  const observerDistanceAu = (6371 + altitude) / AU_KM;
+  const mapFromEquatorial = (x: number, y: number, z: number) => [x, z, y] as const;
+  const mappedSun = mapFromEquatorial(sun.x, sun.y, sun.z);
+  const mappedMoon = mapFromEquatorial(moon.x, moon.y, moon.z);
+  const sunDirection = normalizeVector(
+    mappedSun[0] - satelliteDirection[0] * observerDistanceAu,
+    mappedSun[1] - satelliteDirection[1] * observerDistanceAu,
+    mappedSun[2] - satelliteDirection[2] * observerDistanceAu,
+  );
+  const moonDirection = normalizeVector(
+    mappedMoon[0] - satelliteDirection[0] * observerDistanceAu,
+    mappedMoon[1] - satelliteDirection[1] * observerDistanceAu,
+    mappedMoon[2] - satelliteDirection[2] * observerDistanceAu,
+  );
+  const sunSeparation = angleBetween(satelliteDirection, sunDirection);
+  const moonSeparation = angleBetween(satelliteDirection, moonDirection);
+  const sunInFov = sunSeparation <= EFFECTIVE_HALF_ANGLE_DEG;
+  const moonInFov = moonSeparation <= EFFECTIVE_HALF_ANGLE_DEG;
+  const angularResponse = (separation: number) =>
+    Math.max(0, Math.cos(THREE.MathUtils.degToRad(separation))) ** 2;
+  const sunNoise = sunInFov ? 115 * angularResponse(sunSeparation) : 0;
+  const moonNoise = moonInFov
+    ? 22 * angularResponse(moonSeparation) * (0.3 + 0.7 * moonIllumination.phase_fraction)
+    : 0;
+
+  return {
+    date,
+    satelliteDirection,
+    sunDirection,
+    moonDirection,
+    sunSeparation,
+    moonSeparation,
+    sunInFov,
+    moonInFov,
+    sunNoise,
+    moonNoise,
+    moonDistanceKm: Math.hypot(moon.x, moon.y, moon.z) * AU_KM,
+    moonPhase: moonIllumination.phase_fraction,
+  };
+}
+
+const INITIAL_CELESTIAL = getCelestialGeometry(0, 0.72, 20, 550);
 
 const INITIAL_TELEMETRY: Telemetry = {
   observed: 421,
@@ -52,6 +172,17 @@ const INITIAL_TELEMETRY: Telemetry = {
   detector: Array.from({ length: 126 }, (_, index) =>
     Math.max(0, Math.sin(index * 0.63) * 0.18 + 0.2),
   ),
+  simulatedDate: INITIAL_CELESTIAL.date.toISOString(),
+  sunDirection: INITIAL_CELESTIAL.sunDirection,
+  moonDirection: INITIAL_CELESTIAL.moonDirection,
+  sunSeparation: INITIAL_CELESTIAL.sunSeparation,
+  moonSeparation: INITIAL_CELESTIAL.moonSeparation,
+  sunNoise: INITIAL_CELESTIAL.sunNoise,
+  moonNoise: INITIAL_CELESTIAL.moonNoise,
+  sunInFov: INITIAL_CELESTIAL.sunInFov,
+  moonInFov: INITIAL_CELESTIAL.moonInFov,
+  moonDistanceKm: INITIAL_CELESTIAL.moonDistanceKm,
+  moonPhase: INITIAL_CELESTIAL.moonPhase,
 };
 
 function poissonLike(mean: number) {
@@ -75,6 +206,11 @@ function GlobeScene({
   paused,
   phase,
   grbActive,
+  selectedPixel,
+  sunDirection,
+  moonDirection,
+  sunNoise,
+  moonNoise,
 }: {
   altitude: number;
   inclination: number;
@@ -82,13 +218,54 @@ function GlobeScene({
   paused: boolean;
   phase: number;
   grbActive: boolean;
+  selectedPixel: number;
+  sunDirection: [number, number, number];
+  moonDirection: [number, number, number];
+  sunNoise: number;
+  moonNoise: number;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const settingsRef = useRef({ altitude, inclination, speed, paused, phase, grbActive });
+  const settingsRef = useRef({
+    altitude,
+    inclination,
+    speed,
+    paused,
+    phase,
+    grbActive,
+    selectedPixel,
+    sunDirection,
+    moonDirection,
+    sunNoise,
+    moonNoise,
+  });
 
   useEffect(() => {
-    settingsRef.current = { altitude, inclination, speed, paused, phase, grbActive };
-  }, [altitude, inclination, speed, paused, phase, grbActive]);
+    settingsRef.current = {
+      altitude,
+      inclination,
+      speed,
+      paused,
+      phase,
+      grbActive,
+      selectedPixel,
+      sunDirection,
+      moonDirection,
+      sunNoise,
+      moonNoise,
+    };
+  }, [
+    altitude,
+    inclination,
+    speed,
+    paused,
+    phase,
+    grbActive,
+    selectedPixel,
+    sunDirection,
+    moonDirection,
+    sunNoise,
+    moonNoise,
+  ]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -108,9 +285,9 @@ function GlobeScene({
     mount.appendChild(renderer.domElement);
 
     const ambient = new THREE.AmbientLight(0x78bde9, 0.9);
-    const sun = new THREE.DirectionalLight(0xfff3d1, 3.2);
-    sun.position.set(-5, 3, 5);
-    scene.add(ambient, sun);
+    const sunLight = new THREE.DirectionalLight(0xfff3d1, 3.2);
+    sunLight.position.set(-5, 3, 5);
+    scene.add(ambient, sunLight);
 
     const starGeometry = new THREE.BufferGeometry();
     const starPositions = new Float32Array(1500 * 3);
@@ -232,6 +409,33 @@ function GlobeScene({
     );
     scene.add(atmosphere);
 
+    const sunBody = new THREE.Mesh(
+      new THREE.SphereGeometry(0.52, 36, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffe78f }),
+    );
+    const sunCorona = new THREE.Mesh(
+      new THREE.SphereGeometry(0.76, 36, 24),
+      new THREE.MeshBasicMaterial({
+        color: 0xffb347,
+        transparent: true,
+        opacity: 0.18,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      }),
+    );
+    sunBody.add(sunCorona);
+    scene.add(sunBody);
+
+    const moonBody = new THREE.Mesh(
+      new THREE.SphereGeometry(0.19, 32, 20),
+      new THREE.MeshStandardMaterial({
+        color: 0x9aa3a7,
+        roughness: 0.94,
+        metalness: 0,
+      }),
+    );
+    scene.add(moonBody);
+
     const orbitGroup = new THREE.Group();
     scene.add(orbitGroup);
     const orbitPoints: THREE.Vector3[] = [];
@@ -263,24 +467,53 @@ function GlobeScene({
       metalness: 0.65,
       roughness: 0.48,
     });
-    const detectorMaterial = new THREE.MeshStandardMaterial({
-      color: 0x55e7e2,
-      emissive: 0x0a8791,
-      emissiveIntensity: 1.2,
+    const detectorShellMaterial = new THREE.MeshStandardMaterial({
+      color: 0x102e39,
+      emissive: 0x06333c,
+      emissiveIntensity: 0.8,
       metalness: 0.3,
-      roughness: 0.25,
+      roughness: 0.35,
       transparent: true,
-      opacity: 0.93,
+      opacity: 0.72,
     });
     const bus = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.22, 0.3), busMaterial);
     satelliteGroup.add(bus);
-    const dome = new THREE.Mesh(
-      new THREE.SphereGeometry(0.17, 28, 16, 0, Math.PI * 2, 0, Math.PI / 2),
-      detectorMaterial,
+    const domeShell = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 40, 24, 0, Math.PI * 2, 0, Math.PI / 2),
+      detectorShellMaterial,
     );
-    dome.rotation.x = Math.PI;
-    dome.position.y = 0.18;
-    satelliteGroup.add(dome);
+    domeShell.position.y = 0.155;
+    satelliteGroup.add(domeShell);
+
+    const pixelGroup = new THREE.Group();
+    pixelGroup.position.y = 0.155;
+    satelliteGroup.add(pixelGroup);
+    const pixelGeometry = new THREE.CylinderGeometry(0.0135, 0.015, 0.025, 6, 1, false);
+    const pixelMaterials = PIXEL_LAYOUT.map((pixel) =>
+      new THREE.MeshStandardMaterial({
+        color: pixel.ring % 2 === 0 ? 0x4edfd4 : 0x54bedf,
+        emissive: 0x086f79,
+        emissiveIntensity: 0.65,
+        metalness: 0.18,
+        roughness: 0.3,
+      }),
+    );
+    const upAxis = new THREE.Vector3(0, 1, 0);
+    const crystalPixels = PIXEL_LAYOUT.map((pixel) => {
+      const polar = THREE.MathUtils.lerp(0.04, Math.PI / 2 - 0.045, pixel.radius);
+      const normal = new THREE.Vector3(
+        Math.sin(polar) * Math.cos(pixel.angle),
+        Math.cos(polar),
+        Math.sin(polar) * Math.sin(pixel.angle),
+      );
+      const crystal = new THREE.Mesh(pixelGeometry, pixelMaterials[pixel.index]);
+      crystal.position.copy(normal).multiplyScalar(0.173);
+      crystal.quaternion.setFromUnitVectors(upAxis, normal.clone());
+      crystal.userData.pixelIndex = pixel.index;
+      crystal.userData.pixelId = pixel.id;
+      pixelGroup.add(crystal);
+      return crystal;
+    });
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.035, 32), darkMaterial);
     base.position.y = 0.13;
     satelliteGroup.add(base);
@@ -387,6 +620,9 @@ function GlobeScene({
 
     const clock = new THREE.Clock();
     const satWorld = new THREE.Vector3();
+    const outwardLocal = new THREE.Vector3();
+    const sunSceneDirection = new THREE.Vector3();
+    const moonSceneDirection = new THREE.Vector3();
     let animationFrame = 0;
     const animate = () => {
       animationFrame = requestAnimationFrame(animate);
@@ -397,9 +633,16 @@ function GlobeScene({
       orbitGroup.rotation.z = THREE.MathUtils.degToRad(settings.inclination);
       orbitLine.scale.setScalar(orbitRadius / 3.1);
       satelliteGroup.position.set(Math.cos(angle) * orbitRadius, 0, Math.sin(angle) * orbitRadius);
-      satelliteGroup.rotation.y = -angle + Math.PI / 2;
-      satelliteGroup.rotation.z = Math.PI / 2;
+      outwardLocal.set(Math.cos(angle), 0, Math.sin(angle)).normalize();
+      satelliteGroup.quaternion.setFromUnitVectors(upAxis, outwardLocal);
       satelliteGroup.getWorldPosition(satWorld);
+
+      sunSceneDirection.fromArray(settings.sunDirection).normalize();
+      moonSceneDirection.fromArray(settings.moonDirection).normalize();
+      sunBody.position.copy(sunSceneDirection).multiplyScalar(12.5);
+      sunLight.position.copy(sunSceneDirection).multiplyScalar(9);
+      sunLight.intensity = 2.7 + Math.min(1.2, settings.sunNoise / 90);
+      moonBody.position.copy(moonSceneDirection).multiplyScalar(5.4);
 
       earthMaterial.uniforms.time.value += settings.paused ? 0 : delta;
       if (!settings.paused) {
@@ -414,6 +657,37 @@ function GlobeScene({
       (pulse.material as THREE.MeshBasicMaterial).opacity = settings.grbActive
         ? 0.55 + Math.sin(clock.elapsedTime * 8) * 0.25
         : 0;
+
+      crystalPixels.forEach((crystal, index) => {
+        const material = pixelMaterials[index];
+        const isSelected = index === settings.selectedPixel;
+        const layout = PIXEL_LAYOUT[index];
+        const selectedLayout = PIXEL_LAYOUT[settings.selectedPixel];
+        const angularDistance = Math.abs(
+          Math.atan2(
+            Math.sin(layout.angle - selectedLayout.angle),
+            Math.cos(layout.angle - selectedLayout.angle),
+          ),
+        );
+        const radialDistance = Math.abs(layout.radius - selectedLayout.radius);
+        const isBurstCluster =
+          settings.grbActive &&
+          (isSelected || (radialDistance < 0.19 && angularDistance < 0.32));
+        material.color.setHex(
+          isBurstCluster
+            ? 0xff4dbe
+            : isSelected
+              ? 0xffc857
+              : layout.ring % 2 === 0
+                ? 0x4edfd4
+                : 0x54bedf,
+        );
+        material.emissive.setHex(
+          isBurstCluster ? 0x8d124f : isSelected ? 0x8a5f0b : 0x086f79,
+        );
+        material.emissiveIntensity = isBurstCluster ? 2.2 : isSelected ? 1.8 : 0.65;
+        crystal.scale.setScalar(isBurstCluster ? 1.13 : isSelected ? 1.08 : 1);
+      });
 
       for (let index = 0; index < particleCount; index += 1) {
         if (!settings.paused) {
@@ -462,6 +736,9 @@ function GlobeScene({
       earthMaterial.dispose();
       particleGeometry.dispose();
       starGeometry.dispose();
+      pixelGeometry.dispose();
+      pixelMaterials.forEach((material) => material.dispose());
+      detectorShellMaterial.dispose();
       mount.removeChild(renderer.domElement);
     };
   }, []);
@@ -477,6 +754,14 @@ function GlobeScene({
         <span><span className="legend-dot background-dot" /> background</span>
         <span><span className="legend-dot source-dot" /> sorgente</span>
         <span><span className="legend-dot grb-dot" /> GRB</span>
+      </div>
+      <div className="celestial-scene-status">
+        <span className={sunNoise > 0 ? "interfering" : ""}>
+          <Sun size={12} /> Sole {sunNoise > 0 ? `+${sunNoise.toFixed(0)} c/s` : "fuori cono"}
+        </span>
+        <span className={moonNoise > 0 ? "interfering moon" : ""}>
+          <Moon size={12} /> Luna {moonNoise > 0 ? `+${moonNoise.toFixed(0)} c/s` : "fuori cono"}
+        </span>
       </div>
       <div className="drag-hint">trascina per ruotare · scorri per zoom</div>
     </div>
@@ -551,24 +836,96 @@ function SignalChart({ data }: { data: Sample[] }) {
   return <canvas ref={canvasRef} className="signal-canvas" aria-label="Serie temporale dei conteggi" />;
 }
 
-function DetectorMap({ values, grbActive }: { values: number[]; grbActive: boolean }) {
+function DetectorMap({
+  values,
+  grbActive,
+  selectedPixel,
+  onSelect,
+}: {
+  values: number[];
+  grbActive: boolean;
+  selectedPixel: number;
+  onSelect: (index: number) => void;
+}) {
+  const activeCluster = PIXEL_LAYOUT
+    .filter((pixel) => values[pixel.index] > (grbActive ? 0.58 : 0.42))
+    .sort((a, b) => values[b.index] - values[a.index])
+    .slice(0, grbActive ? 15 : 8);
+  const selectedValue = values[selectedPixel] ?? 0;
+  const depositedEnergy = Math.round(8 + selectedValue * (grbActive ? 980 : 190));
+  const upEnergy = Math.round(depositedEnergy * 0.61);
+  const downEnergy = depositedEnergy - upEnergy;
+
   return (
-    <div className={`detector-map ${grbActive ? "is-grb" : ""}`} aria-label="Mappa dei 126 pixel del detector">
-      {values.map((value, index) => (
-        <span
-          key={index}
-          className="detector-pixel"
-          style={{
-            "--heat": Math.min(1, value).toFixed(4),
-            "--delay": `${(index % 17) * 24}ms`,
-          } as React.CSSProperties}
-          title={`Pixel ${index + 1}: ${(value * 100).toFixed(0)}%`}
-        />
-      ))}
-      <div className="detector-core">
-        <Aperture size={22} />
-        <b>126</b>
-        <span>PIXEL</span>
+    <div className="detector-module">
+      <div
+        className={`detector-map ${grbActive ? "is-grb" : ""}`}
+        aria-label="Mappa emisferica a nido d’ape dei 126 pixel"
+      >
+        {PIXEL_LAYOUT.map((pixel) => {
+          const value = values[pixel.index] ?? 0;
+          const isActive = activeCluster.some((active) => active.index === pixel.index);
+          return (
+            <button
+              key={pixel.id}
+              type="button"
+              className={`detector-pixel ${isActive ? "is-active" : ""} ${
+                selectedPixel === pixel.index ? "is-selected" : ""
+              }`}
+              style={{
+                "--heat": Math.min(1, value).toFixed(4),
+                "--pixel-x": `${50 + Math.cos(pixel.angle) * pixel.radius * 44}%`,
+                "--pixel-y": `${50 + Math.sin(pixel.angle) * pixel.radius * 44}%`,
+                "--delay": `${(pixel.index % 17) * 24}ms`,
+              } as React.CSSProperties}
+              title={`${pixel.id} · ${(value * 100).toFixed(0)}% · ${Math.round(8 + value * 190)} keV`}
+              aria-label={`${pixel.id}, risposta ${(value * 100).toFixed(0)} per cento`}
+              onClick={() => onSelect(pixel.index)}
+            >
+              {String(pixel.index + 1).padStart(3, "0")}
+            </button>
+          );
+        })}
+        <div className="detector-axis"><i /> Z</div>
+      </div>
+
+      <div className="cluster-readout">
+        <div className="cluster-heading">
+          <span>
+            <small>{grbActive ? "BURST CLUSTER" : "PIXEL SOPRA SOGLIA"}</small>
+            <strong>{activeCluster.length} / 126</strong>
+          </span>
+          <em>Edep &gt; 30 keV</em>
+        </div>
+        <div className="cluster-ids">
+          {activeCluster.length > 0 ? (
+            activeCluster.map((pixel) => (
+              <button
+                key={pixel.id}
+                type="button"
+                className={pixel.index === selectedPixel ? "selected" : ""}
+                onClick={() => onSelect(pixel.index)}
+              >
+                {pixel.id}
+              </button>
+            ))
+          ) : (
+            <span>nessun pixel selezionato dal trigger</span>
+          )}
+        </div>
+      </div>
+
+      <div className="pixel-detail">
+        <div className="pixel-id-block">
+          <small>PIXEL SELEZIONATO</small>
+          <strong>{PIXEL_LAYOUT[selectedPixel].id}</strong>
+          <span>ring {PIXEL_LAYOUT[selectedPixel].ring} · slot {PIXEL_LAYOUT[selectedPixel].slot + 1}</span>
+        </div>
+        <div className="pixel-stack" aria-label="Struttura del pixel selezionato">
+          <span className="pixel-layer up"><b>UP · GAGG</b><em>4 cm · {upEnergy} keV</em></span>
+          <i className="pixel-sipm">SiPM</i>
+          <span className="pixel-layer down"><b>DOWN · LYSO</b><em>3 cm · {downEnergy} keV</em></span>
+        </div>
       </div>
     </div>
   );
@@ -614,8 +971,9 @@ function RangeControl({
 export default function Home() {
   const [altitude, setAltitude] = useState(550);
   const [inclination, setInclination] = useState(20);
-  const [speed, setSpeed] = useState(5);
+  const [speed, setSpeed] = useState(50);
   const [paused, setPaused] = useState(false);
+  const [selectedPixel, setSelectedPixel] = useState(43);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
   const [samples, setSamples] = useState<Sample[]>(() =>
     Array.from({ length: 80 }, (_, index) => ({
@@ -633,6 +991,7 @@ export default function Home() {
   const grbTicksRef = useRef(0);
   const totalRef = useRef(0);
   const capturedRef = useRef(0);
+  const selectedPixelRef = useRef(43);
   const settingsRef = useRef({ altitude, inclination, speed, paused });
 
   useEffect(() => {
@@ -652,7 +1011,19 @@ export default function Home() {
       const orbitalModulation = 34 * (0.5 + 0.5 * Math.sin(phase * 2.1 + 0.7));
       const latitudeBoost = Math.abs(latitude) * 1.35;
       const slowDrift = 18 * Math.sin(elapsedRef.current / 37);
-      const backgroundMean = 360 + orbitalModulation + latitudeBoost + slowDrift;
+      const celestial = getCelestialGeometry(
+        elapsedRef.current,
+        phase,
+        settings.inclination,
+        settings.altitude,
+      );
+      const backgroundMean =
+        360 +
+        orbitalModulation +
+        latitudeBoost +
+        slowDrift +
+        celestial.sunNoise +
+        celestial.moonNoise;
       const isGRB = grbTicksRef.current > 0;
       if (isGRB) grbTicksRef.current -= 1;
       const sourceMean = isGRB
@@ -663,13 +1034,28 @@ export default function Home() {
       const observed = background + source;
       totalRef.current += observed;
       capturedRef.current += source;
-      const detector = Array.from({ length: 126 }, (_, index) => {
-        const row = Math.floor(index / 11);
-        const col = index % 11;
-        const dx = col - (isGRB ? 7.2 : 5.1 + Math.sin(phase) * 1.4);
-        const dy = row - (isGRB ? 4.4 : 6.1 + Math.cos(phase) * 0.9);
-        const spot = Math.exp(-(dx * dx + dy * dy) / (isGRB ? 7 : 18));
-        return Math.min(1, 0.06 + Math.random() * 0.18 + spot * (isGRB ? 0.88 : 0.34));
+      const sourcePixel = PIXEL_LAYOUT[selectedPixelRef.current];
+      const detector = PIXEL_LAYOUT.map((pixel) => {
+        const angularDistance = Math.abs(
+          Math.atan2(
+            Math.sin(pixel.angle - sourcePixel.angle),
+            Math.cos(pixel.angle - sourcePixel.angle),
+          ),
+        );
+        const radialDistance = Math.abs(pixel.radius - sourcePixel.radius);
+        const projectedAngularDistance =
+          angularDistance * Math.max(0.2, (pixel.radius + sourcePixel.radius) / 2);
+        const spread = isGRB ? 0.12 : 0.24;
+        const spot = Math.exp(
+          -(
+            (radialDistance * radialDistance) / (spread * spread) +
+            (projectedAngularDistance * projectedAngularDistance) / (spread * spread)
+          ),
+        );
+        return Math.min(
+          1,
+          0.04 + Math.random() * 0.16 + spot * (isGRB ? 0.94 : 0.36),
+        );
       });
       const next = { observed, background, source };
       setSamples((current) => [...current.slice(-119), next]);
@@ -684,22 +1070,41 @@ export default function Home() {
         significance: source / Math.sqrt(Math.max(1, background)),
         grbActive: isGRB,
         detector,
+        simulatedDate: celestial.date.toISOString(),
+        sunDirection: celestial.sunDirection,
+        moonDirection: celestial.moonDirection,
+        sunSeparation: celestial.sunSeparation,
+        moonSeparation: celestial.moonSeparation,
+        sunNoise: celestial.sunNoise,
+        moonNoise: celestial.moonNoise,
+        sunInFov: celestial.sunInFov,
+        moonInFov: celestial.moonInFov,
+        moonDistanceKm: celestial.moonDistanceKm,
+        moonPhase: celestial.moonPhase,
       });
     }, 200);
     return () => window.clearInterval(timer);
   }, []);
 
+  const selectPixel = useCallback((index: number) => {
+    selectedPixelRef.current = index;
+    setSelectedPixel(index);
+  }, []);
+
   const injectGRB = useCallback(() => {
+    const targetPixel =
+      31 + Math.floor(((Math.sin(phaseRef.current * 1.7) + 1) / 2) * 64);
+    selectPixel(targetPixel);
     grbTicksRef.current = 60;
     setEventLog((current) => [
       ...current.slice(-4),
       {
         time: `T+${formatTime(elapsedRef.current).slice(3)}`,
-        text: "GRB sintetico iniettato · profilo Comptonized",
+        text: `GRB sintetico · cluster centrato su ${PIXEL_LAYOUT[targetPixel].id}`,
         kind: "grb",
       },
     ]);
-  }, []);
+  }, [selectPixel]);
 
   const resetSimulation = useCallback(() => {
     phaseRef.current = 0.72;
@@ -707,12 +1112,13 @@ export default function Home() {
     totalRef.current = 0;
     capturedRef.current = 0;
     grbTicksRef.current = 0;
+    selectPixel(43);
     setTelemetry(INITIAL_TELEMETRY);
     setEventLog([
       { time: "T+00:00", text: "Simulazione ripristinata", kind: "system" },
       { time: "T+00:00", text: "Acquisizione scientifica avviata", kind: "background" },
     ]);
-  }, []);
+  }, [selectPixel]);
 
   const orbitPeriod = useMemo(() => {
     const earthRadius = 6371;
@@ -739,6 +1145,10 @@ export default function Home() {
             <small>MISSION ELAPSED</small>
             <strong>{formatTime(telemetry.elapsed)}</strong>
           </div>
+          <div className="header-metric celestial-time">
+            <small>EPHEMERIS UTC</small>
+            <strong>{new Date(telemetry.simulatedDate).toISOString().slice(0, 16).replace("T", " · ")}</strong>
+          </div>
           <div className="header-metric">
             <small>LINK</small>
             <strong className="link-ok"><Radio size={13} /> NOMINAL</strong>
@@ -757,10 +1167,24 @@ export default function Home() {
             <div className="section-label">CONFIGURAZIONE ORBITALE</div>
             <RangeControl label="Altitudine" value={altitude} min={400} max={700} step={10} suffix=" km" onChange={setAltitude} />
             <RangeControl label="Inclinazione" value={inclination} min={0} max={60} step={1} suffix="°" onChange={setInclination} />
-            <RangeControl label="Velocità simulazione" value={speed} min={1} max={20} step={1} suffix="×" onChange={setSpeed} />
+            <RangeControl label="Time warp fisico" value={speed} min={1} max={500} step={1} suffix="×" onChange={setSpeed} />
+            <div className="warp-presets" aria-label="Preset time warp">
+              {[1, 50, 200, 500].map((preset) => (
+                <button
+                  type="button"
+                  key={preset}
+                  className={speed === preset ? "active" : ""}
+                  onClick={() => setSpeed(preset)}
+                >
+                  {preset}×
+                </button>
+              ))}
+            </div>
             <div className="mini-grid">
               <div><small>PERIODO</small><strong>{orbitPeriod.toFixed(1)} min</strong></div>
-              <div><small>FOV</small><strong>&gt; 2π sr</strong></div>
+              <div><small>FOV GEOMETRICO</small><strong>&gt; 2π sr</strong></div>
+              <div><small>CONO EFFICACE</small><strong>{EFFECTIVE_FOV_DEG}°</strong></div>
+              <div><small>POINTING</small><strong>anti-Terra</strong></div>
             </div>
           </div>
 
@@ -817,6 +1241,11 @@ export default function Home() {
             paused={paused}
             phase={telemetry.phase}
             grbActive={telemetry.grbActive}
+            selectedPixel={selectedPixel}
+            sunDirection={telemetry.sunDirection}
+            moonDirection={telemetry.moonDirection}
+            sunNoise={telemetry.sunNoise}
+            moonNoise={telemetry.moonNoise}
           />
           <div className="stage-title">
             <span className="eyebrow">ORBITAL PHOTON CAPTURE</span>
@@ -863,6 +1292,29 @@ export default function Home() {
             <SignalChart data={samples} />
           </div>
 
+          <div className="celestial-card">
+            <div className="chart-header">
+              <div>
+                <small>CELESTIAL INTERFERENCE</small>
+                <strong>Sole e Luna · ephemeris UTC</strong>
+              </div>
+              <span>FOV {EFFECTIVE_FOV_DEG}°</span>
+            </div>
+            <div className="celestial-rows">
+              <div className={telemetry.sunInFov ? "in-fov sun" : ""}>
+                <Sun size={16} />
+                <span><small>SOLE</small><strong>{telemetry.sunSeparation.toFixed(1)}° dal boresight</strong></span>
+                <em>{telemetry.sunInFov ? `+${telemetry.sunNoise.toFixed(0)} c/s` : "OUT"}</em>
+              </div>
+              <div className={telemetry.moonInFov ? "in-fov moon" : ""}>
+                <Moon size={16} />
+                <span><small>LUNA · {(telemetry.moonPhase * 100).toFixed(0)}% illum.</small><strong>{telemetry.moonSeparation.toFixed(1)}° · {(telemetry.moonDistanceKm / 1000).toFixed(0)}k km</strong></span>
+                <em>{telemetry.moonInFov ? `+${telemetry.moonNoise.toFixed(0)} c/s` : "OUT"}</em>
+              </div>
+            </div>
+            <p>Direzioni astronomiche reali; flusso di disturbo parametrico, da calibrare.</p>
+          </div>
+
           <div className="detector-section">
             <div className="chart-header">
               <div>
@@ -871,7 +1323,12 @@ export default function Home() {
               </div>
               <span>{telemetry.grbActive ? "GRB" : "LIVE"}</span>
             </div>
-            <DetectorMap values={telemetry.detector} grbActive={telemetry.grbActive} />
+            <DetectorMap
+              values={telemetry.detector}
+              grbActive={telemetry.grbActive}
+              selectedPixel={selectedPixel}
+              onSelect={selectPixel}
+            />
           </div>
 
           <div className="analysis-grid">

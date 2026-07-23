@@ -22,7 +22,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol =
     requestHeaders.get("x-forwarded-proto") ??
     (host.includes("localhost") ? "http" : "https");
-  const imageUrl = `${protocol}://${host}/og.png`;
+  const imageUrl = `${protocol}://${host}/og-v2.png`;
   const title = "Crystal Eye · Orbital Photon Simulator";
   const description =
     "Digital twin interattivo per simulare l’orbita LEO del Crystal Eye, il background dinamico e la cattura di fotoni gamma.";
