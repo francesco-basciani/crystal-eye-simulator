@@ -559,7 +559,7 @@ function DetectorMap({ values, grbActive }: { values: number[]; grbActive: boole
           key={index}
           className="detector-pixel"
           style={{
-            "--heat": Math.min(1, value),
+            "--heat": Math.min(1, value).toFixed(4),
             "--delay": `${(index % 17) * 24}ms`,
           } as React.CSSProperties}
           title={`Pixel ${index + 1}: ${(value * 100).toFixed(0)}%`}
