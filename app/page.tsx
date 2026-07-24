@@ -883,6 +883,328 @@ function SignalChart({ data }: { data: Sample[] }) {
   return <canvas ref={canvasRef} className="signal-canvas" aria-label="Serie temporale dei conteggi" />;
 }
 
+type SensorViewMode = "sky" | "mask" | "events";
+
+function SensorView({
+  phase,
+  inclination,
+  sunDirection,
+  moonDirection,
+  sunInFov,
+  moonInFov,
+  moonPhase,
+  detector,
+  selectedPixel,
+  grbActive,
+}: {
+  phase: number;
+  inclination: number;
+  sunDirection: [number, number, number];
+  moonDirection: [number, number, number];
+  sunInFov: boolean;
+  moonInFov: boolean;
+  moonPhase: number;
+  detector: number[];
+  selectedPixel: number;
+  grbActive: boolean;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [mode, setMode] = useState<SensorViewMode>("mask");
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const rect = canvas.getBoundingClientRect();
+    const ratio = Math.min(window.devicePixelRatio, 2);
+    canvas.width = Math.max(1, Math.round(rect.width * ratio));
+    canvas.height = Math.max(1, Math.round(rect.height * ratio));
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+    const width = rect.width;
+    const height = rect.height;
+    const cx = width / 2;
+    const cy = height / 2;
+    const radius = Math.max(20, Math.min(width, height) * 0.43);
+    const inclinationRad = THREE.MathUtils.degToRad(inclination);
+    const boresight = normalizeVector(
+      Math.cos(phase) * Math.cos(inclinationRad),
+      Math.cos(phase) * Math.sin(inclinationRad),
+      Math.sin(phase),
+    );
+    const right = normalizeVector(boresight[2], 0, -boresight[0]);
+    const up = normalizeVector(
+      boresight[1] * right[2] - boresight[2] * right[1],
+      boresight[2] * right[0] - boresight[0] * right[2],
+      boresight[0] * right[1] - boresight[1] * right[0],
+    );
+    const dot = (a: [number, number, number], b: [number, number, number]) =>
+      a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const project = (direction: [number, number, number]) => {
+      const cosine = THREE.MathUtils.clamp(dot(direction, boresight), -1, 1);
+      const theta = Math.acos(cosine);
+      const sinTheta = Math.max(1e-5, Math.sin(theta));
+      const projectedRadius =
+        (theta / THREE.MathUtils.degToRad(EFFECTIVE_HALF_ANGLE_DEG)) * radius;
+      return {
+        visible: theta <= THREE.MathUtils.degToRad(EFFECTIVE_HALF_ANGLE_DEG),
+        x: cx + (dot(direction, right) / sinTheta) * projectedRadius,
+        y: cy - (dot(direction, up) / sinTheta) * projectedRadius,
+        angle: theta,
+      };
+    };
+    const sun = project(sunDirection);
+    const moon = project(moonDirection);
+    const selected = PIXEL_LAYOUT[selectedPixel];
+
+    context.clearRect(0, 0, width, height);
+    const fieldGradient = context.createRadialGradient(cx, cy, 0, cx, cy, radius);
+    fieldGradient.addColorStop(0, mode === "mask" ? "#071828" : "#02070f");
+    fieldGradient.addColorStop(0.72, mode === "mask" ? "#081426" : "#030811");
+    fieldGradient.addColorStop(1, "#01040a");
+    context.fillStyle = fieldGradient;
+    context.beginPath();
+    context.arc(cx, cy, radius, 0, Math.PI * 2);
+    context.fill();
+
+    context.save();
+    context.beginPath();
+    context.arc(cx, cy, radius, 0, Math.PI * 2);
+    context.clip();
+
+    if (mode !== "events") {
+      for (let index = 0; index < 110; index += 1) {
+        const seedA = Math.abs(Math.sin(index * 91.713 + phase * 0.37));
+        const seedB = Math.abs(Math.sin(index * 47.117 + inclination * 0.021));
+        const starRadius = Math.sqrt(seedA) * radius * 0.96;
+        const starAngle = seedB * Math.PI * 2 + phase * 0.11;
+        const x = cx + Math.cos(starAngle) * starRadius;
+        const y = cy + Math.sin(starAngle) * starRadius;
+        const size = 0.35 + Math.abs(Math.sin(index * 13.17)) * 1.05;
+        context.fillStyle =
+          mode === "mask"
+            ? "rgba(115, 140, 175, 0.18)"
+            : `rgba(205, 228, 255, ${0.3 + size * 0.35})`;
+        context.beginPath();
+        context.arc(x, y, size, 0, Math.PI * 2);
+        context.fill();
+      }
+      if (mode === "mask") {
+        context.fillStyle = "rgba(130, 164, 207, 0.55)";
+        context.font = "6px monospace";
+        context.textAlign = "left";
+        context.fillText("BACKGROUND DIFFUSO", cx - radius + 11, cy - radius + 17);
+      }
+    }
+
+    const drawHalo = (
+      x: number,
+      y: number,
+      inner: string,
+      outer: string,
+      size: number,
+    ) => {
+      const halo = context.createRadialGradient(x, y, 0, x, y, size);
+      halo.addColorStop(0, inner);
+      halo.addColorStop(1, outer);
+      context.fillStyle = halo;
+      context.beginPath();
+      context.arc(x, y, size, 0, Math.PI * 2);
+      context.fill();
+    };
+
+    if (mode === "events") {
+      PIXEL_LAYOUT.forEach((pixel) => {
+        const value = detector[pixel.index] ?? 0;
+        const x = cx + Math.cos(pixel.angle) * pixel.radius * radius * 0.88;
+        const y = cy + Math.sin(pixel.angle) * pixel.radius * radius * 0.88;
+        const cellRadius = Math.max(2.2, radius * (0.036 - pixel.ring * 0.0008));
+        const isSelected = pixel.index === selectedPixel;
+        context.beginPath();
+        for (let side = 0; side < 6; side += 1) {
+          const angle = (side / 6) * Math.PI * 2 + Math.PI / 6;
+          const px = x + Math.cos(angle) * cellRadius;
+          const py = y + Math.sin(angle) * cellRadius;
+          if (side === 0) context.moveTo(px, py);
+          else context.lineTo(px, py);
+        }
+        context.closePath();
+        context.fillStyle = grbActive && value > 0.52
+          ? `rgba(255, 77, 190, ${0.38 + value * 0.62})`
+          : `rgba(71, 208, 232, ${0.12 + value * 0.78})`;
+        context.fill();
+        context.strokeStyle = isSelected ? "#ffc857" : "rgba(159, 224, 245, 0.16)";
+        context.lineWidth = isSelected ? 1.4 : 0.55;
+        context.stroke();
+      });
+    } else {
+      if (sun.visible) {
+        drawHalo(
+          sun.x,
+          sun.y,
+          mode === "mask" ? "rgba(255, 183, 38, 0.9)" : "rgba(255, 235, 148, 0.95)",
+          "rgba(255, 168, 45, 0)",
+          mode === "mask" ? radius * 0.31 : radius * 0.16,
+        );
+        context.fillStyle = mode === "mask" ? "#ff9f1c" : "#fff2b0";
+        context.beginPath();
+        context.arc(sun.x, sun.y, Math.max(3.2, radius * 0.028), 0, Math.PI * 2);
+        context.fill();
+        if (mode === "mask") {
+          context.fillStyle = "#ffe09a";
+          context.font = "6px monospace";
+          context.textAlign = "center";
+          context.fillText("SOLE", sun.x, sun.y - radius * 0.055);
+        }
+      }
+      if (moon.visible) {
+        drawHalo(
+          moon.x,
+          moon.y,
+          "rgba(174, 206, 255, 0.6)",
+          "rgba(103, 150, 228, 0)",
+          mode === "mask" ? radius * 0.2 : radius * 0.09,
+        );
+        context.fillStyle = "#d7e0e5";
+        context.beginPath();
+        context.arc(moon.x, moon.y, Math.max(2.6, radius * 0.021), 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = "rgba(8, 15, 24, 0.86)";
+        context.beginPath();
+        context.arc(
+          moon.x + (moonPhase - 0.5) * radius * 0.035,
+          moon.y,
+          Math.max(2.5, radius * 0.019),
+          0,
+          Math.PI * 2,
+        );
+        context.fill();
+        if (mode === "mask") {
+          context.fillStyle = "#d7e5ff";
+          context.font = "6px monospace";
+          context.textAlign = "center";
+          context.fillText("LUNA", moon.x, moon.y - radius * 0.05);
+        }
+      }
+      if (grbActive) {
+        const burstX = cx + Math.cos(selected.angle) * selected.radius * radius * 0.78;
+        const burstY = cy + Math.sin(selected.angle) * selected.radius * radius * 0.78;
+        drawHalo(
+          burstX,
+          burstY,
+          "rgba(255, 77, 190, 0.95)",
+          "rgba(255, 77, 190, 0)",
+          radius * 0.23,
+        );
+        context.strokeStyle = "#ff72c9";
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(burstX - 7, burstY);
+        context.lineTo(burstX + 7, burstY);
+        context.moveTo(burstX, burstY - 7);
+        context.lineTo(burstX, burstY + 7);
+        context.stroke();
+        if (mode === "mask") {
+          context.fillStyle = "#ff9bda";
+          context.font = "6px monospace";
+          context.textAlign = "center";
+          context.fillText("GRB", burstX, burstY - 10);
+        }
+      }
+    }
+
+    context.restore();
+    context.strokeStyle = "rgba(119, 211, 244, 0.52)";
+    context.lineWidth = 1;
+    context.beginPath();
+    context.arc(cx, cy, radius, 0, Math.PI * 2);
+    context.stroke();
+    context.strokeStyle = "rgba(119, 211, 244, 0.11)";
+    context.setLineDash([2, 4]);
+    for (const fraction of [0.33, 0.66]) {
+      context.beginPath();
+      context.arc(cx, cy, radius * fraction, 0, Math.PI * 2);
+      context.stroke();
+    }
+    context.setLineDash([]);
+    context.fillStyle = "rgba(121, 163, 183, 0.65)";
+    context.font = "7px monospace";
+    context.textAlign = "center";
+    context.fillText("BORESIGHT", cx, cy + 3);
+
+    const drawOutOfField = (
+      projected: ReturnType<typeof project>,
+      label: string,
+      color: string,
+    ) => {
+      if (projected.visible) return;
+      const x = cx + Math.cos(Math.atan2(projected.y - cy, projected.x - cx)) * radius;
+      const y = cy + Math.sin(Math.atan2(projected.y - cy, projected.x - cx)) * radius;
+      context.fillStyle = color;
+      context.beginPath();
+      context.arc(x, y, 2.5, 0, Math.PI * 2);
+      context.fill();
+      context.font = "6px monospace";
+      context.fillText(`${label} OUT`, x, y - 6);
+    };
+    drawOutOfField(sun, "SUN", "#ffc857");
+    drawOutOfField(moon, "MOON", "#b9ceff");
+  }, [
+    detector,
+    grbActive,
+    inclination,
+    mode,
+    moonDirection,
+    moonPhase,
+    moonInFov,
+    phase,
+    selectedPixel,
+    sunDirection,
+    sunInFov,
+  ]);
+
+  return (
+    <section className="sensor-view" aria-label="Vista istantanea del campo del Crystal Eye">
+      <div className="sensor-view-header">
+        <div>
+          <small>CRYSTAL EYE VIEW</small>
+          <strong>FOV istantaneo · {EFFECTIVE_FOV_DEG}°</strong>
+        </div>
+        <span><i /> LIVE</span>
+      </div>
+      <div className="sensor-view-tabs" role="group" aria-label="Modalità della vista sensore">
+        {([
+          ["sky", "Cielo"],
+          ["mask", "Maschera"],
+          ["events", "Eventi"],
+        ] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            className={mode === value ? "active" : ""}
+            aria-pressed={mode === value}
+            onClick={() => setMode(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className={`sensor-canvas-wrap mode-${mode}`}>
+        <canvas ref={canvasRef} />
+        <span className="sensor-north">+Y</span>
+        <span className="sensor-earth-shield">TERRA DIETRO IL PAYLOAD</span>
+      </div>
+      <div className="sensor-view-footer">
+        <span className={sunInFov ? "active sun" : ""}><i /> Sole</span>
+        <span className={moonInFov ? "active moon" : ""}><i /> Luna</span>
+        <span className={grbActive ? "active grb" : ""}><i /> GRB</span>
+        <em>{mode === "events" ? "risposta per pixel" : "ricostruzione · non RGB"}</em>
+      </div>
+    </section>
+  );
+}
+
 function DetectorMap({
   values,
   grbActive,
@@ -1306,6 +1628,18 @@ export default function Home() {
             <span>ORB {((telemetry.phase / (Math.PI * 2)) * 100).toFixed(1)}%</span>
             <div><i style={{ width: `${(telemetry.phase / (Math.PI * 2)) * 100}%` }} /></div>
           </div>
+          <SensorView
+            phase={telemetry.phase}
+            inclination={inclination}
+            sunDirection={telemetry.sunDirection}
+            moonDirection={telemetry.moonDirection}
+            sunInFov={telemetry.sunInFov}
+            moonInFov={telemetry.moonInFov}
+            moonPhase={telemetry.moonPhase}
+            detector={telemetry.detector}
+            selectedPixel={selectedPixel}
+            grbActive={telemetry.grbActive}
+          />
         </section>
 
         <aside className="control-panel right-panel">
