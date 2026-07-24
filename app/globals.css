@@ -332,6 +332,51 @@ button {
   background: var(--cyan);
 }
 
+.ephemeris-control {
+  margin: 0 0 13px;
+}
+
+.ephemeris-control > label {
+  display: block;
+  margin-bottom: 6px;
+  color: #6f8e9d;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.11em;
+}
+
+.ephemeris-control > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px;
+  gap: 5px;
+}
+
+.ephemeris-control input,
+.ephemeris-control button {
+  min-width: 0;
+  height: 28px;
+  border: 1px solid var(--line);
+  color: #b8d6e3;
+  background: rgba(42, 119, 148, 0.06);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+}
+
+.ephemeris-control input {
+  padding: 0 6px;
+  color-scheme: dark;
+}
+
+.ephemeris-control button {
+  color: var(--cyan);
+  cursor: pointer;
+}
+
+.ephemeris-control button:hover {
+  border-color: rgba(98, 217, 255, 0.55);
+  background: rgba(98, 217, 255, 0.1);
+}
+
 .mini-grid,
 .analysis-grid {
   display: grid;
@@ -605,6 +650,41 @@ button {
 .scene-hud-top {
   top: 22px;
   right: 22px;
+}
+
+.camera-modes {
+  position: absolute;
+  z-index: 5;
+  top: 20px;
+  left: 50%;
+  display: flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  background: rgba(2, 10, 16, 0.78);
+  backdrop-filter: blur(10px);
+  transform: translateX(-50%);
+}
+
+.camera-modes button {
+  height: 25px;
+  padding: 0 10px;
+  border: 0;
+  color: #6f8d9b;
+  background: transparent;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.camera-modes button:hover {
+  color: #c8f4ff;
+}
+
+.camera-modes button.active {
+  color: #061015;
+  background: var(--cyan);
+  box-shadow: 0 0 13px rgba(98, 217, 255, 0.25);
 }
 
 .scene-hud-bottom {
@@ -1718,7 +1798,8 @@ button {
   }
 
   .drag-hint,
-  .scene-hud-top {
+  .scene-hud-top,
+  .camera-modes {
     display: none;
   }
 

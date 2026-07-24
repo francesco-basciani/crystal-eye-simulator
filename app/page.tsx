@@ -74,6 +74,8 @@ type BurstEvent = {
   ticksRemaining: number;
 };
 
+type CameraMode = "orbit" | "satellite";
+
 const PIXEL_RING_COUNTS = [1, 6, 12, 18, 24, 30, 35] as const;
 const PIXEL_LAYOUT: PixelLayout[] = PIXEL_RING_COUNTS.flatMap((count, ring) =>
   Array.from({ length: count }, (_, slot) => {
@@ -157,7 +159,8 @@ function isPixelLitByEarthAlbedo(
   ) >= 0.12;
 }
 
-const SIMULATION_EPOCH_MS = Date.UTC(2026, 6, 23, 12, 0, 0);
+const DEFAULT_SIMULATION_EPOCH_MS = Date.UTC(2026, 6, 24, 12, 0, 0);
+const BURST_DURATION_TICKS = 15;
 const AU_KM = 149_597_870.7;
 const EFFECTIVE_FOV_DEG = 130;
 const EFFECTIVE_HALF_ANGLE_DEG = EFFECTIVE_FOV_DEG / 2;
@@ -180,8 +183,9 @@ function getCelestialGeometry(
   phase: number,
   inclination: number,
   altitude: number,
+  epochMs = DEFAULT_SIMULATION_EPOCH_MS,
 ) {
-  const date = new Date(SIMULATION_EPOCH_MS + elapsedSeconds * 1000);
+  const date = new Date(epochMs + elapsedSeconds * 1000);
   const sun = GeoVector(Body.Sun, date, true);
   const moon = GeoVector(Body.Moon, date, true);
   const moonIllumination = Illumination(Body.Moon, date);
@@ -332,6 +336,8 @@ function GlobeScene({
   earthAlbedoAzimuth,
   earthAlbedoDirectional,
   detectorHits,
+  cameraMode,
+  onCameraModeChange,
 }: {
   altitude: number;
   inclination: number;
@@ -350,6 +356,8 @@ function GlobeScene({
   earthAlbedoAzimuth: number;
   earthAlbedoDirectional: number;
   detectorHits: number[];
+  cameraMode: CameraMode;
+  onCameraModeChange: (mode: CameraMode) => void;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef({
@@ -370,6 +378,7 @@ function GlobeScene({
     earthAlbedoAzimuth,
     earthAlbedoDirectional,
     detectorHits,
+    cameraMode,
     phaseUpdatedAt: 0,
   });
 
@@ -392,6 +401,7 @@ function GlobeScene({
       earthAlbedoAzimuth,
       earthAlbedoDirectional,
       detectorHits,
+      cameraMode,
       phaseUpdatedAt: performance.now(),
     };
   }, [
@@ -412,6 +422,7 @@ function GlobeScene({
     earthAlbedoAzimuth,
     earthAlbedoDirectional,
     detectorHits,
+    cameraMode,
   ]);
 
   useEffect(() => {
@@ -762,7 +773,9 @@ function GlobeScene({
     let yaw = 0;
     let pitch = 0.18;
     let distance = 8.6;
+    let followDistance = 1.85;
     const onPointerDown = (event: PointerEvent) => {
+      if (settingsRef.current.cameraMode === "satellite") return;
       dragging = true;
       lastX = event.clientX;
       lastY = event.clientY;
@@ -780,7 +793,15 @@ function GlobeScene({
     };
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      distance = THREE.MathUtils.clamp(distance + event.deltaY * 0.006, 5.2, 12);
+      if (settingsRef.current.cameraMode === "satellite") {
+        followDistance = THREE.MathUtils.clamp(
+          followDistance + event.deltaY * 0.0025,
+          1.15,
+          3.8,
+        );
+      } else {
+        distance = THREE.MathUtils.clamp(distance + event.deltaY * 0.006, 5.2, 12);
+      }
     };
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     renderer.domElement.addEventListener("pointermove", onPointerMove);
@@ -805,6 +826,10 @@ function GlobeScene({
     const satelliteWorldQuaternion = new THREE.Quaternion();
     const burstWorldDirection = new THREE.Vector3();
     const transverseOffset = new THREE.Vector3();
+    const desiredCameraPosition = new THREE.Vector3();
+    const cameraTarget = new THREE.Vector3();
+    const desiredCameraTarget = new THREE.Vector3();
+    const radialWorld = new THREE.Vector3();
     let renderedPhase = settingsRef.current.phase;
     let animationFrame = 0;
     const animate = () => {
@@ -965,13 +990,25 @@ function GlobeScene({
       particleGeometry.attributes.position.needsUpdate = true;
       particleGeometry.attributes.color.needsUpdate = true;
 
-      if (!dragging) yaw += settings.paused ? 0 : delta * 0.018;
-      camera.position.set(
-        Math.sin(yaw) * Math.cos(pitch) * distance,
-        Math.sin(pitch) * distance,
-        Math.cos(yaw) * Math.cos(pitch) * distance,
-      );
-      camera.lookAt(0, 0, 0);
+      if (settings.cameraMode === "satellite") {
+        radialWorld.copy(satWorld).normalize();
+        desiredCameraPosition
+          .copy(satWorld)
+          .addScaledVector(radialWorld, followDistance);
+        desiredCameraTarget.copy(satWorld);
+      } else {
+        if (!dragging) yaw += settings.paused ? 0 : delta * 0.018;
+        desiredCameraPosition.set(
+          Math.sin(yaw) * Math.cos(pitch) * distance,
+          Math.sin(pitch) * distance,
+          Math.cos(yaw) * Math.cos(pitch) * distance,
+        );
+        desiredCameraTarget.set(0, 0, 0);
+      }
+      const cameraEase = 1 - Math.exp(-delta * 6);
+      camera.position.lerp(desiredCameraPosition, cameraEase);
+      cameraTarget.lerp(desiredCameraTarget, cameraEase);
+      camera.lookAt(cameraTarget);
       renderer.render(scene, camera);
     };
     animate();
@@ -1013,6 +1050,22 @@ function GlobeScene({
         <span>{altitude} km</span>
         <span>{inclination}° inc.</span>
       </div>
+      <div className="camera-modes" aria-label="Modalità camera">
+        <button
+          type="button"
+          className={cameraMode === "orbit" ? "active" : ""}
+          onClick={() => onCameraModeChange("orbit")}
+        >
+          ORBITA
+        </button>
+        <button
+          type="button"
+          className={cameraMode === "satellite" ? "active" : ""}
+          onClick={() => onCameraModeChange("satellite")}
+        >
+          SATELLITE DALL’ALTO
+        </button>
+      </div>
       <div className="scene-hud scene-hud-bottom">
         <span><span className="legend-dot background-dot" /> background</span>
         <span><span className="legend-dot albedo-dot" /> albedo Terra</span>
@@ -1030,7 +1083,11 @@ function GlobeScene({
           <CircleDot size={12} /> Albedo Terra {earthAlbedoNoise > 1 ? `+${earthAlbedoNoise.toFixed(0)} c/s` : "minimo"}
         </span>
       </div>
-      <div className="drag-hint">trascina per ruotare · scorri per zoom</div>
+      <div className="drag-hint">
+        {cameraMode === "satellite"
+          ? "camera agganciata al satellite · scorri per zoom"
+          : "trascina per ruotare · scorri per zoom"}
+      </div>
     </div>
   );
 }
@@ -1670,6 +1727,8 @@ export default function Home() {
   const [inclination, setInclination] = useState(20);
   const [speed, setSpeed] = useState(50);
   const [paused, setPaused] = useState(false);
+  const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
+  const [epochMs, setEpochMs] = useState(() => Date.now());
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
   const [samples, setSamples] = useState<Sample[]>(() =>
@@ -1690,11 +1749,11 @@ export default function Home() {
   const totalRef = useRef(0);
   const capturedRef = useRef(0);
   const selectedPixelRef = useRef(43);
-  const settingsRef = useRef({ altitude, inclination, speed, paused });
+  const settingsRef = useRef({ altitude, inclination, speed, paused, epochMs });
 
   useEffect(() => {
-    settingsRef.current = { altitude, inclination, speed, paused };
-  }, [altitude, inclination, speed, paused]);
+    settingsRef.current = { altitude, inclination, speed, paused, epochMs };
+  }, [altitude, inclination, speed, paused, epochMs]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1714,6 +1773,7 @@ export default function Home() {
         phase,
         settings.inclination,
         settings.altitude,
+        settings.epochMs,
       );
       const backgroundMean =
         360 +
@@ -1731,7 +1791,7 @@ export default function Home() {
       const background = Math.round(backgroundMean);
       const source = Math.round(
         activeBursts.reduce(
-          (sum, burst) => sum + 105 * Math.exp(-burst.ageTicks / 24),
+          (sum, burst) => sum + 135 * Math.exp(-burst.ageTicks / 5.5),
           0,
         ),
       );
@@ -1757,7 +1817,7 @@ export default function Home() {
         activeBursts.forEach((burst) => {
           if (!isPixelOnBurstFootprint(pixel.index, burst.pixelIndex)) return;
           const incidence = getBurstIncidence(pixel.index, burst.pixelIndex);
-          const burstAmplitude = 5.5 * Math.exp(-burst.ageTicks / 28);
+          const burstAmplitude = 6.2 * Math.exp(-burst.ageTicks / 6);
           hits += Math.max(1, Math.round(burstAmplitude * incidence ** 2.2));
         });
         return hits;
@@ -1826,7 +1886,7 @@ export default function Home() {
         id: burstId,
         pixelIndex: targetPixel,
         ageTicks: 0,
-        ticksRemaining: 60,
+        ticksRemaining: BURST_DURATION_TICKS,
       },
     ];
     setEventLog((current) => [
@@ -1839,20 +1899,50 @@ export default function Home() {
     ]);
   }, []);
 
+  const setEphemerisUtc = useCallback((value: string) => {
+    const requestedTime = Date.parse(`${value}Z`);
+    if (!Number.isFinite(requestedTime)) return;
+    setEpochMs(requestedTime - elapsedRef.current * 1000);
+  }, []);
+
+  const setEphemerisToNow = useCallback(() => {
+    setEpochMs(Date.now() - elapsedRef.current * 1000);
+  }, []);
+
   const resetSimulation = useCallback(() => {
+    const now = Date.now();
     phaseRef.current = 0.72;
     elapsedRef.current = 0;
     totalRef.current = 0;
     capturedRef.current = 0;
     activeBurstsRef.current = [];
     nextBurstIdRef.current = 1;
+    setEpochMs(now);
     selectPixel(43);
-    setTelemetry(INITIAL_TELEMETRY);
+    const celestial = getCelestialGeometry(0, 0.72, inclination, altitude, now);
+    setTelemetry({
+      ...INITIAL_TELEMETRY,
+      simulatedDate: celestial.date.toISOString(),
+      sunDirection: celestial.sunDirection,
+      moonDirection: celestial.moonDirection,
+      sunSeparation: celestial.sunSeparation,
+      moonSeparation: celestial.moonSeparation,
+      sunNoise: celestial.sunNoise,
+      moonNoise: celestial.moonNoise,
+      sunInFov: celestial.sunInFov,
+      moonInFov: celestial.moonInFov,
+      moonDistanceKm: celestial.moonDistanceKm,
+      moonPhase: celestial.moonPhase,
+      earthIllumination: celestial.earthIllumination,
+      earthAlbedoNoise: celestial.earthAlbedoNoise,
+      earthAlbedoAzimuth: celestial.earthAlbedoAzimuth,
+      earthAlbedoDirectional: celestial.earthAlbedoDirectional,
+    });
     setEventLog([
       { time: "T+00:00", text: "Simulazione ripristinata", kind: "system" },
       { time: "T+00:00", text: "Acquisizione scientifica avviata", kind: "background" },
     ]);
-  }, [selectPixel]);
+  }, [altitude, inclination, selectPixel]);
 
   const orbitPeriod = useMemo(() => {
     const earthRadius = 6371;
@@ -1880,8 +1970,13 @@ export default function Home() {
             <strong>{formatTime(telemetry.elapsed)}</strong>
           </div>
           <div className="header-metric celestial-time">
-            <small>EPHEMERIS UTC</small>
-            <strong>{new Date(telemetry.simulatedDate).toISOString().slice(0, 16).replace("T", " · ")}</strong>
+            <small>DATA E ORA EFFEMERIDI · UTC</small>
+            <strong>
+              {new Date(telemetry.simulatedDate)
+                .toISOString()
+                .slice(0, 19)
+                .replace("T", " · ")}
+            </strong>
           </div>
           <div className="header-metric">
             <small>LINK</small>
@@ -1913,6 +2008,21 @@ export default function Home() {
                   {preset}×
                 </button>
               ))}
+            </div>
+            <div className="ephemeris-control">
+              <label htmlFor="ephemeris-utc">DATA E ORA SIMULATA · UTC</label>
+              <div>
+                <input
+                  id="ephemeris-utc"
+                  type="datetime-local"
+                  step="1"
+                  value={new Date(telemetry.simulatedDate).toISOString().slice(0, 19)}
+                  onChange={(event) => setEphemerisUtc(event.target.value)}
+                />
+                <button type="button" onClick={setEphemerisToNow}>
+                  ORA
+                </button>
+              </div>
             </div>
             <div className="mini-grid">
               <div><small>PERIODO</small><strong>{orbitPeriod.toFixed(1)} min</strong></div>
@@ -1986,6 +2096,8 @@ export default function Home() {
             earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
             earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
             detectorHits={telemetry.detectorHits}
+            cameraMode={cameraMode}
+            onCameraModeChange={setCameraMode}
           />
           <div className="stage-title">
             <span className="eyebrow">ORBITAL PHOTON CAPTURE</span>
@@ -2120,7 +2232,7 @@ export default function Home() {
               <strong>AGGIUNGI GAMMA RAY BURST</strong>
               <small>
                 direzione {PIXEL_LAYOUT[selectedPixel].id} · attivi{" "}
-                {telemetry.burstDirections.length}
+                {telemetry.burstDirections.length} · durata ≈ 3 s
               </small>
             </span>
           </button>
