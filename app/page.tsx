@@ -38,6 +38,7 @@ type Telemetry = Sample & {
   significance: number;
   grbActive: boolean;
   detector: number[];
+  detectorHits: number[];
   simulatedDate: string;
   sunDirection: [number, number, number];
   moonDirection: [number, number, number];
@@ -250,6 +251,9 @@ function getCelestialGeometry(
 }
 
 const INITIAL_CELESTIAL = getCelestialGeometry(0, 0.72, 20, 550);
+const INITIAL_DETECTOR_HITS = Array.from({ length: 126 }, (_, index) =>
+  index % 7 === 0 || index % 19 === 0 ? 1 : 0,
+);
 
 const INITIAL_TELEMETRY: Telemetry = {
   observed: 421,
@@ -263,9 +267,8 @@ const INITIAL_TELEMETRY: Telemetry = {
   captured: 0,
   significance: 0.34,
   grbActive: false,
-  detector: Array.from({ length: 126 }, (_, index) =>
-    Math.max(0, Math.sin(index * 0.63) * 0.18 + 0.2),
-  ),
+  detector: INITIAL_DETECTOR_HITS.map((hits) => (hits > 0 ? 0.55 : 0)),
+  detectorHits: INITIAL_DETECTOR_HITS,
   simulatedDate: INITIAL_CELESTIAL.date.toISOString(),
   sunDirection: INITIAL_CELESTIAL.sunDirection,
   moonDirection: INITIAL_CELESTIAL.moonDirection,
@@ -288,6 +291,19 @@ function poissonLike(mean: number) {
   const v = Math.max(1e-7, Math.random());
   const normal = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
   return Math.max(0, Math.round(mean + Math.sqrt(mean) * normal));
+}
+
+function poissonSample(mean: number) {
+  if (mean <= 0) return 0;
+  if (mean >= 30) return poissonLike(mean);
+  const limit = Math.exp(-mean);
+  let product = 1;
+  let count = 0;
+  do {
+    count += 1;
+    product *= Math.random();
+  } while (product > limit);
+  return count - 1;
 }
 
 function formatTime(seconds: number) {
@@ -313,6 +329,7 @@ function GlobeScene({
   earthAlbedoNoise,
   earthAlbedoAzimuth,
   earthAlbedoDirectional,
+  detectorHits,
 }: {
   altitude: number;
   inclination: number;
@@ -329,6 +346,7 @@ function GlobeScene({
   earthAlbedoNoise: number;
   earthAlbedoAzimuth: number;
   earthAlbedoDirectional: number;
+  detectorHits: number[];
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef({
@@ -347,6 +365,7 @@ function GlobeScene({
     earthAlbedoNoise,
     earthAlbedoAzimuth,
     earthAlbedoDirectional,
+    detectorHits,
     phaseUpdatedAt: 0,
   });
 
@@ -367,6 +386,7 @@ function GlobeScene({
       earthAlbedoNoise,
       earthAlbedoAzimuth,
       earthAlbedoDirectional,
+      detectorHits,
       phaseUpdatedAt: performance.now(),
     };
   }, [
@@ -385,6 +405,7 @@ function GlobeScene({
     earthAlbedoNoise,
     earthAlbedoAzimuth,
     earthAlbedoDirectional,
+    detectorHits,
   ]);
 
   useEffect(() => {
@@ -833,7 +854,9 @@ function GlobeScene({
         const material = pixelMaterials[index];
         const isSelected = index === settings.selectedPixel;
         const layout = PIXEL_LAYOUT[index];
-        const isBurstCluster =
+        const hitCount = settings.detectorHits[index] ?? 0;
+        const isFired = hitCount > 0;
+        const isBurstPath =
           settings.grbActive &&
           isPixelOnBurstFootprint(index, settings.selectedPixel);
         const albedoResponse = getEarthAlbedoResponse(
@@ -842,8 +865,7 @@ function GlobeScene({
           settings.earthAlbedoAzimuth,
           settings.earthAlbedoDirectional,
         );
-        const isEarthAlbedo =
-          !isBurstCluster &&
+        const isEarthPath =
           isPixelLitByEarthAlbedo(
             index,
             settings.earthIllumination,
@@ -851,34 +873,40 @@ function GlobeScene({
             settings.earthAlbedoDirectional,
           );
         material.color.setHex(
-          isBurstCluster
+          isFired && isBurstPath
             ? 0xff4dbe
-            : isEarthAlbedo
+            : isFired && isEarthPath
               ? 0x7fd8ff
-            : isSelected
-              ? 0xffc857
-              : layout.ring % 2 === 0
-                ? 0x4edfd4
-                : 0x54bedf,
+              : isFired
+                ? 0x76efe0
+                : isSelected
+                  ? 0x665326
+                  : layout.ring % 2 === 0
+                    ? 0x24494e
+                    : 0x24424c,
         );
         material.emissive.setHex(
-          isBurstCluster
+          isFired && isBurstPath
             ? 0x8d124f
-            : isEarthAlbedo
+            : isFired && isEarthPath
               ? 0x155d83
-              : isSelected
-                ? 0x8a5f0b
-                : 0x086f79,
+              : isFired
+                ? 0x0b766f
+                : isSelected
+                  ? 0x2a2105
+                  : 0x03191d,
         );
-        material.emissiveIntensity = isBurstCluster
-          ? 2.2
-          : isEarthAlbedo
-            ? 0.9 + albedoResponse * 2.1
-            : isSelected
-              ? 1.8
-              : 0.65;
+        material.emissiveIntensity = isFired
+          ? isBurstPath
+            ? 1.8 + Math.min(4, hitCount) * 0.28
+            : isEarthPath
+              ? 0.8 + albedoResponse * 1.4 + Math.min(4, hitCount) * 0.22
+              : 0.9 + Math.min(4, hitCount) * 0.22
+          : isSelected
+            ? 0.28
+            : 0.12;
         crystal.scale.setScalar(
-          isBurstCluster ? 1.13 : isEarthAlbedo ? 1.04 + albedoResponse * 0.05 : isSelected ? 1.08 : 1,
+          isFired ? 1.06 + Math.min(3, hitCount) * 0.018 : isSelected ? 1.035 : 1,
         );
       });
 
@@ -1079,6 +1107,7 @@ function SensorView({
   moonInFov,
   moonPhase,
   detector,
+  detectorHits,
   selectedPixel,
   grbActive,
   earthIllumination,
@@ -1094,6 +1123,7 @@ function SensorView({
   moonInFov: boolean;
   moonPhase: number;
   detector: number[];
+  detectorHits: number[];
   selectedPixel: number;
   grbActive: boolean;
   earthIllumination: number;
@@ -1191,7 +1221,7 @@ function SensorView({
       }
     }
 
-    if (earthAlbedoNoise > 1) {
+    if (earthAlbedoNoise > 1 && mode !== "events") {
       const lobeWidth = THREE.MathUtils.lerp(
         Math.PI * 0.92,
         Math.PI * 0.48,
@@ -1240,6 +1270,8 @@ function SensorView({
     if (mode === "events") {
       PIXEL_LAYOUT.forEach((pixel) => {
         const value = detector[pixel.index] ?? 0;
+        const hitCount = detectorHits[pixel.index] ?? 0;
+        const isFired = hitCount > 0;
         const x = cx + Math.cos(pixel.angle) * pixel.radius * radius * 0.88;
         const y = cy + Math.sin(pixel.angle) * pixel.radius * radius * 0.88;
         const cellRadius = Math.max(2.2, radius * (0.036 - pixel.ring * 0.0008));
@@ -1262,11 +1294,13 @@ function SensorView({
           else context.lineTo(px, py);
         }
         context.closePath();
-        context.fillStyle = isOnBurstFootprint
-          ? `rgba(255, 77, 190, ${0.38 + value * 0.62})`
-          : isOnEarthAlbedo
-            ? `rgba(112, 215, 255, ${0.28 + value * 0.68})`
-            : `rgba(71, 208, 232, ${0.12 + value * 0.78})`;
+        context.fillStyle = !isFired
+          ? "rgba(19, 45, 55, 0.58)"
+          : isOnBurstFootprint
+            ? `rgba(255, 77, 190, ${0.5 + value * 0.5})`
+            : isOnEarthAlbedo
+              ? `rgba(112, 215, 255, ${0.42 + value * 0.58})`
+              : `rgba(91, 239, 218, ${0.42 + value * 0.58})`;
         context.fill();
         context.strokeStyle = isSelected ? "#ffc857" : "rgba(159, 224, 245, 0.16)";
         context.lineWidth = isSelected ? 1.4 : 0.55;
@@ -1386,6 +1420,7 @@ function SensorView({
     drawOutOfField(moon, "MOON", "#b9ceff");
   }, [
     detector,
+    detectorHits,
     earthAlbedoAzimuth,
     earthAlbedoDirectional,
     earthAlbedoNoise,
@@ -1438,7 +1473,11 @@ function SensorView({
         <span className={moonInFov ? "active moon" : ""}><i /> Luna</span>
         <span className={earthAlbedoNoise > 1 ? "active earth" : ""}><i /> Terra</span>
         <span className={grbActive ? "active grb" : ""}><i /> GRB</span>
-        <em>{mode === "events" ? "risposta per pixel" : "ricostruzione · non RGB"}</em>
+        <em>
+          {mode === "events"
+            ? `${detectorHits.filter((hits) => hits > 0).length} PX ON`
+            : "ricostruzione · non RGB"}
+        </em>
       </div>
     </section>
   );
@@ -1446,41 +1485,33 @@ function SensorView({
 
 function DetectorMap({
   values,
+  hits,
   grbActive,
   selectedPixel,
   earthIllumination,
-  earthAlbedoNoise,
   earthAlbedoAzimuth,
   earthAlbedoDirectional,
   onSelect,
 }: {
   values: number[];
+  hits: number[];
   grbActive: boolean;
   selectedPixel: number;
   earthIllumination: number;
-  earthAlbedoNoise: number;
   earthAlbedoAzimuth: number;
   earthAlbedoDirectional: number;
   onSelect: (index: number) => void;
 }) {
-  const activeCluster = (
-    grbActive
-      ? PIXEL_LAYOUT.filter((pixel) =>
-          isPixelOnBurstFootprint(pixel.index, selectedPixel),
-        )
-      : earthAlbedoNoise > 1
-        ? PIXEL_LAYOUT.filter((pixel) =>
-            isPixelLitByEarthAlbedo(
-              pixel.index,
-              earthIllumination,
-              earthAlbedoAzimuth,
-              earthAlbedoDirectional,
-            ),
-          )
-      : PIXEL_LAYOUT.filter((pixel) => values[pixel.index] > 0.42).slice(0, 8)
-  ).sort((a, b) => values[b.index] - values[a.index]);
+  const activeCluster = PIXEL_LAYOUT
+    .filter((pixel) => (hits[pixel.index] ?? 0) > 0)
+    .sort((a, b) => (hits[b.index] ?? 0) - (hits[a.index] ?? 0));
+  const totalHits = hits.reduce((sum, value) => sum + value, 0);
   const selectedValue = values[selectedPixel] ?? 0;
-  const depositedEnergy = Math.round(8 + selectedValue * (grbActive ? 980 : 190));
+  const selectedHits = hits[selectedPixel] ?? 0;
+  const depositedEnergy =
+    selectedHits > 0
+      ? Math.round(8 + selectedValue * (grbActive ? 980 : 190))
+      : 0;
   const upEnergy = Math.round(depositedEnergy * 0.61);
   const downEnergy = depositedEnergy - upEnergy;
 
@@ -1492,9 +1523,15 @@ function DetectorMap({
       >
         {PIXEL_LAYOUT.map((pixel) => {
           const value = values[pixel.index] ?? 0;
-          const isActive = activeCluster.some((active) => active.index === pixel.index);
+          const hitCount = hits[pixel.index] ?? 0;
+          const isActive = hitCount > 0;
+          const isBurstHit =
+            isActive &&
+            grbActive &&
+            isPixelOnBurstFootprint(pixel.index, selectedPixel);
           const isEarthAlbedo =
-            !grbActive &&
+            isActive &&
+            !isBurstHit &&
             isPixelLitByEarthAlbedo(
               pixel.index,
               earthIllumination,
@@ -1506,6 +1543,8 @@ function DetectorMap({
               key={pixel.id}
               type="button"
               className={`detector-pixel ${isActive ? "is-active" : ""} ${
+                isBurstHit ? "is-burst-hit" : ""
+              } ${
                 isEarthAlbedo ? "is-albedo" : ""
               } ${
                 selectedPixel === pixel.index ? "is-selected" : ""
@@ -1516,8 +1555,8 @@ function DetectorMap({
                 "--pixel-y": `${50 + Math.sin(pixel.angle) * pixel.radius * 44}%`,
                 "--delay": `${(pixel.index % 17) * 24}ms`,
               } as React.CSSProperties}
-              title={`${pixel.id} · ${(value * 100).toFixed(0)}% · ${Math.round(8 + value * 190)} keV`}
-              aria-label={`${pixel.id}, risposta ${(value * 100).toFixed(0)} per cento`}
+              title={`${pixel.id} · ${hitCount} fotoni rilevati nel bin corrente`}
+              aria-label={`${pixel.id}, ${hitCount} fotoni rilevati`}
               onClick={() => onSelect(pixel.index)}
             >
               {String(pixel.index + 1).padStart(3, "0")}
@@ -1530,16 +1569,10 @@ function DetectorMap({
       <div className="cluster-readout">
         <div className="cluster-heading">
           <span>
-            <small>
-              {grbActive
-                ? "PIXEL ILLUMINATI DAL GRB"
-                : earthAlbedoNoise > 1
-                  ? "PIXEL DA ALBEDO TERRESTRE"
-                  : "PIXEL SOPRA SOGLIA"}
-            </small>
+            <small>PIXEL ACCESI · HIT RILEVATI</small>
             <strong>{activeCluster.length} / 126</strong>
           </span>
-          <em>Edep &gt; 30 keV</em>
+          <em>Σ {totalHits} fotoni · Edep &gt; 30 keV</em>
         </div>
         <div className="cluster-ids">
           {activeCluster.length > 0 ? (
@@ -1563,7 +1596,10 @@ function DetectorMap({
         <div className="pixel-id-block">
           <small>PIXEL SELEZIONATO</small>
           <strong>{PIXEL_LAYOUT[selectedPixel].id}</strong>
-          <span>ring {PIXEL_LAYOUT[selectedPixel].ring} · slot {PIXEL_LAYOUT[selectedPixel].slot + 1}</span>
+          <span>
+            {selectedHits} hit · ring {PIXEL_LAYOUT[selectedPixel].ring} · slot{" "}
+            {PIXEL_LAYOUT[selectedPixel].slot + 1}
+          </span>
         </div>
         <div className="pixel-stack" aria-label="Struttura del pixel selezionato">
           <span className="pixel-layer up"><b>UP · GAGG</b><em>4 cm · {upEnergy} keV</em></span>
@@ -1679,24 +1715,43 @@ export default function Home() {
       const observed = background + source;
       totalRef.current += observed;
       capturedRef.current += source;
-      const detector = PIXEL_LAYOUT.map((pixel) => {
+      const directionalWeights = PIXEL_LAYOUT.map((pixel) => {
         const incidence = getBurstIncidence(pixel.index, selectedPixelRef.current);
-        const directionalResponse = Math.pow(incidence, isGRB ? 2.4 : 5.5);
-        const earthAlbedoResponse = getEarthAlbedoResponse(
+        return Math.pow(incidence, isGRB ? 2.4 : 5.5);
+      });
+      const albedoWeights = PIXEL_LAYOUT.map((pixel) =>
+        getEarthAlbedoResponse(
           pixel.index,
           celestial.earthIllumination,
           celestial.earthAlbedoAzimuth,
           celestial.earthAlbedoDirectional,
-        );
-        const normalizedAlbedo = celestial.earthAlbedoNoise / 85;
-        return Math.min(
-          1,
-          0.04 +
-            Math.random() * 0.16 +
-            directionalResponse * (isGRB ? 0.94 : 0.36) +
-            earthAlbedoResponse * normalizedAlbedo * 0.62,
-        );
+        ),
+      );
+      const directionalWeightSum = directionalWeights.reduce(
+        (sum, value) => sum + value,
+        0,
+      );
+      const albedoWeightSum = albedoWeights.reduce(
+        (sum, value) => sum + value,
+        0,
+      );
+      const diffuseTriggeredHits =
+        Math.max(0, background - celestial.earthAlbedoNoise) * 0.05;
+      const albedoTriggeredHits = celestial.earthAlbedoNoise * 0.12;
+      const sourceTriggeredHits = source * (isGRB ? 0.55 : 0.25);
+      const detectorHits = PIXEL_LAYOUT.map((pixel) => {
+        const mean =
+          diffuseTriggeredHits / PIXEL_LAYOUT.length +
+          (albedoTriggeredHits * albedoWeights[pixel.index]) /
+            Math.max(1e-6, albedoWeightSum) +
+          (sourceTriggeredHits * directionalWeights[pixel.index]) /
+            Math.max(1e-6, directionalWeightSum);
+        return poissonSample(mean);
       });
+      const maxPixelHits = Math.max(1, ...detectorHits);
+      const detector = detectorHits.map((hits) =>
+        hits > 0 ? Math.min(1, 0.3 + (hits / maxPixelHits) * 0.7) : 0,
+      );
       const next = { observed, background, source };
       setSamples((current) => [...current.slice(-119), next]);
       setTelemetry({
@@ -1710,6 +1765,7 @@ export default function Home() {
         significance: source / Math.sqrt(Math.max(1, background)),
         grbActive: isGRB,
         detector,
+        detectorHits,
         simulatedDate: celestial.date.toISOString(),
         sunDirection: celestial.sunDirection,
         moonDirection: celestial.moonDirection,
@@ -1897,6 +1953,7 @@ export default function Home() {
             earthAlbedoNoise={telemetry.earthAlbedoNoise}
             earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
             earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
+            detectorHits={telemetry.detectorHits}
           />
           <div className="stage-title">
             <span className="eyebrow">ORBITAL PHOTON CAPTURE</span>
@@ -1919,6 +1976,7 @@ export default function Home() {
             moonInFov={telemetry.moonInFov}
             moonPhase={telemetry.moonPhase}
             detector={telemetry.detector}
+            detectorHits={telemetry.detectorHits}
             selectedPixel={selectedPixel}
             grbActive={telemetry.grbActive}
             earthIllumination={telemetry.earthIllumination}
@@ -1994,16 +2052,18 @@ export default function Home() {
             <div className="chart-header">
               <div>
                 <small>DETECTOR RESPONSE</small>
-                <strong>Distribuzione di carica</strong>
+                <strong>Hit sopra soglia · bin 0.2 s</strong>
               </div>
-              <span>{telemetry.grbActive ? "GRB" : "LIVE"}</span>
+              <span>
+                {telemetry.detectorHits.filter((hits) => hits > 0).length} PX ON
+              </span>
             </div>
             <DetectorMap
               values={telemetry.detector}
+              hits={telemetry.detectorHits}
               grbActive={telemetry.grbActive}
               selectedPixel={selectedPixel}
               earthIllumination={telemetry.earthIllumination}
-              earthAlbedoNoise={telemetry.earthAlbedoNoise}
               earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
               earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
               onSelect={selectPixel}
