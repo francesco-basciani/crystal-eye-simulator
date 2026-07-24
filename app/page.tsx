@@ -79,6 +79,30 @@ const PIXEL_LAYOUT: PixelLayout[] = PIXEL_RING_COUNTS.flatMap((count, ring) =>
     };
   }),
 );
+const PIXEL_NORMALS: [number, number, number][] = PIXEL_LAYOUT.map((pixel) => {
+  const polar = THREE.MathUtils.lerp(0.04, Math.PI / 2 - 0.045, pixel.radius);
+  return normalizeVector(
+    Math.sin(polar) * Math.cos(pixel.angle),
+    Math.cos(polar),
+    Math.sin(polar) * Math.sin(pixel.angle),
+  );
+});
+const BURST_FOOTPRINT_THRESHOLD = Math.cos(THREE.MathUtils.degToRad(38));
+
+function getBurstIncidence(pixelIndex: number, sourcePixelIndex: number) {
+  const pixelNormal = PIXEL_NORMALS[pixelIndex];
+  const sourceDirection = PIXEL_NORMALS[sourcePixelIndex];
+  return Math.max(
+    0,
+    pixelNormal[0] * sourceDirection[0] +
+      pixelNormal[1] * sourceDirection[1] +
+      pixelNormal[2] * sourceDirection[2],
+  );
+}
+
+function isPixelOnBurstFootprint(pixelIndex: number, sourcePixelIndex: number) {
+  return getBurstIncidence(pixelIndex, sourcePixelIndex) >= BURST_FOOTPRINT_THRESHOLD;
+}
 
 const SIMULATION_EPOCH_MS = Date.UTC(2026, 6, 23, 12, 0, 0);
 const AU_KM = 149_597_870.7;
@@ -237,6 +261,7 @@ function GlobeScene({
     moonDirection,
     sunNoise,
     moonNoise,
+    phaseUpdatedAt: 0,
   });
 
   useEffect(() => {
@@ -252,6 +277,7 @@ function GlobeScene({
       moonDirection,
       sunNoise,
       moonNoise,
+      phaseUpdatedAt: performance.now(),
     };
   }, [
     altitude,
@@ -535,12 +561,7 @@ function GlobeScene({
     );
     const upAxis = new THREE.Vector3(0, 1, 0);
     const crystalPixels = PIXEL_LAYOUT.map((pixel) => {
-      const polar = THREE.MathUtils.lerp(0.04, Math.PI / 2 - 0.045, pixel.radius);
-      const normal = new THREE.Vector3(
-        Math.sin(polar) * Math.cos(pixel.angle),
-        Math.cos(polar),
-        Math.sin(polar) * Math.sin(pixel.angle),
-      );
+      const normal = new THREE.Vector3().fromArray(PIXEL_NORMALS[pixel.index]);
       const crystal = new THREE.Mesh(pixelGeometry, pixelMaterials[pixel.index]);
       crystal.position.copy(normal).multiplyScalar(0.173);
       crystal.quaternion.setFromUnitVectors(upAxis, normal.clone());
@@ -658,19 +679,39 @@ function GlobeScene({
     const outwardLocal = new THREE.Vector3();
     const sunSceneDirection = new THREE.Vector3();
     const moonSceneDirection = new THREE.Vector3();
+    const satelliteWorldQuaternion = new THREE.Quaternion();
+    const burstWorldDirection = new THREE.Vector3();
+    const transverseOffset = new THREE.Vector3();
+    let renderedPhase = settingsRef.current.phase;
     let animationFrame = 0;
     const animate = () => {
       animationFrame = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.05);
       const settings = settingsRef.current;
       const orbitRadius = 3.1 + (settings.altitude - 550) / 1500;
-      const angle = settings.phase;
+      const extrapolation =
+        !settings.paused && settings.phaseUpdatedAt > 0
+          ? ((performance.now() - settings.phaseUpdatedAt) / 1000) *
+            (settings.speed / 910)
+          : 0;
+      const predictedPhase = settings.phase + extrapolation;
+      const phaseError = Math.atan2(
+        Math.sin(predictedPhase - renderedPhase),
+        Math.cos(predictedPhase - renderedPhase),
+      );
+      renderedPhase += phaseError * (1 - Math.exp(-delta * 18));
+      const angle = renderedPhase;
       orbitGroup.rotation.z = THREE.MathUtils.degToRad(settings.inclination);
       orbitLine.scale.setScalar(orbitRadius / 3.1);
       satelliteGroup.position.set(Math.cos(angle) * orbitRadius, 0, Math.sin(angle) * orbitRadius);
       outwardLocal.set(Math.cos(angle), 0, Math.sin(angle)).normalize();
       satelliteGroup.quaternion.setFromUnitVectors(upAxis, outwardLocal);
       satelliteGroup.getWorldPosition(satWorld);
+      satelliteGroup.getWorldQuaternion(satelliteWorldQuaternion);
+      burstWorldDirection
+        .fromArray(PIXEL_NORMALS[settings.selectedPixel])
+        .applyQuaternion(satelliteWorldQuaternion)
+        .normalize();
 
       sunSceneDirection.fromArray(settings.sunDirection).normalize();
       moonSceneDirection.fromArray(settings.moonDirection).normalize();
@@ -698,17 +739,9 @@ function GlobeScene({
         const material = pixelMaterials[index];
         const isSelected = index === settings.selectedPixel;
         const layout = PIXEL_LAYOUT[index];
-        const selectedLayout = PIXEL_LAYOUT[settings.selectedPixel];
-        const angularDistance = Math.abs(
-          Math.atan2(
-            Math.sin(layout.angle - selectedLayout.angle),
-            Math.cos(layout.angle - selectedLayout.angle),
-          ),
-        );
-        const radialDistance = Math.abs(layout.radius - selectedLayout.radius);
         const isBurstCluster =
           settings.grbActive &&
-          (isSelected || (radialDistance < 0.19 && angularDistance < 0.32));
+          isPixelOnBurstFootprint(index, settings.selectedPixel);
         material.color.setHex(
           isBurstCluster
             ? 0xff4dbe
@@ -735,12 +768,36 @@ function GlobeScene({
         const isSource = index % 11 === 0 || isGRB;
         const spread = isGRB ? 0.35 : isSource ? 1.2 : 2.8;
         const travel = 0.12 + life * (isGRB ? 4.8 : isSource ? 3.4 : 2.6);
-        particlePositions[index * 3] =
-          satWorld.x + travel + particleSeed[index * 3] * spread;
-        particlePositions[index * 3 + 1] =
-          satWorld.y + particleSeed[index * 3 + 1] * spread * life;
-        particlePositions[index * 3 + 2] =
-          satWorld.z + particleSeed[index * 3 + 2] * spread * life;
+        if (isGRB) {
+          transverseOffset.set(
+            particleSeed[index * 3],
+            particleSeed[index * 3 + 1],
+            particleSeed[index * 3 + 2],
+          );
+          transverseOffset.addScaledVector(
+            burstWorldDirection,
+            -transverseOffset.dot(burstWorldDirection),
+          );
+          particlePositions[index * 3] =
+            satWorld.x +
+            burstWorldDirection.x * travel +
+            transverseOffset.x * spread * life;
+          particlePositions[index * 3 + 1] =
+            satWorld.y +
+            burstWorldDirection.y * travel +
+            transverseOffset.y * spread * life;
+          particlePositions[index * 3 + 2] =
+            satWorld.z +
+            burstWorldDirection.z * travel +
+            transverseOffset.z * spread * life;
+        } else {
+          particlePositions[index * 3] =
+            satWorld.x + travel + particleSeed[index * 3] * spread;
+          particlePositions[index * 3 + 1] =
+            satWorld.y + particleSeed[index * 3 + 1] * spread * life;
+          particlePositions[index * 3 + 2] =
+            satWorld.z + particleSeed[index * 3 + 2] * spread * life;
+        }
         const color = isGRB ? magenta : isSource ? amber : cyan;
         particleColors[index * 3] = color.r;
         particleColors[index * 3 + 1] = color.g;
@@ -1021,6 +1078,8 @@ function SensorView({
         const y = cy + Math.sin(pixel.angle) * pixel.radius * radius * 0.88;
         const cellRadius = Math.max(2.2, radius * (0.036 - pixel.ring * 0.0008));
         const isSelected = pixel.index === selectedPixel;
+        const isOnBurstFootprint =
+          grbActive && isPixelOnBurstFootprint(pixel.index, selectedPixel);
         context.beginPath();
         for (let side = 0; side < 6; side += 1) {
           const angle = (side / 6) * Math.PI * 2 + Math.PI / 6;
@@ -1030,7 +1089,7 @@ function SensorView({
           else context.lineTo(px, py);
         }
         context.closePath();
-        context.fillStyle = grbActive && value > 0.52
+        context.fillStyle = isOnBurstFootprint
           ? `rgba(255, 77, 190, ${0.38 + value * 0.62})`
           : `rgba(71, 208, 232, ${0.12 + value * 0.78})`;
         context.fill();
@@ -1216,10 +1275,13 @@ function DetectorMap({
   selectedPixel: number;
   onSelect: (index: number) => void;
 }) {
-  const activeCluster = PIXEL_LAYOUT
-    .filter((pixel) => values[pixel.index] > (grbActive ? 0.58 : 0.42))
-    .sort((a, b) => values[b.index] - values[a.index])
-    .slice(0, grbActive ? 15 : 8);
+  const activeCluster = (
+    grbActive
+      ? PIXEL_LAYOUT.filter((pixel) =>
+          isPixelOnBurstFootprint(pixel.index, selectedPixel),
+        )
+      : PIXEL_LAYOUT.filter((pixel) => values[pixel.index] > 0.42).slice(0, 8)
+  ).sort((a, b) => values[b.index] - values[a.index]);
   const selectedValue = values[selectedPixel] ?? 0;
   const depositedEnergy = Math.round(8 + selectedValue * (grbActive ? 980 : 190));
   const upEnergy = Math.round(depositedEnergy * 0.61);
@@ -1261,7 +1323,7 @@ function DetectorMap({
       <div className="cluster-readout">
         <div className="cluster-heading">
           <span>
-            <small>{grbActive ? "BURST CLUSTER" : "PIXEL SOPRA SOGLIA"}</small>
+            <small>{grbActive ? "PIXEL ILLUMINATI DAL GRB" : "PIXEL SOPRA SOGLIA"}</small>
             <strong>{activeCluster.length} / 126</strong>
           </span>
           <em>Edep &gt; 30 keV</em>
@@ -1403,27 +1465,14 @@ export default function Home() {
       const observed = background + source;
       totalRef.current += observed;
       capturedRef.current += source;
-      const sourcePixel = PIXEL_LAYOUT[selectedPixelRef.current];
       const detector = PIXEL_LAYOUT.map((pixel) => {
-        const angularDistance = Math.abs(
-          Math.atan2(
-            Math.sin(pixel.angle - sourcePixel.angle),
-            Math.cos(pixel.angle - sourcePixel.angle),
-          ),
-        );
-        const radialDistance = Math.abs(pixel.radius - sourcePixel.radius);
-        const projectedAngularDistance =
-          angularDistance * Math.max(0.2, (pixel.radius + sourcePixel.radius) / 2);
-        const spread = isGRB ? 0.12 : 0.24;
-        const spot = Math.exp(
-          -(
-            (radialDistance * radialDistance) / (spread * spread) +
-            (projectedAngularDistance * projectedAngularDistance) / (spread * spread)
-          ),
-        );
+        const incidence = getBurstIncidence(pixel.index, selectedPixelRef.current);
+        const directionalResponse = Math.pow(incidence, isGRB ? 2.4 : 5.5);
         return Math.min(
           1,
-          0.04 + Math.random() * 0.16 + spot * (isGRB ? 0.94 : 0.36),
+          0.04 +
+            Math.random() * 0.16 +
+            directionalResponse * (isGRB ? 0.94 : 0.36),
         );
       });
       const next = { observed, background, source };
@@ -1463,13 +1512,16 @@ export default function Home() {
   const injectGRB = useCallback(() => {
     const targetPixel =
       31 + Math.floor(((Math.sin(phaseRef.current * 1.7) + 1) / 2) * 64);
+    const footprintCount = PIXEL_LAYOUT.filter((pixel) =>
+      isPixelOnBurstFootprint(pixel.index, targetPixel),
+    ).length;
     selectPixel(targetPixel);
     grbTicksRef.current = 60;
     setEventLog((current) => [
       ...current.slice(-4),
       {
         time: `T+${formatTime(elapsedRef.current).slice(3)}`,
-        text: `GRB sintetico · cluster centrato su ${PIXEL_LAYOUT[targetPixel].id}`,
+        text: `GRB sintetico · direzione ${PIXEL_LAYOUT[targetPixel].id} · ${footprintCount} pixel illuminati`,
         kind: "grb",
       },
     ]);
