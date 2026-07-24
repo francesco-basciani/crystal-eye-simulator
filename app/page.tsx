@@ -49,6 +49,10 @@ type Telemetry = Sample & {
   moonInFov: boolean;
   moonDistanceKm: number;
   moonPhase: number;
+  earthIllumination: number;
+  earthAlbedoNoise: number;
+  earthAlbedoAzimuth: number;
+  earthAlbedoDirectional: number;
 };
 
 type PixelLayout = {
@@ -102,6 +106,42 @@ function getBurstIncidence(pixelIndex: number, sourcePixelIndex: number) {
 
 function isPixelOnBurstFootprint(pixelIndex: number, sourcePixelIndex: number) {
   return getBurstIncidence(pixelIndex, sourcePixelIndex) >= BURST_FOOTPRINT_THRESHOLD;
+}
+
+function getEarthAlbedoResponse(
+  pixelIndex: number,
+  illumination: number,
+  azimuth: number,
+  directional: number,
+) {
+  const pixel = PIXEL_LAYOUT[pixelIndex];
+  const rimWeight = THREE.MathUtils.clamp((pixel.ring - 4) / 2, 0, 1) ** 1.25;
+  if (rimWeight === 0 || illumination <= 0.01) return 0;
+  const delta = Math.atan2(
+    Math.sin(pixel.angle - azimuth),
+    Math.cos(pixel.angle - azimuth),
+  );
+  const directionalLobe = Math.max(0, Math.cos(delta)) ** 1.7;
+  const azimuthWeight = THREE.MathUtils.lerp(
+    0.42,
+    0.08 + directionalLobe * 0.92,
+    directional,
+  );
+  return rimWeight * illumination * azimuthWeight;
+}
+
+function isPixelLitByEarthAlbedo(
+  pixelIndex: number,
+  illumination: number,
+  azimuth: number,
+  directional: number,
+) {
+  return getEarthAlbedoResponse(
+    pixelIndex,
+    illumination,
+    azimuth,
+    directional,
+  ) >= 0.12;
 }
 
 const SIMULATION_EPOCH_MS = Date.UTC(2026, 6, 23, 12, 0, 0);
@@ -162,6 +202,32 @@ function getCelestialGeometry(
   const moonNoise = moonInFov
     ? 22 * angularResponse(moonSeparation) * (0.3 + 0.7 * moonIllumination.phase_fraction)
     : 0;
+  const sunBoresightDot =
+    sunDirection[0] * satelliteDirection[0] +
+    sunDirection[1] * satelliteDirection[1] +
+    sunDirection[2] * satelliteDirection[2];
+  const earthIllumination = THREE.MathUtils.clamp(
+    (1 + sunBoresightDot) / 2,
+    0,
+    1,
+  );
+  const detectorOrientation = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    new THREE.Vector3().fromArray(satelliteDirection),
+  );
+  const localSun = new THREE.Vector3()
+    .fromArray(sunDirection)
+    .applyQuaternion(detectorOrientation.invert());
+  const earthAlbedoDirectional = THREE.MathUtils.clamp(
+    Math.hypot(localSun.x, localSun.z),
+    0,
+    1,
+  );
+  const earthAlbedoAzimuth =
+    earthAlbedoDirectional > 1e-4 ? Math.atan2(localSun.z, localSun.x) : 0;
+  const earthAngularScale = (6371 / (6371 + altitude)) ** 2;
+  const earthAlbedoNoise =
+    85 * earthAngularScale * earthIllumination ** 1.35;
 
   return {
     date,
@@ -176,6 +242,10 @@ function getCelestialGeometry(
     moonNoise,
     moonDistanceKm: Math.hypot(moon.x, moon.y, moon.z) * AU_KM,
     moonPhase: moonIllumination.phase_fraction,
+    earthIllumination,
+    earthAlbedoNoise,
+    earthAlbedoAzimuth,
+    earthAlbedoDirectional,
   };
 }
 
@@ -207,6 +277,10 @@ const INITIAL_TELEMETRY: Telemetry = {
   moonInFov: INITIAL_CELESTIAL.moonInFov,
   moonDistanceKm: INITIAL_CELESTIAL.moonDistanceKm,
   moonPhase: INITIAL_CELESTIAL.moonPhase,
+  earthIllumination: INITIAL_CELESTIAL.earthIllumination,
+  earthAlbedoNoise: INITIAL_CELESTIAL.earthAlbedoNoise,
+  earthAlbedoAzimuth: INITIAL_CELESTIAL.earthAlbedoAzimuth,
+  earthAlbedoDirectional: INITIAL_CELESTIAL.earthAlbedoDirectional,
 };
 
 function poissonLike(mean: number) {
@@ -235,6 +309,10 @@ function GlobeScene({
   moonDirection,
   sunNoise,
   moonNoise,
+  earthIllumination,
+  earthAlbedoNoise,
+  earthAlbedoAzimuth,
+  earthAlbedoDirectional,
 }: {
   altitude: number;
   inclination: number;
@@ -247,6 +325,10 @@ function GlobeScene({
   moonDirection: [number, number, number];
   sunNoise: number;
   moonNoise: number;
+  earthIllumination: number;
+  earthAlbedoNoise: number;
+  earthAlbedoAzimuth: number;
+  earthAlbedoDirectional: number;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef({
@@ -261,6 +343,10 @@ function GlobeScene({
     moonDirection,
     sunNoise,
     moonNoise,
+    earthIllumination,
+    earthAlbedoNoise,
+    earthAlbedoAzimuth,
+    earthAlbedoDirectional,
     phaseUpdatedAt: 0,
   });
 
@@ -277,6 +363,10 @@ function GlobeScene({
       moonDirection,
       sunNoise,
       moonNoise,
+      earthIllumination,
+      earthAlbedoNoise,
+      earthAlbedoAzimuth,
+      earthAlbedoDirectional,
       phaseUpdatedAt: performance.now(),
     };
   }, [
@@ -291,6 +381,10 @@ function GlobeScene({
     moonDirection,
     sunNoise,
     moonNoise,
+    earthIllumination,
+    earthAlbedoNoise,
+    earthAlbedoAzimuth,
+    earthAlbedoDirectional,
   ]);
 
   useEffect(() => {
@@ -742,9 +836,25 @@ function GlobeScene({
         const isBurstCluster =
           settings.grbActive &&
           isPixelOnBurstFootprint(index, settings.selectedPixel);
+        const albedoResponse = getEarthAlbedoResponse(
+          index,
+          settings.earthIllumination,
+          settings.earthAlbedoAzimuth,
+          settings.earthAlbedoDirectional,
+        );
+        const isEarthAlbedo =
+          !isBurstCluster &&
+          isPixelLitByEarthAlbedo(
+            index,
+            settings.earthIllumination,
+            settings.earthAlbedoAzimuth,
+            settings.earthAlbedoDirectional,
+          );
         material.color.setHex(
           isBurstCluster
             ? 0xff4dbe
+            : isEarthAlbedo
+              ? 0x7fd8ff
             : isSelected
               ? 0xffc857
               : layout.ring % 2 === 0
@@ -752,10 +862,24 @@ function GlobeScene({
                 : 0x54bedf,
         );
         material.emissive.setHex(
-          isBurstCluster ? 0x8d124f : isSelected ? 0x8a5f0b : 0x086f79,
+          isBurstCluster
+            ? 0x8d124f
+            : isEarthAlbedo
+              ? 0x155d83
+              : isSelected
+                ? 0x8a5f0b
+                : 0x086f79,
         );
-        material.emissiveIntensity = isBurstCluster ? 2.2 : isSelected ? 1.8 : 0.65;
-        crystal.scale.setScalar(isBurstCluster ? 1.13 : isSelected ? 1.08 : 1);
+        material.emissiveIntensity = isBurstCluster
+          ? 2.2
+          : isEarthAlbedo
+            ? 0.9 + albedoResponse * 2.1
+            : isSelected
+              ? 1.8
+              : 0.65;
+        crystal.scale.setScalar(
+          isBurstCluster ? 1.13 : isEarthAlbedo ? 1.04 + albedoResponse * 0.05 : isSelected ? 1.08 : 1,
+        );
       });
 
       for (let index = 0; index < particleCount; index += 1) {
@@ -856,6 +980,7 @@ function GlobeScene({
       </div>
       <div className="scene-hud scene-hud-bottom">
         <span><span className="legend-dot background-dot" /> background</span>
+        <span><span className="legend-dot albedo-dot" /> albedo Terra</span>
         <span><span className="legend-dot source-dot" /> sorgente</span>
         <span><span className="legend-dot grb-dot" /> GRB</span>
       </div>
@@ -865,6 +990,9 @@ function GlobeScene({
         </span>
         <span className={moonNoise > 0 ? "interfering moon" : ""}>
           <Moon size={12} /> Luna {moonNoise > 0 ? `+${moonNoise.toFixed(0)} c/s` : "fuori cono"}
+        </span>
+        <span className={earthAlbedoNoise > 1 ? "interfering earth" : ""}>
+          <CircleDot size={12} /> Albedo Terra {earthAlbedoNoise > 1 ? `+${earthAlbedoNoise.toFixed(0)} c/s` : "minimo"}
         </span>
       </div>
       <div className="drag-hint">trascina per ruotare · scorri per zoom</div>
@@ -953,6 +1081,10 @@ function SensorView({
   detector,
   selectedPixel,
   grbActive,
+  earthIllumination,
+  earthAlbedoNoise,
+  earthAlbedoAzimuth,
+  earthAlbedoDirectional,
 }: {
   phase: number;
   inclination: number;
@@ -964,6 +1096,10 @@ function SensorView({
   detector: number[];
   selectedPixel: number;
   grbActive: boolean;
+  earthIllumination: number;
+  earthAlbedoNoise: number;
+  earthAlbedoAzimuth: number;
+  earthAlbedoDirectional: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [mode, setMode] = useState<SensorViewMode>("mask");
@@ -1055,6 +1191,36 @@ function SensorView({
       }
     }
 
+    if (earthAlbedoNoise > 1) {
+      const lobeWidth = THREE.MathUtils.lerp(
+        Math.PI * 0.92,
+        Math.PI * 0.48,
+        earthAlbedoDirectional,
+      );
+      context.strokeStyle =
+        mode === "mask"
+          ? `rgba(100, 205, 255, ${0.28 + earthIllumination * 0.62})`
+          : `rgba(115, 210, 255, ${0.12 + earthIllumination * 0.34})`;
+      context.lineWidth = mode === "mask" ? radius * 0.12 : radius * 0.065;
+      context.beginPath();
+      context.arc(
+        cx,
+        cy,
+        radius * 0.91,
+        earthAlbedoAzimuth - lobeWidth,
+        earthAlbedoAzimuth + lobeWidth,
+      );
+      context.stroke();
+      if (mode === "mask") {
+        const labelX = cx + Math.cos(earthAlbedoAzimuth) * radius * 0.72;
+        const labelY = cy + Math.sin(earthAlbedoAzimuth) * radius * 0.72;
+        context.fillStyle = "#a6e3ff";
+        context.font = "6px monospace";
+        context.textAlign = "center";
+        context.fillText("ALBEDO TERRA", labelX, labelY);
+      }
+    }
+
     const drawHalo = (
       x: number,
       y: number,
@@ -1080,6 +1246,13 @@ function SensorView({
         const isSelected = pixel.index === selectedPixel;
         const isOnBurstFootprint =
           grbActive && isPixelOnBurstFootprint(pixel.index, selectedPixel);
+        const isOnEarthAlbedo =
+          isPixelLitByEarthAlbedo(
+            pixel.index,
+            earthIllumination,
+            earthAlbedoAzimuth,
+            earthAlbedoDirectional,
+          );
         context.beginPath();
         for (let side = 0; side < 6; side += 1) {
           const angle = (side / 6) * Math.PI * 2 + Math.PI / 6;
@@ -1091,7 +1264,9 @@ function SensorView({
         context.closePath();
         context.fillStyle = isOnBurstFootprint
           ? `rgba(255, 77, 190, ${0.38 + value * 0.62})`
-          : `rgba(71, 208, 232, ${0.12 + value * 0.78})`;
+          : isOnEarthAlbedo
+            ? `rgba(112, 215, 255, ${0.28 + value * 0.68})`
+            : `rgba(71, 208, 232, ${0.12 + value * 0.78})`;
         context.fill();
         context.strokeStyle = isSelected ? "#ffc857" : "rgba(159, 224, 245, 0.16)";
         context.lineWidth = isSelected ? 1.4 : 0.55;
@@ -1211,6 +1386,10 @@ function SensorView({
     drawOutOfField(moon, "MOON", "#b9ceff");
   }, [
     detector,
+    earthAlbedoAzimuth,
+    earthAlbedoDirectional,
+    earthAlbedoNoise,
+    earthIllumination,
     grbActive,
     inclination,
     mode,
@@ -1257,6 +1436,7 @@ function SensorView({
       <div className="sensor-view-footer">
         <span className={sunInFov ? "active sun" : ""}><i /> Sole</span>
         <span className={moonInFov ? "active moon" : ""}><i /> Luna</span>
+        <span className={earthAlbedoNoise > 1 ? "active earth" : ""}><i /> Terra</span>
         <span className={grbActive ? "active grb" : ""}><i /> GRB</span>
         <em>{mode === "events" ? "risposta per pixel" : "ricostruzione · non RGB"}</em>
       </div>
@@ -1268,11 +1448,19 @@ function DetectorMap({
   values,
   grbActive,
   selectedPixel,
+  earthIllumination,
+  earthAlbedoNoise,
+  earthAlbedoAzimuth,
+  earthAlbedoDirectional,
   onSelect,
 }: {
   values: number[];
   grbActive: boolean;
   selectedPixel: number;
+  earthIllumination: number;
+  earthAlbedoNoise: number;
+  earthAlbedoAzimuth: number;
+  earthAlbedoDirectional: number;
   onSelect: (index: number) => void;
 }) {
   const activeCluster = (
@@ -1280,6 +1468,15 @@ function DetectorMap({
       ? PIXEL_LAYOUT.filter((pixel) =>
           isPixelOnBurstFootprint(pixel.index, selectedPixel),
         )
+      : earthAlbedoNoise > 1
+        ? PIXEL_LAYOUT.filter((pixel) =>
+            isPixelLitByEarthAlbedo(
+              pixel.index,
+              earthIllumination,
+              earthAlbedoAzimuth,
+              earthAlbedoDirectional,
+            ),
+          )
       : PIXEL_LAYOUT.filter((pixel) => values[pixel.index] > 0.42).slice(0, 8)
   ).sort((a, b) => values[b.index] - values[a.index]);
   const selectedValue = values[selectedPixel] ?? 0;
@@ -1296,11 +1493,21 @@ function DetectorMap({
         {PIXEL_LAYOUT.map((pixel) => {
           const value = values[pixel.index] ?? 0;
           const isActive = activeCluster.some((active) => active.index === pixel.index);
+          const isEarthAlbedo =
+            !grbActive &&
+            isPixelLitByEarthAlbedo(
+              pixel.index,
+              earthIllumination,
+              earthAlbedoAzimuth,
+              earthAlbedoDirectional,
+            );
           return (
             <button
               key={pixel.id}
               type="button"
               className={`detector-pixel ${isActive ? "is-active" : ""} ${
+                isEarthAlbedo ? "is-albedo" : ""
+              } ${
                 selectedPixel === pixel.index ? "is-selected" : ""
               }`}
               style={{
@@ -1323,7 +1530,13 @@ function DetectorMap({
       <div className="cluster-readout">
         <div className="cluster-heading">
           <span>
-            <small>{grbActive ? "PIXEL ILLUMINATI DAL GRB" : "PIXEL SOPRA SOGLIA"}</small>
+            <small>
+              {grbActive
+                ? "PIXEL ILLUMINATI DAL GRB"
+                : earthAlbedoNoise > 1
+                  ? "PIXEL DA ALBEDO TERRESTRE"
+                  : "PIXEL SOPRA SOGLIA"}
+            </small>
             <strong>{activeCluster.length} / 126</strong>
           </span>
           <em>Edep &gt; 30 keV</em>
@@ -1454,7 +1667,8 @@ export default function Home() {
         latitudeBoost +
         slowDrift +
         celestial.sunNoise +
-        celestial.moonNoise;
+        celestial.moonNoise +
+        celestial.earthAlbedoNoise;
       const isGRB = grbTicksRef.current > 0;
       if (isGRB) grbTicksRef.current -= 1;
       const sourceMean = isGRB
@@ -1468,11 +1682,19 @@ export default function Home() {
       const detector = PIXEL_LAYOUT.map((pixel) => {
         const incidence = getBurstIncidence(pixel.index, selectedPixelRef.current);
         const directionalResponse = Math.pow(incidence, isGRB ? 2.4 : 5.5);
+        const earthAlbedoResponse = getEarthAlbedoResponse(
+          pixel.index,
+          celestial.earthIllumination,
+          celestial.earthAlbedoAzimuth,
+          celestial.earthAlbedoDirectional,
+        );
+        const normalizedAlbedo = celestial.earthAlbedoNoise / 85;
         return Math.min(
           1,
           0.04 +
             Math.random() * 0.16 +
-            directionalResponse * (isGRB ? 0.94 : 0.36),
+            directionalResponse * (isGRB ? 0.94 : 0.36) +
+            earthAlbedoResponse * normalizedAlbedo * 0.62,
         );
       });
       const next = { observed, background, source };
@@ -1499,6 +1721,10 @@ export default function Home() {
         moonInFov: celestial.moonInFov,
         moonDistanceKm: celestial.moonDistanceKm,
         moonPhase: celestial.moonPhase,
+        earthIllumination: celestial.earthIllumination,
+        earthAlbedoNoise: celestial.earthAlbedoNoise,
+        earthAlbedoAzimuth: celestial.earthAlbedoAzimuth,
+        earthAlbedoDirectional: celestial.earthAlbedoDirectional,
       });
     }, 200);
     return () => window.clearInterval(timer);
@@ -1667,6 +1893,10 @@ export default function Home() {
             moonDirection={telemetry.moonDirection}
             sunNoise={telemetry.sunNoise}
             moonNoise={telemetry.moonNoise}
+            earthIllumination={telemetry.earthIllumination}
+            earthAlbedoNoise={telemetry.earthAlbedoNoise}
+            earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
+            earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
           />
           <div className="stage-title">
             <span className="eyebrow">ORBITAL PHOTON CAPTURE</span>
@@ -1691,6 +1921,10 @@ export default function Home() {
             detector={telemetry.detector}
             selectedPixel={selectedPixel}
             grbActive={telemetry.grbActive}
+            earthIllumination={telemetry.earthIllumination}
+            earthAlbedoNoise={telemetry.earthAlbedoNoise}
+            earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
+            earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
           />
         </section>
 
@@ -1729,7 +1963,7 @@ export default function Home() {
             <div className="chart-header">
               <div>
                 <small>CELESTIAL INTERFERENCE</small>
-                <strong>Sole e Luna · ephemeris UTC</strong>
+                <strong>Sole, Luna e albedo terrestre</strong>
               </div>
               <span>FOV {EFFECTIVE_FOV_DEG}°</span>
             </div>
@@ -1744,8 +1978,16 @@ export default function Home() {
                 <span><small>LUNA · {(telemetry.moonPhase * 100).toFixed(0)}% illum.</small><strong>{telemetry.moonSeparation.toFixed(1)}° · {(telemetry.moonDistanceKm / 1000).toFixed(0)}k km</strong></span>
                 <em>{telemetry.moonInFov ? `+${telemetry.moonNoise.toFixed(0)} c/s` : "OUT"}</em>
               </div>
+              <div className={telemetry.earthAlbedoNoise > 1 ? "in-fov earth" : ""}>
+                <CircleDot size={16} />
+                <span>
+                  <small>TERRA · {(telemetry.earthIllumination * 100).toFixed(0)}% illuminata</small>
+                  <strong>albedo sui pixel periferici</strong>
+                </span>
+                <em>+{telemetry.earthAlbedoNoise.toFixed(0)} c/s</em>
+              </div>
             </div>
-            <p>Direzioni astronomiche reali; flusso di disturbo parametrico, da calibrare.</p>
+            <p>Geometria astronomica reale; ampiezze di disturbo parametriche, da calibrare.</p>
           </div>
 
           <div className="detector-section">
@@ -1760,6 +2002,10 @@ export default function Home() {
               values={telemetry.detector}
               grbActive={telemetry.grbActive}
               selectedPixel={selectedPixel}
+              earthIllumination={telemetry.earthIllumination}
+              earthAlbedoNoise={telemetry.earthAlbedoNoise}
+              earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
+              earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
               onSelect={selectPixel}
             />
           </div>
