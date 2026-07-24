@@ -37,6 +37,7 @@ type Telemetry = Sample & {
   captured: number;
   significance: number;
   grbActive: boolean;
+  burstDirections: number[];
   detector: number[];
   detectorHits: number[];
   simulatedDate: string;
@@ -64,6 +65,13 @@ type PixelLayout = {
   count: number;
   angle: number;
   radius: number;
+};
+
+type BurstEvent = {
+  id: number;
+  pixelIndex: number;
+  ageTicks: number;
+  ticksRemaining: number;
 };
 
 const PIXEL_RING_COUNTS = [1, 6, 12, 18, 24, 30, 35] as const;
@@ -116,7 +124,7 @@ function getEarthAlbedoResponse(
   directional: number,
 ) {
   const pixel = PIXEL_LAYOUT[pixelIndex];
-  const rimWeight = THREE.MathUtils.clamp((pixel.ring - 4) / 2, 0, 1) ** 1.25;
+  const rimWeight = pixel.ring === PIXEL_RING_COUNTS.length - 1 ? 1 : 0;
   if (rimWeight === 0 || illumination <= 0.01) return 0;
   const delta = Math.atan2(
     Math.sin(pixel.angle - azimuth),
@@ -129,6 +137,10 @@ function getEarthAlbedoResponse(
     directional,
   );
   return rimWeight * illumination * azimuthWeight;
+}
+
+function deterministicUnit(index: number, salt: number) {
+  return Math.abs(Math.sin(index * 91.713 + salt * 47.117) * 43758.5453) % 1;
 }
 
 function isPixelLitByEarthAlbedo(
@@ -251,22 +263,31 @@ function getCelestialGeometry(
 }
 
 const INITIAL_CELESTIAL = getCelestialGeometry(0, 0.72, 20, 550);
-const INITIAL_DETECTOR_HITS = Array.from({ length: 126 }, (_, index) =>
-  index % 7 === 0 || index % 19 === 0 ? 1 : 0,
-);
+const INITIAL_DETECTOR_HITS = PIXEL_LAYOUT.map((pixel) => {
+  const response = getEarthAlbedoResponse(
+    pixel.index,
+    INITIAL_CELESTIAL.earthIllumination,
+    INITIAL_CELESTIAL.earthAlbedoAzimuth,
+    INITIAL_CELESTIAL.earthAlbedoDirectional,
+  );
+  return response >= 0.12
+    ? Math.max(1, Math.round((response * INITIAL_CELESTIAL.earthAlbedoNoise) / 18))
+    : 0;
+});
 
 const INITIAL_TELEMETRY: Telemetry = {
-  observed: 421,
+  observed: 414,
   background: 414,
-  source: 7,
+  source: 0,
   elapsed: 0,
   phase: 0.72,
   latitude: 13.2,
   longitude: 41.3,
   total: 0,
   captured: 0,
-  significance: 0.34,
+  significance: 0,
   grbActive: false,
+  burstDirections: [],
   detector: INITIAL_DETECTOR_HITS.map((hits) => (hits > 0 ? 0.55 : 0)),
   detectorHits: INITIAL_DETECTOR_HITS,
   simulatedDate: INITIAL_CELESTIAL.date.toISOString(),
@@ -286,26 +307,6 @@ const INITIAL_TELEMETRY: Telemetry = {
   earthAlbedoDirectional: INITIAL_CELESTIAL.earthAlbedoDirectional,
 };
 
-function poissonLike(mean: number) {
-  const u = Math.max(1e-7, Math.random());
-  const v = Math.max(1e-7, Math.random());
-  const normal = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
-  return Math.max(0, Math.round(mean + Math.sqrt(mean) * normal));
-}
-
-function poissonSample(mean: number) {
-  if (mean <= 0) return 0;
-  if (mean >= 30) return poissonLike(mean);
-  const limit = Math.exp(-mean);
-  let product = 1;
-  let count = 0;
-  do {
-    count += 1;
-    product *= Math.random();
-  } while (product > limit);
-  return count - 1;
-}
-
 function formatTime(seconds: number) {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.floor((seconds % 3600) / 60);
@@ -320,6 +321,7 @@ function GlobeScene({
   paused,
   phase,
   grbActive,
+  burstDirections,
   selectedPixel,
   sunDirection,
   moonDirection,
@@ -337,6 +339,7 @@ function GlobeScene({
   paused: boolean;
   phase: number;
   grbActive: boolean;
+  burstDirections: number[];
   selectedPixel: number;
   sunDirection: [number, number, number];
   moonDirection: [number, number, number];
@@ -356,6 +359,7 @@ function GlobeScene({
     paused,
     phase,
     grbActive,
+    burstDirections,
     selectedPixel,
     sunDirection,
     moonDirection,
@@ -377,6 +381,7 @@ function GlobeScene({
       paused,
       phase,
       grbActive,
+      burstDirections,
       selectedPixel,
       sunDirection,
       moonDirection,
@@ -396,6 +401,7 @@ function GlobeScene({
     paused,
     phase,
     grbActive,
+    burstDirections,
     selectedPixel,
     sunDirection,
     moonDirection,
@@ -418,8 +424,12 @@ function GlobeScene({
     const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
     camera.position.set(0.2, 2.3, 8.6);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      powerPreference: "high-performance",
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.35));
     renderer.setClearColor(0x02070d, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -431,11 +441,11 @@ function GlobeScene({
     scene.add(ambient, sunLight);
 
     const starGeometry = new THREE.BufferGeometry();
-    const starPositions = new Float32Array(1500 * 3);
-    for (let index = 0; index < 1500; index += 1) {
-      const radius = 14 + Math.random() * 22;
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
+    const starPositions = new Float32Array(900 * 3);
+    for (let index = 0; index < 900; index += 1) {
+      const radius = 14 + deterministicUnit(index, 1) * 22;
+      const theta = deterministicUnit(index, 2) * Math.PI * 2;
+      const phi = Math.acos(2 * deterministicUnit(index, 3) - 1);
       starPositions[index * 3] = radius * Math.sin(phi) * Math.cos(theta);
       starPositions[index * 3 + 1] = radius * Math.cos(phi);
       starPositions[index * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
@@ -479,7 +489,7 @@ function GlobeScene({
       true,
     );
 
-    const earthGeometry = new THREE.SphereGeometry(2.05, 128, 96);
+    const earthGeometry = new THREE.SphereGeometry(2.05, 96, 64);
     const earthMaterial = new THREE.MeshPhongMaterial({
       map: earthDayTexture,
       normalMap: earthNormalTexture,
@@ -524,7 +534,7 @@ function GlobeScene({
       `,
     });
     const nightLights = new THREE.Mesh(
-      new THREE.SphereGeometry(2.056, 128, 96),
+      new THREE.SphereGeometry(2.056, 96, 64),
       nightMaterial,
     );
 
@@ -539,7 +549,7 @@ function GlobeScene({
       shininess: 2,
     });
     const clouds = new THREE.Mesh(
-      new THREE.SphereGeometry(2.075, 128, 96),
+      new THREE.SphereGeometry(2.075, 96, 64),
       cloudMaterial,
     );
 
@@ -580,7 +590,7 @@ function GlobeScene({
       `,
     });
     const atmosphere = new THREE.Mesh(
-      new THREE.SphereGeometry(2.17, 96, 72),
+      new THREE.SphereGeometry(2.17, 72, 48),
       atmosphereMaterial,
     );
     scene.add(atmosphere);
@@ -718,19 +728,17 @@ function GlobeScene({
     pulse.position.y = 0.36;
     satelliteGroup.add(pulse);
 
-    const particleCount = 220;
+    const particleCount = 120;
     const particlePositions = new Float32Array(particleCount * 3);
     const particleColors = new Float32Array(particleCount * 3);
     const particleLife = new Float32Array(particleCount);
     const particleSeed = new Float32Array(particleCount * 3);
-    const cyan = new THREE.Color(0x62d9ff);
-    const amber = new THREE.Color(0xffc857);
     const magenta = new THREE.Color(0xff4dbe);
     for (let index = 0; index < particleCount; index += 1) {
-      particleLife[index] = Math.random();
-      particleSeed[index * 3] = (Math.random() - 0.5) * 2;
-      particleSeed[index * 3 + 1] = (Math.random() - 0.5) * 2;
-      particleSeed[index * 3 + 2] = (Math.random() - 0.5) * 2;
+      particleLife[index] = deterministicUnit(index, 4);
+      particleSeed[index * 3] = (deterministicUnit(index, 5) - 0.5) * 2;
+      particleSeed[index * 3 + 1] = (deterministicUnit(index, 6) - 0.5) * 2;
+      particleSeed[index * 3 + 2] = (deterministicUnit(index, 7) - 0.5) * 2;
     }
     const particleGeometry = new THREE.BufferGeometry();
     particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
@@ -823,11 +831,6 @@ function GlobeScene({
       satelliteGroup.quaternion.setFromUnitVectors(upAxis, outwardLocal);
       satelliteGroup.getWorldPosition(satWorld);
       satelliteGroup.getWorldQuaternion(satelliteWorldQuaternion);
-      burstWorldDirection
-        .fromArray(PIXEL_NORMALS[settings.selectedPixel])
-        .applyQuaternion(satelliteWorldQuaternion)
-        .normalize();
-
       sunSceneDirection.fromArray(settings.sunDirection).normalize();
       moonSceneDirection.fromArray(settings.moonDirection).normalize();
       sunBody.position.copy(sunSceneDirection).multiplyScalar(12.5);
@@ -857,8 +860,9 @@ function GlobeScene({
         const hitCount = settings.detectorHits[index] ?? 0;
         const isFired = hitCount > 0;
         const isBurstPath =
-          settings.grbActive &&
-          isPixelOnBurstFootprint(index, settings.selectedPixel);
+          settings.burstDirections.some((directionPixel) =>
+            isPixelOnBurstFootprint(index, directionPixel),
+          );
         const albedoResponse = getEarthAlbedoResponse(
           index,
           settings.earthIllumination,
@@ -872,8 +876,11 @@ function GlobeScene({
             settings.earthAlbedoAzimuth,
             settings.earthAlbedoDirectional,
           );
+        const isOverlap = isFired && isBurstPath && isEarthPath;
         material.color.setHex(
-          isFired && isBurstPath
+          isOverlap
+            ? 0xf4e9ff
+            : isFired && isBurstPath
             ? 0xff4dbe
             : isFired && isEarthPath
               ? 0x7fd8ff
@@ -886,7 +893,9 @@ function GlobeScene({
                     : 0x24424c,
         );
         material.emissive.setHex(
-          isFired && isBurstPath
+          isOverlap
+            ? 0x76539b
+            : isFired && isBurstPath
             ? 0x8d124f
             : isFired && isEarthPath
               ? 0x155d83
@@ -897,7 +906,9 @@ function GlobeScene({
                   : 0x03191d,
         );
         material.emissiveIntensity = isFired
-          ? isBurstPath
+          ? isOverlap
+            ? 2.65
+            : isBurstPath
             ? 1.8 + Math.min(4, hitCount) * 0.28
             : isEarthPath
               ? 0.8 + albedoResponse * 1.4 + Math.min(4, hitCount) * 0.22
@@ -910,50 +921,46 @@ function GlobeScene({
         );
       });
 
+      particles.visible = settings.burstDirections.length > 0;
       for (let index = 0; index < particleCount; index += 1) {
-        if (!settings.paused) {
-          particleLife[index] -= delta * (0.22 + settings.speed * 0.015);
+        if (!settings.paused && particles.visible) {
+          particleLife[index] -= delta * 0.55;
           if (particleLife[index] <= 0) particleLife[index] = 1;
         }
         const life = particleLife[index];
-        const isGRB = settings.grbActive && index % 4 === 0;
-        const isSource = index % 11 === 0 || isGRB;
-        const spread = isGRB ? 0.35 : isSource ? 1.2 : 2.8;
-        const travel = 0.12 + life * (isGRB ? 4.8 : isSource ? 3.4 : 2.6);
-        if (isGRB) {
-          transverseOffset.set(
-            particleSeed[index * 3],
-            particleSeed[index * 3 + 1],
-            particleSeed[index * 3 + 2],
-          );
-          transverseOffset.addScaledVector(
-            burstWorldDirection,
-            -transverseOffset.dot(burstWorldDirection),
-          );
-          particlePositions[index * 3] =
-            satWorld.x +
-            burstWorldDirection.x * travel +
-            transverseOffset.x * spread * life;
-          particlePositions[index * 3 + 1] =
-            satWorld.y +
-            burstWorldDirection.y * travel +
-            transverseOffset.y * spread * life;
-          particlePositions[index * 3 + 2] =
-            satWorld.z +
-            burstWorldDirection.z * travel +
-            transverseOffset.z * spread * life;
-        } else {
-          particlePositions[index * 3] =
-            satWorld.x + travel + particleSeed[index * 3] * spread;
-          particlePositions[index * 3 + 1] =
-            satWorld.y + particleSeed[index * 3 + 1] * spread * life;
-          particlePositions[index * 3 + 2] =
-            satWorld.z + particleSeed[index * 3 + 2] * spread * life;
-        }
-        const color = isGRB ? magenta : isSource ? amber : cyan;
-        particleColors[index * 3] = color.r;
-        particleColors[index * 3 + 1] = color.g;
-        particleColors[index * 3 + 2] = color.b;
+        const directionPixel =
+          settings.burstDirections[index % Math.max(1, settings.burstDirections.length)] ??
+          settings.selectedPixel;
+        burstWorldDirection
+          .fromArray(PIXEL_NORMALS[directionPixel])
+          .applyQuaternion(satelliteWorldQuaternion)
+          .normalize();
+        const spread = 0.32;
+        const travel = 0.12 + life * 4.8;
+        transverseOffset.set(
+          particleSeed[index * 3],
+          particleSeed[index * 3 + 1],
+          particleSeed[index * 3 + 2],
+        );
+        transverseOffset.addScaledVector(
+          burstWorldDirection,
+          -transverseOffset.dot(burstWorldDirection),
+        );
+        particlePositions[index * 3] =
+          satWorld.x +
+          burstWorldDirection.x * travel +
+          transverseOffset.x * spread * life;
+        particlePositions[index * 3 + 1] =
+          satWorld.y +
+          burstWorldDirection.y * travel +
+          transverseOffset.y * spread * life;
+        particlePositions[index * 3 + 2] =
+          satWorld.z +
+          burstWorldDirection.z * travel +
+          transverseOffset.z * spread * life;
+        particleColors[index * 3] = magenta.r;
+        particleColors[index * 3 + 1] = magenta.g;
+        particleColors[index * 3 + 2] = magenta.b;
       }
       particleGeometry.attributes.position.needsUpdate = true;
       particleGeometry.attributes.color.needsUpdate = true;
@@ -1109,7 +1116,7 @@ function SensorView({
   detector,
   detectorHits,
   selectedPixel,
-  grbActive,
+  burstDirections,
   earthIllumination,
   earthAlbedoNoise,
   earthAlbedoAzimuth,
@@ -1125,7 +1132,7 @@ function SensorView({
   detector: number[];
   detectorHits: number[];
   selectedPixel: number;
-  grbActive: boolean;
+  burstDirections: number[];
   earthIllumination: number;
   earthAlbedoNoise: number;
   earthAlbedoAzimuth: number;
@@ -1179,8 +1186,6 @@ function SensorView({
     };
     const sun = project(sunDirection);
     const moon = project(moonDirection);
-    const selected = PIXEL_LAYOUT[selectedPixel];
-
     context.clearRect(0, 0, width, height);
     const fieldGradient = context.createRadialGradient(cx, cy, 0, cx, cy, radius);
     fieldGradient.addColorStop(0, mode === "mask" ? "#071828" : "#02070f");
@@ -1277,7 +1282,9 @@ function SensorView({
         const cellRadius = Math.max(2.2, radius * (0.036 - pixel.ring * 0.0008));
         const isSelected = pixel.index === selectedPixel;
         const isOnBurstFootprint =
-          grbActive && isPixelOnBurstFootprint(pixel.index, selectedPixel);
+          burstDirections.some((directionPixel) =>
+            isPixelOnBurstFootprint(pixel.index, directionPixel),
+          );
         const isOnEarthAlbedo =
           isPixelLitByEarthAlbedo(
             pixel.index,
@@ -1285,6 +1292,7 @@ function SensorView({
             earthAlbedoAzimuth,
             earthAlbedoDirectional,
           );
+        const isOverlap = isFired && isOnBurstFootprint && isOnEarthAlbedo;
         context.beginPath();
         for (let side = 0; side < 6; side += 1) {
           const angle = (side / 6) * Math.PI * 2 + Math.PI / 6;
@@ -1296,7 +1304,9 @@ function SensorView({
         context.closePath();
         context.fillStyle = !isFired
           ? "rgba(19, 45, 55, 0.58)"
-          : isOnBurstFootprint
+          : isOverlap
+            ? `rgba(242, 225, 255, ${0.58 + value * 0.42})`
+            : isOnBurstFootprint
             ? `rgba(255, 77, 190, ${0.5 + value * 0.5})`
             : isOnEarthAlbedo
               ? `rgba(112, 215, 255, ${0.42 + value * 0.58})`
@@ -1355,9 +1365,10 @@ function SensorView({
           context.fillText("LUNA", moon.x, moon.y - radius * 0.05);
         }
       }
-      if (grbActive) {
-        const burstX = cx + Math.cos(selected.angle) * selected.radius * radius * 0.78;
-        const burstY = cy + Math.sin(selected.angle) * selected.radius * radius * 0.78;
+      burstDirections.forEach((directionPixel, burstIndex) => {
+        const burst = PIXEL_LAYOUT[directionPixel];
+        const burstX = cx + Math.cos(burst.angle) * burst.radius * radius * 0.78;
+        const burstY = cy + Math.sin(burst.angle) * burst.radius * radius * 0.78;
         drawHalo(
           burstX,
           burstY,
@@ -1377,9 +1388,9 @@ function SensorView({
           context.fillStyle = "#ff9bda";
           context.font = "6px monospace";
           context.textAlign = "center";
-          context.fillText("GRB", burstX, burstY - 10);
+          context.fillText(`GRB ${burstIndex + 1}`, burstX, burstY - 10);
         }
-      }
+      });
     }
 
     context.restore();
@@ -1421,11 +1432,11 @@ function SensorView({
   }, [
     detector,
     detectorHits,
+    burstDirections,
     earthAlbedoAzimuth,
     earthAlbedoDirectional,
     earthAlbedoNoise,
     earthIllumination,
-    grbActive,
     inclination,
     mode,
     moonDirection,
@@ -1472,7 +1483,9 @@ function SensorView({
         <span className={sunInFov ? "active sun" : ""}><i /> Sole</span>
         <span className={moonInFov ? "active moon" : ""}><i /> Luna</span>
         <span className={earthAlbedoNoise > 1 ? "active earth" : ""}><i /> Terra</span>
-        <span className={grbActive ? "active grb" : ""}><i /> GRB</span>
+        <span className={burstDirections.length > 0 ? "active grb" : ""}>
+          <i /> GRB ×{burstDirections.length}
+        </span>
         <em>
           {mode === "events"
             ? `${detectorHits.filter((hits) => hits > 0).length} PX ON`
@@ -1487,6 +1500,7 @@ function DetectorMap({
   values,
   hits,
   grbActive,
+  burstDirections,
   selectedPixel,
   earthIllumination,
   earthAlbedoAzimuth,
@@ -1496,6 +1510,7 @@ function DetectorMap({
   values: number[];
   hits: number[];
   grbActive: boolean;
+  burstDirections: number[];
   selectedPixel: number;
   earthIllumination: number;
   earthAlbedoAzimuth: number;
@@ -1527,11 +1542,11 @@ function DetectorMap({
           const isActive = hitCount > 0;
           const isBurstHit =
             isActive &&
-            grbActive &&
-            isPixelOnBurstFootprint(pixel.index, selectedPixel);
+            burstDirections.some((directionPixel) =>
+              isPixelOnBurstFootprint(pixel.index, directionPixel),
+            );
           const isEarthAlbedo =
             isActive &&
-            !isBurstHit &&
             isPixelLitByEarthAlbedo(
               pixel.index,
               earthIllumination,
@@ -1546,6 +1561,8 @@ function DetectorMap({
                 isBurstHit ? "is-burst-hit" : ""
               } ${
                 isEarthAlbedo ? "is-albedo" : ""
+              } ${
+                isBurstHit && isEarthAlbedo ? "is-overlap" : ""
               } ${
                 selectedPixel === pixel.index ? "is-selected" : ""
               }`}
@@ -1656,10 +1673,10 @@ export default function Home() {
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
   const [samples, setSamples] = useState<Sample[]>(() =>
-    Array.from({ length: 80 }, (_, index) => ({
-      background: 396 + Math.sin(index * 0.12) * 22 + Math.sin(index * 1.73) * 6,
-      source: 6 + Math.sin(index * 0.81) * 2,
-      observed: 404 + Math.sin(index * 0.12) * 22 + Math.sin(index * 1.31) * 8,
+    Array.from({ length: 80 }, () => ({
+      background: 414,
+      source: 0,
+      observed: 414,
     })),
   );
   const [eventLog, setEventLog] = useState([
@@ -1668,7 +1685,8 @@ export default function Home() {
   ]);
   const phaseRef = useRef(INITIAL_TELEMETRY.phase);
   const elapsedRef = useRef(0);
-  const grbTicksRef = useRef(0);
+  const activeBurstsRef = useRef<BurstEvent[]>([]);
+  const nextBurstIdRef = useRef(1);
   const totalRef = useRef(0);
   const capturedRef = useRef(0);
   const selectedPixelRef = useRef(43);
@@ -1705,48 +1723,44 @@ export default function Home() {
         celestial.sunNoise +
         celestial.moonNoise +
         celestial.earthAlbedoNoise;
-      const isGRB = grbTicksRef.current > 0;
-      if (isGRB) grbTicksRef.current -= 1;
-      const sourceMean = isGRB
-        ? 88 * Math.exp(-Math.max(0, 60 - grbTicksRef.current) / 21) + 7
-        : 5.5 + Math.max(0, Math.sin(phase * 0.8 - 0.4)) * 4.5;
-      const background = poissonLike(backgroundMean);
-      const source = poissonLike(sourceMean);
+      const activeBursts = activeBurstsRef.current.filter(
+        (burst) => burst.ticksRemaining > 0,
+      );
+      const burstDirections = activeBursts.map((burst) => burst.pixelIndex);
+      const isGRB = activeBursts.length > 0;
+      const background = Math.round(backgroundMean);
+      const source = Math.round(
+        activeBursts.reduce(
+          (sum, burst) => sum + 105 * Math.exp(-burst.ageTicks / 24),
+          0,
+        ),
+      );
       const observed = background + source;
       totalRef.current += observed;
       capturedRef.current += source;
-      const directionalWeights = PIXEL_LAYOUT.map((pixel) => {
-        const incidence = getBurstIncidence(pixel.index, selectedPixelRef.current);
-        return Math.pow(incidence, isGRB ? 2.4 : 5.5);
-      });
-      const albedoWeights = PIXEL_LAYOUT.map((pixel) =>
-        getEarthAlbedoResponse(
+      const detectorHits = PIXEL_LAYOUT.map((pixel) => {
+        const albedoResponse = getEarthAlbedoResponse(
           pixel.index,
           celestial.earthIllumination,
           celestial.earthAlbedoAzimuth,
           celestial.earthAlbedoDirectional,
-        ),
-      );
-      const directionalWeightSum = directionalWeights.reduce(
-        (sum, value) => sum + value,
-        0,
-      );
-      const albedoWeightSum = albedoWeights.reduce(
-        (sum, value) => sum + value,
-        0,
-      );
-      const diffuseTriggeredHits =
-        Math.max(0, background - celestial.earthAlbedoNoise) * 0.05;
-      const albedoTriggeredHits = celestial.earthAlbedoNoise * 0.12;
-      const sourceTriggeredHits = source * (isGRB ? 0.55 : 0.25);
-      const detectorHits = PIXEL_LAYOUT.map((pixel) => {
-        const mean =
-          diffuseTriggeredHits / PIXEL_LAYOUT.length +
-          (albedoTriggeredHits * albedoWeights[pixel.index]) /
-            Math.max(1e-6, albedoWeightSum) +
-          (sourceTriggeredHits * directionalWeights[pixel.index]) /
-            Math.max(1e-6, directionalWeightSum);
-        return poissonSample(mean);
+        );
+        let hits =
+          albedoResponse >= 0.12
+            ? Math.max(
+                1,
+                Math.round(
+                  (albedoResponse * celestial.earthAlbedoNoise) / 18,
+                ),
+              )
+            : 0;
+        activeBursts.forEach((burst) => {
+          if (!isPixelOnBurstFootprint(pixel.index, burst.pixelIndex)) return;
+          const incidence = getBurstIncidence(pixel.index, burst.pixelIndex);
+          const burstAmplitude = 5.5 * Math.exp(-burst.ageTicks / 28);
+          hits += Math.max(1, Math.round(burstAmplitude * incidence ** 2.2));
+        });
+        return hits;
       });
       const maxPixelHits = Math.max(1, ...detectorHits);
       const detector = detectorHits.map((hits) =>
@@ -1764,6 +1778,7 @@ export default function Home() {
         captured: capturedRef.current,
         significance: source / Math.sqrt(Math.max(1, background)),
         grbActive: isGRB,
+        burstDirections,
         detector,
         detectorHits,
         simulatedDate: celestial.date.toISOString(),
@@ -1782,6 +1797,13 @@ export default function Home() {
         earthAlbedoAzimuth: celestial.earthAlbedoAzimuth,
         earthAlbedoDirectional: celestial.earthAlbedoDirectional,
       });
+      activeBurstsRef.current = activeBursts
+        .map((burst) => ({
+          ...burst,
+          ageTicks: burst.ageTicks + 1,
+          ticksRemaining: burst.ticksRemaining - 1,
+        }))
+        .filter((burst) => burst.ticksRemaining > 0);
     }, 200);
     return () => window.clearInterval(timer);
   }, []);
@@ -1792,29 +1814,38 @@ export default function Home() {
   }, []);
 
   const injectGRB = useCallback(() => {
-    const targetPixel =
-      31 + Math.floor(((Math.sin(phaseRef.current * 1.7) + 1) / 2) * 64);
+    const targetPixel = selectedPixelRef.current;
     const footprintCount = PIXEL_LAYOUT.filter((pixel) =>
       isPixelOnBurstFootprint(pixel.index, targetPixel),
     ).length;
-    selectPixel(targetPixel);
-    grbTicksRef.current = 60;
+    const burstId = nextBurstIdRef.current;
+    nextBurstIdRef.current += 1;
+    activeBurstsRef.current = [
+      ...activeBurstsRef.current,
+      {
+        id: burstId,
+        pixelIndex: targetPixel,
+        ageTicks: 0,
+        ticksRemaining: 60,
+      },
+    ];
     setEventLog((current) => [
       ...current.slice(-4),
       {
         time: `T+${formatTime(elapsedRef.current).slice(3)}`,
-        text: `GRB sintetico · direzione ${PIXEL_LAYOUT[targetPixel].id} · ${footprintCount} pixel illuminati`,
+        text: `GRB #${burstId} · direzione ${PIXEL_LAYOUT[targetPixel].id} · ${footprintCount} pixel colpiti`,
         kind: "grb",
       },
     ]);
-  }, [selectPixel]);
+  }, []);
 
   const resetSimulation = useCallback(() => {
     phaseRef.current = 0.72;
     elapsedRef.current = 0;
     totalRef.current = 0;
     capturedRef.current = 0;
-    grbTicksRef.current = 0;
+    activeBurstsRef.current = [];
+    nextBurstIdRef.current = 1;
     selectPixel(43);
     setTelemetry(INITIAL_TELEMETRY);
     setEventLog([
@@ -1944,6 +1975,7 @@ export default function Home() {
             paused={paused}
             phase={telemetry.phase}
             grbActive={telemetry.grbActive}
+            burstDirections={telemetry.burstDirections}
             selectedPixel={selectedPixel}
             sunDirection={telemetry.sunDirection}
             moonDirection={telemetry.moonDirection}
@@ -1978,7 +2010,7 @@ export default function Home() {
             detector={telemetry.detector}
             detectorHits={telemetry.detectorHits}
             selectedPixel={selectedPixel}
-            grbActive={telemetry.grbActive}
+            burstDirections={telemetry.burstDirections}
             earthIllumination={telemetry.earthIllumination}
             earthAlbedoNoise={telemetry.earthAlbedoNoise}
             earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
@@ -2062,6 +2094,7 @@ export default function Home() {
               values={telemetry.detector}
               hits={telemetry.detectorHits}
               grbActive={telemetry.grbActive}
+              burstDirections={telemetry.burstDirections}
               selectedPixel={selectedPixel}
               earthIllumination={telemetry.earthIllumination}
               earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
@@ -2081,11 +2114,14 @@ export default function Home() {
             </div>
           </div>
 
-          <button className="grb-button" onClick={injectGRB} disabled={telemetry.grbActive}>
+          <button className="grb-button" onClick={injectGRB}>
             <Sparkles size={17} />
             <span>
-              <strong>{telemetry.grbActive ? "GRB IN CORSO" : "INIETTA GAMMA RAY BURST"}</strong>
-              <small>Simula un transiente nel flusso</small>
+              <strong>AGGIUNGI GAMMA RAY BURST</strong>
+              <small>
+                direzione {PIXEL_LAYOUT[selectedPixel].id} · attivi{" "}
+                {telemetry.burstDirections.length}
+              </small>
             </span>
           </button>
         </aside>

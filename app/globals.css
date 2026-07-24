@@ -1235,6 +1235,19 @@ button {
   box-shadow: 0 0 calc(7px + var(--heat) * 11px) rgba(255, 77, 190, 0.85);
 }
 
+.detector-map .detector-pixel.is-overlap {
+  color: #190d27;
+  border-color: #ffffff;
+  background: color-mix(
+    in srgb,
+    #b999ff calc((1 - var(--heat)) * 100%),
+    #ffffff calc(var(--heat) * 100%)
+  );
+  box-shadow:
+    0 0 5px rgba(255, 255, 255, 0.96),
+    0 0 calc(10px + var(--heat) * 13px) rgba(212, 170, 255, 0.92);
+}
+
 .detector-map .detector-pixel.is-selected {
   z-index: 3;
   border-color: #fff3b6;
