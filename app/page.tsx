@@ -284,8 +284,8 @@ function GlobeScene({
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     mount.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0x78bde9, 0.9);
-    const sunLight = new THREE.DirectionalLight(0xfff3d1, 3.2);
+    const ambient = new THREE.AmbientLight(0x4f7191, 0.38);
+    const sunLight = new THREE.DirectionalLight(0xfff4dc, 3.8);
     sunLight.position.set(-5, 3, 5);
     scene.add(ambient, sunLight);
 
@@ -312,100 +312,135 @@ function GlobeScene({
     );
     scene.add(stars);
 
-    const earthGeometry = new THREE.SphereGeometry(2.05, 96, 64);
-    const earthMaterial = new THREE.ShaderMaterial({
+    const textureLoader = new THREE.TextureLoader();
+    const maxAnisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    const prepareTexture = (texture: THREE.Texture, colorTexture = false) => {
+      texture.anisotropy = maxAnisotropy;
+      if (colorTexture) texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    };
+    const earthDayTexture = prepareTexture(
+      textureLoader.load("/textures/earth/day.jpg"),
+      true,
+    );
+    const earthNightTexture = prepareTexture(
+      textureLoader.load("/textures/earth/night.png"),
+      true,
+    );
+    const earthNormalTexture = prepareTexture(
+      textureLoader.load("/textures/earth/normal.jpg"),
+    );
+    const earthSpecularTexture = prepareTexture(
+      textureLoader.load("/textures/earth/specular.jpg"),
+    );
+    const earthCloudTexture = prepareTexture(
+      textureLoader.load("/textures/earth/clouds.png"),
+      true,
+    );
+
+    const earthGeometry = new THREE.SphereGeometry(2.05, 128, 96);
+    const earthMaterial = new THREE.MeshPhongMaterial({
+      map: earthDayTexture,
+      normalMap: earthNormalTexture,
+      normalScale: new THREE.Vector2(0.48, 0.48),
+      specularMap: earthSpecularTexture,
+      specular: new THREE.Color(0x6f91a8),
+      shininess: 18,
+    });
+    const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+
+    const nightMaterial = new THREE.ShaderMaterial({
       uniforms: {
-        time: { value: 0 },
+        nightMap: { value: earthNightTexture },
         lightDirection: { value: new THREE.Vector3(-1, 0.5, 1).normalize() },
       },
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
       vertexShader: `
-        varying vec3 vNormal;
-        varying vec3 vPosition;
         varying vec2 vUv;
+        varying vec3 vWorldNormal;
         void main() {
-          vNormal = normalize(normalMatrix * normal);
-          vPosition = position;
           vUv = uv;
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
           gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
         }
       `,
       fragmentShader: `
-        uniform float time;
+        uniform sampler2D nightMap;
         uniform vec3 lightDirection;
-        varying vec3 vNormal;
-        varying vec3 vPosition;
         varying vec2 vUv;
-
-        float hash(vec2 p) {
-          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-        }
-
-        float noise(vec2 p) {
-          vec2 i = floor(p);
-          vec2 f = fract(p);
-          f = f * f * (3.0 - 2.0 * f);
-          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-                     mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
-        }
-
+        varying vec3 vWorldNormal;
         void main() {
-          vec2 p = vec2(vUv.x * 12.0 + time * 0.008, vUv.y * 7.0);
-          float continents = noise(p) * 0.62 + noise(p * 2.4) * 0.28 + noise(p * 5.2) * 0.10;
-          float latitudeMask = smoothstep(0.07, 0.22, abs(vUv.y - 0.5));
-          float land = smoothstep(0.50 + 0.08 * latitudeMask, 0.63, continents);
-          float ice = smoothstep(0.40, 0.48, abs(vUv.y - 0.5));
-          vec3 ocean = mix(vec3(0.008, 0.10, 0.20), vec3(0.015, 0.30, 0.48), max(0.0, vNormal.z));
-          vec3 landColor = mix(vec3(0.05, 0.25, 0.18), vec3(0.18, 0.42, 0.25), continents);
-          vec3 color = mix(ocean, landColor, land);
-          color = mix(color, vec3(0.72, 0.86, 0.88), ice * 0.55);
-          float diffuse = max(dot(normalize(vNormal), normalize(lightDirection)), 0.0);
-          float night = smoothstep(-0.15, 0.18, diffuse);
-          color *= mix(0.075, 0.50 + diffuse * 0.72, night);
-          float city = step(0.79, hash(floor(p * 5.0))) * land * (1.0 - night);
-          color += vec3(1.0, 0.52, 0.12) * city * 0.95;
-          float rim = pow(1.0 - max(dot(vNormal, vec3(0.0, 0.0, 1.0)), 0.0), 3.0);
-          color += vec3(0.02, 0.22, 0.42) * rim;
-          gl_FragColor = vec4(color, 1.0);
+          float sunlight = dot(normalize(vWorldNormal), normalize(lightDirection));
+          float darkness = 1.0 - smoothstep(-0.22, 0.16, sunlight);
+          float twilight = 1.0 - smoothstep(-0.35, -0.05, sunlight);
+          vec3 cities = texture2D(nightMap, vUv).rgb;
+          float luminance = max(cities.r, max(cities.g, cities.b));
+          vec3 warmLights = cities * vec3(1.12, 0.86, 0.58);
+          gl_FragColor = vec4(warmLights * darkness * (1.15 + twilight * 0.35), luminance * darkness);
         }
       `,
     });
-    const earth = new THREE.Mesh(earthGeometry, earthMaterial);
-    earth.rotation.z = THREE.MathUtils.degToRad(23.4);
-    scene.add(earth);
-
-    const grid = new THREE.LineSegments(
-      new THREE.WireframeGeometry(new THREE.SphereGeometry(2.058, 24, 16)),
-      new THREE.LineBasicMaterial({
-        color: 0x61bde8,
-        transparent: true,
-        opacity: 0.055,
-      }),
+    const nightLights = new THREE.Mesh(
+      new THREE.SphereGeometry(2.056, 128, 96),
+      nightMaterial,
     );
-    grid.rotation.z = earth.rotation.z;
-    scene.add(grid);
 
+    const cloudMaterial = new THREE.MeshPhongMaterial({
+      map: earthCloudTexture,
+      alphaMap: earthCloudTexture,
+      color: 0xf5fbff,
+      transparent: true,
+      opacity: 0.82,
+      depthWrite: false,
+      alphaTest: 0.025,
+      shininess: 2,
+    });
+    const clouds = new THREE.Mesh(
+      new THREE.SphereGeometry(2.075, 128, 96),
+      cloudMaterial,
+    );
+
+    const earthSystem = new THREE.Group();
+    earthSystem.rotation.z = THREE.MathUtils.degToRad(23.4);
+    earthSystem.add(earth, nightLights, clouds);
+    scene.add(earthSystem);
+
+    const atmosphereMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        lightDirection: { value: new THREE.Vector3(-1, 0.5, 1).normalize() },
+      },
+      transparent: true,
+      side: THREE.FrontSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      vertexShader: `
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPosition;
+        void main() {
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 lightDirection;
+        varying vec3 vWorldNormal;
+        varying vec3 vWorldPosition;
+        void main() {
+          vec3 normal = normalize(vWorldNormal);
+          vec3 viewDirection = normalize(cameraPosition - vWorldPosition);
+          float rim = pow(1.0 - max(dot(normal, viewDirection), 0.0), 3.15);
+          float solar = smoothstep(-0.35, 0.35, dot(normal, normalize(lightDirection)));
+          vec3 sunset = mix(vec3(0.16, 0.38, 0.95), vec3(0.34, 0.72, 1.0), solar);
+          gl_FragColor = vec4(sunset, rim * mix(0.18, 0.82, solar));
+        }
+      `,
+    });
     const atmosphere = new THREE.Mesh(
-      new THREE.SphereGeometry(2.18, 64, 48),
-      new THREE.ShaderMaterial({
-        transparent: true,
-        side: THREE.BackSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        vertexShader: `
-          varying vec3 vNormal;
-          void main() {
-            vNormal = normalize(normalMatrix * normal);
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-          }
-        `,
-        fragmentShader: `
-          varying vec3 vNormal;
-          void main() {
-            float intensity = pow(0.72 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.3);
-            gl_FragColor = vec4(0.08, 0.55, 1.0, intensity * 0.7);
-          }
-        `,
-      }),
+      new THREE.SphereGeometry(2.17, 96, 72),
+      atmosphereMaterial,
     );
     scene.add(atmosphere);
 
@@ -642,12 +677,13 @@ function GlobeScene({
       sunBody.position.copy(sunSceneDirection).multiplyScalar(12.5);
       sunLight.position.copy(sunSceneDirection).multiplyScalar(9);
       sunLight.intensity = 2.7 + Math.min(1.2, settings.sunNoise / 90);
+      nightMaterial.uniforms.lightDirection.value.copy(sunSceneDirection);
+      atmosphereMaterial.uniforms.lightDirection.value.copy(sunSceneDirection);
       moonBody.position.copy(moonSceneDirection).multiplyScalar(5.4);
 
-      earthMaterial.uniforms.time.value += settings.paused ? 0 : delta;
       if (!settings.paused) {
-        earth.rotation.y += delta * 0.025;
-        grid.rotation.y = earth.rotation.y;
+        earthSystem.rotation.y += delta * 0.025;
+        clouds.rotation.y += delta * 0.004;
         stars.rotation.y -= delta * 0.002;
       }
 
@@ -734,6 +770,17 @@ function GlobeScene({
       renderer.dispose();
       earthGeometry.dispose();
       earthMaterial.dispose();
+      nightLights.geometry.dispose();
+      nightMaterial.dispose();
+      clouds.geometry.dispose();
+      cloudMaterial.dispose();
+      atmosphere.geometry.dispose();
+      atmosphereMaterial.dispose();
+      earthDayTexture.dispose();
+      earthNightTexture.dispose();
+      earthNormalTexture.dispose();
+      earthSpecularTexture.dispose();
+      earthCloudTexture.dispose();
       particleGeometry.dispose();
       starGeometry.dispose();
       pixelGeometry.dispose();
