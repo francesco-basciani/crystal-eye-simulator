@@ -7,6 +7,7 @@ import {
   ChevronRight,
   CircleDot,
   Gauge,
+  Network,
   Orbit,
   Pause,
   Play,
@@ -16,6 +17,7 @@ import {
   Sparkles,
   Sun,
   Moon,
+  X,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -169,6 +171,7 @@ function isPixelLitByEarthAlbedo(
 
 const DEFAULT_SIMULATION_EPOCH_MS = Date.UTC(2026, 6, 24, 12, 0, 0);
 const BURST_DURATION_TICKS = 15;
+const BASE_BACKGROUND_RATE = 360;
 const AU_KM = 149_597_870.7;
 const EFFECTIVE_FOV_DEG = 130;
 const EFFECTIVE_HALF_ANGLE_DEG = EFFECTIVE_FOV_DEG / 2;
@@ -288,8 +291,18 @@ const INITIAL_DETECTOR_HITS = PIXEL_LAYOUT.map((pixel) => {
 });
 
 const INITIAL_TELEMETRY: Telemetry = {
-  observed: 414,
-  background: 414,
+  observed: Math.round(
+    BASE_BACKGROUND_RATE +
+      INITIAL_CELESTIAL.sunNoise +
+      INITIAL_CELESTIAL.moonNoise +
+      INITIAL_CELESTIAL.earthAlbedoNoise,
+  ),
+  background: Math.round(
+    BASE_BACKGROUND_RATE +
+      INITIAL_CELESTIAL.sunNoise +
+      INITIAL_CELESTIAL.moonNoise +
+      INITIAL_CELESTIAL.earthAlbedoNoise,
+  ),
   source: 0,
   elapsed: 0,
   phase: 0.72,
@@ -1155,7 +1168,7 @@ function SignalChart({ data }: { data: Sample[] }) {
 
     const max = Math.max(520, ...data.map((point) => point.observed)) * 1.08;
     const drawSeries = (
-      key: keyof Sample,
+      getValue: (point: Sample) => number,
       color: string,
       lineWidth: number,
       fill?: string,
@@ -1163,7 +1176,7 @@ function SignalChart({ data }: { data: Sample[] }) {
       context.beginPath();
       data.forEach((point, index) => {
         const x = (index / Math.max(1, data.length - 1)) * width;
-        const y = height - (point[key] / max) * (height - 8) - 4;
+        const y = height - (getValue(point) / max) * (height - 8) - 4;
         if (index === 0) context.moveTo(x, y);
         else context.lineTo(x, y);
       });
@@ -1176,7 +1189,7 @@ function SignalChart({ data }: { data: Sample[] }) {
         context.beginPath();
         data.forEach((point, index) => {
           const x = (index / Math.max(1, data.length - 1)) * width;
-          const y = height - (point[key] / max) * (height - 8) - 4;
+          const y = height - (getValue(point) / max) * (height - 8) - 4;
           if (index === 0) context.moveTo(x, y);
           else context.lineTo(x, y);
         });
@@ -1186,9 +1199,56 @@ function SignalChart({ data }: { data: Sample[] }) {
       context.stroke();
     };
 
-    drawSeries("observed", "#62d9ff", 1.5, "rgba(52, 181, 223, 0.08)");
-    drawSeries("background", "rgba(154, 178, 191, 0.78)", 1);
-    drawSeries("source", "#ffc857", 1.5);
+    drawSeries(
+      (point) => point.observed,
+      "#62d9ff",
+      1.35,
+      "rgba(52, 181, 223, 0.07)",
+    );
+    drawSeries(
+      (point) => point.background,
+      "rgba(190, 209, 217, 0.88)",
+      1.15,
+    );
+
+    let index = 0;
+    while (index < data.length) {
+      while (index < data.length && data[index].source <= 0) index += 1;
+      const start = index;
+      while (index < data.length && data[index].source > 0) index += 1;
+      const end = index - 1;
+      if (start > end) continue;
+
+      context.beginPath();
+      for (let pointIndex = start; pointIndex <= end; pointIndex += 1) {
+        const point = data[pointIndex];
+        const x = (pointIndex / Math.max(1, data.length - 1)) * width;
+        const y = height - (point.observed / max) * (height - 8) - 4;
+        if (pointIndex === start) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      for (let pointIndex = end; pointIndex >= start; pointIndex -= 1) {
+        const point = data[pointIndex];
+        const x = (pointIndex / Math.max(1, data.length - 1)) * width;
+        const y = height - (point.background / max) * (height - 8) - 4;
+        context.lineTo(x, y);
+      }
+      context.closePath();
+      context.fillStyle = "rgba(255, 200, 87, 0.18)";
+      context.fill();
+
+      context.beginPath();
+      for (let pointIndex = start; pointIndex <= end; pointIndex += 1) {
+        const point = data[pointIndex];
+        const x = (pointIndex / Math.max(1, data.length - 1)) * width;
+        const y = height - (point.observed / max) * (height - 8) - 4;
+        if (pointIndex === start) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.strokeStyle = "#ffc857";
+      context.lineWidth = 2;
+      context.stroke();
+    }
   }, [data]);
 
   return <canvas ref={canvasRef} className="signal-canvas" aria-label="Photon count time series" />;
@@ -1755,6 +1815,187 @@ function RangeControl({
   );
 }
 
+function SystemGeometryPanel({
+  phase,
+  sunDirection,
+  moonDirection,
+  moonPhase,
+  earthIllumination,
+  onClose,
+}: {
+  phase: number;
+  sunDirection: [number, number, number];
+  moonDirection: [number, number, number];
+  moonPhase: number;
+  earthIllumination: number;
+  onClose: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const draw = () => {
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      const rect = canvas.getBoundingClientRect();
+      const ratio = Math.min(window.devicePixelRatio, 2);
+      canvas.width = Math.max(1, Math.round(rect.width * ratio));
+      canvas.height = Math.max(1, Math.round(rect.height * ratio));
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+      const width = rect.width;
+      const height = rect.height;
+      const cx = width * 0.5;
+      const cy = height * 0.52;
+      const orbitX = width * 0.29;
+      const orbitY = height * 0.34;
+      const earthRadius = Math.min(width, height) * 0.115;
+      const projectDirection = (direction: [number, number, number]) => {
+        const length = Math.hypot(direction[0], direction[2]) || 1;
+        return [direction[0] / length, direction[2] / length] as const;
+      };
+      const sun = projectDirection(sunDirection);
+      const moon = projectDirection(moonDirection);
+      const satelliteX = cx + Math.cos(phase) * orbitX;
+      const satelliteY = cy + Math.sin(phase) * orbitY;
+      const radialAngle = Math.atan2(satelliteY - cy, satelliteX - cx);
+
+      context.clearRect(0, 0, width, height);
+      const background = context.createRadialGradient(cx, cy, 0, cx, cy, width * 0.65);
+      background.addColorStop(0, "rgba(20, 72, 94, 0.16)");
+      background.addColorStop(1, "rgba(1, 5, 10, 0)");
+      context.fillStyle = background;
+      context.fillRect(0, 0, width, height);
+
+      context.strokeStyle = "rgba(102, 201, 232, 0.28)";
+      context.lineWidth = 1;
+      context.setLineDash([4, 5]);
+      context.beginPath();
+      context.ellipse(cx, cy, orbitX, orbitY, 0, 0, Math.PI * 2);
+      context.stroke();
+      context.setLineDash([]);
+
+      const drawCelestialVector = (
+        direction: readonly [number, number],
+        distance: number,
+        color: string,
+        label: string,
+        radius: number,
+      ) => {
+        const x = cx + direction[0] * distance;
+        const y = cy + direction[1] * distance * 0.72;
+        context.strokeStyle = color;
+        context.globalAlpha = 0.38;
+        context.setLineDash([3, 5]);
+        context.beginPath();
+        context.moveTo(cx, cy);
+        context.lineTo(x, y);
+        context.stroke();
+        context.setLineDash([]);
+        context.globalAlpha = 1;
+        context.fillStyle = color;
+        context.beginPath();
+        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.fill();
+        context.fillStyle = color;
+        context.font = "7px monospace";
+        context.textAlign = "center";
+        context.fillText(label, x, y - radius - 5);
+      };
+
+      drawCelestialVector(sun, Math.min(width, height) * 0.53, "#ffc857", "SUN", 6);
+      drawCelestialVector(moon, Math.min(width, height) * 0.43, "#b9ceff", "MOON", 4);
+
+      const dayOffsetX = sun[0] * earthRadius * 0.38;
+      const dayOffsetY = sun[1] * earthRadius * 0.38;
+      const earthGradient = context.createRadialGradient(
+        cx + dayOffsetX,
+        cy + dayOffsetY,
+        earthRadius * 0.08,
+        cx,
+        cy,
+        earthRadius,
+      );
+      earthGradient.addColorStop(0, "#66d5f2");
+      earthGradient.addColorStop(Math.max(0.3, earthIllumination * 0.68), "#16769f");
+      earthGradient.addColorStop(1, "#061c2a");
+      context.fillStyle = earthGradient;
+      context.beginPath();
+      context.arc(cx, cy, earthRadius, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = "rgba(126, 223, 249, 0.7)";
+      context.stroke();
+
+      context.fillStyle = "rgba(98, 217, 255, 0.1)";
+      context.beginPath();
+      context.moveTo(satelliteX, satelliteY);
+      context.arc(
+        satelliteX,
+        satelliteY,
+        Math.min(width, height) * 0.22,
+        radialAngle - THREE.MathUtils.degToRad(EFFECTIVE_HALF_ANGLE_DEG),
+        radialAngle + THREE.MathUtils.degToRad(EFFECTIVE_HALF_ANGLE_DEG),
+      );
+      context.closePath();
+      context.fill();
+
+      context.strokeStyle = "#62d9ff";
+      context.lineWidth = 1.2;
+      context.beginPath();
+      context.moveTo(satelliteX, satelliteY);
+      context.lineTo(
+        satelliteX + Math.cos(radialAngle) * 34,
+        satelliteY + Math.sin(radialAngle) * 34,
+      );
+      context.stroke();
+
+      context.save();
+      context.translate(satelliteX, satelliteY);
+      context.rotate(radialAngle);
+      context.fillStyle = "#e4fbff";
+      context.fillRect(-4, -3, 8, 6);
+      context.fillStyle = "#3eacc8";
+      context.fillRect(-11, -2, 6, 4);
+      context.fillRect(5, -2, 6, 4);
+      context.restore();
+
+      context.fillStyle = "#b8dce7";
+      context.font = "7px monospace";
+      context.textAlign = "center";
+      context.fillText("EARTH", cx, cy + 3);
+      context.fillStyle = "#62d9ff";
+      context.fillText("CRYSTAL EYE", satelliteX, satelliteY - 9);
+      context.fillStyle = "rgba(119, 155, 169, 0.75)";
+      context.textAlign = "left";
+      context.fillText("TOP-DOWN GEOMETRY · NOT TO SCALE", 8, height - 7);
+    };
+
+    const observer = new ResizeObserver(draw);
+    observer.observe(canvas);
+    draw();
+    return () => observer.disconnect();
+  }, [earthIllumination, moonDirection, phase, sunDirection]);
+
+  return (
+    <aside className="system-geometry-panel" aria-label="Earth, satellite, Sun, and Moon geometry">
+      <header>
+        <span><Network size={14} /> SYSTEM GEOMETRY</span>
+        <button type="button" onClick={onClose} aria-label="Close system geometry">
+          <X size={14} />
+        </button>
+      </header>
+      <canvas ref={canvasRef} />
+      <footer>
+        <span>FOV <b>{EFFECTIVE_FOV_DEG}°</b></span>
+        <span>EARTH LIGHT <b>{(earthIllumination * 100).toFixed(0)}%</b></span>
+        <span>MOON PHASE <b>{(moonPhase * 100).toFixed(0)}%</b></span>
+      </footer>
+    </aside>
+  );
+}
+
 export default function Home() {
   const [altitude, setAltitude] = useState(550);
   const [inclination, setInclination] = useState(20);
@@ -1762,14 +2003,15 @@ export default function Home() {
   const [paused, setPaused] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [systemZoom, setSystemZoom] = useState(55);
+  const [geometryOpen, setGeometryOpen] = useState(false);
   const [epochMs, setEpochMs] = useState(() => Date.now());
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
   const [samples, setSamples] = useState<Sample[]>(() =>
     Array.from({ length: 80 }, () => ({
-      background: 414,
+      background: INITIAL_TELEMETRY.background,
       source: 0,
-      observed: 414,
+      observed: INITIAL_TELEMETRY.background,
     })),
   );
   const [eventLog, setEventLog] = useState([
@@ -1799,9 +2041,6 @@ export default function Home() {
       const phase = phaseRef.current;
       const latitude = settings.inclination * Math.sin(phase);
       const longitude = ((phase * 180) / Math.PI * 1.07 + elapsedRef.current * 0.018 + 180) % 360 - 180;
-      const orbitalModulation = 34 * (0.5 + 0.5 * Math.sin(phase * 2.1 + 0.7));
-      const latitudeBoost = Math.abs(latitude) * 1.35;
-      const slowDrift = 18 * Math.sin(elapsedRef.current / 37);
       const celestial = getCelestialGeometry(
         elapsedRef.current,
         phase,
@@ -1810,10 +2049,7 @@ export default function Home() {
         settings.epochMs,
       );
       const backgroundMean =
-        360 +
-        orbitalModulation +
-        latitudeBoost +
-        slowDrift +
+        BASE_BACKGROUND_RATE +
         celestial.sunNoise +
         celestial.moonNoise +
         celestial.earthAlbedoNoise;
@@ -2139,6 +2375,25 @@ export default function Home() {
             systemZoom={systemZoom}
             onSystemZoomChange={setSystemZoom}
           />
+          {geometryOpen ? (
+            <SystemGeometryPanel
+              phase={telemetry.phase}
+              sunDirection={telemetry.sunDirection}
+              moonDirection={telemetry.moonDirection}
+              moonPhase={telemetry.moonPhase}
+              earthIllumination={telemetry.earthIllumination}
+              onClose={() => setGeometryOpen(false)}
+            />
+          ) : (
+            <button
+              type="button"
+              className="geometry-toggle"
+              onClick={() => setGeometryOpen(true)}
+            >
+              <Network size={14} />
+              SYSTEM GEOMETRY
+            </button>
+          )}
           <div className="stage-title">
             <span className="eyebrow">ORBITAL PHOTON CAPTURE</span>
             <h2>Earth · LEO <em>{altitude} km</em></h2>
@@ -2187,7 +2442,7 @@ export default function Home() {
             </div>
             <div className="stat-stack">
               <div><span className="legend-dot background-dot" /><small>BACKGROUND</small><strong>{telemetry.background}</strong></div>
-              <div><span className="legend-dot source-dot" /><small>SOURCE</small><strong>{telemetry.source}</strong></div>
+              <div><span className="legend-dot source-dot" /><small>GRB EXCESS</small><strong>{telemetry.source}</strong></div>
             </div>
           </div>
 
@@ -2195,7 +2450,7 @@ export default function Home() {
             <div className="chart-header">
               <div>
                 <small>LIGHT CURVE</small>
-                <strong>Observed = BG + source</strong>
+                <strong>Observed total = background + GRB excess</strong>
               </div>
               <span>0.2 s bins</span>
             </div>
