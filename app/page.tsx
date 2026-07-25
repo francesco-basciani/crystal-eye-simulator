@@ -76,6 +76,7 @@ type BurstEvent = {
 
 type CameraMode = "orbit" | "satellite";
 
+const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const PIXEL_RING_COUNTS = [1, 6, 12, 18, 24, 30, 35] as const;
 const PIXEL_LAYOUT: PixelLayout[] = PIXEL_RING_COUNTS.flatMap((count, ring) =>
   Array.from({ length: count }, (_, slot) => {
@@ -489,21 +490,21 @@ function GlobeScene({
       return texture;
     };
     const earthDayTexture = prepareTexture(
-      textureLoader.load("/textures/earth/day.jpg"),
+      textureLoader.load(`${PUBLIC_BASE_PATH}/textures/earth/day.jpg`),
       true,
     );
     const earthNightTexture = prepareTexture(
-      textureLoader.load("/textures/earth/night.png"),
+      textureLoader.load(`${PUBLIC_BASE_PATH}/textures/earth/night.png`),
       true,
     );
     const earthNormalTexture = prepareTexture(
-      textureLoader.load("/textures/earth/normal.jpg"),
+      textureLoader.load(`${PUBLIC_BASE_PATH}/textures/earth/normal.jpg`),
     );
     const earthSpecularTexture = prepareTexture(
-      textureLoader.load("/textures/earth/specular.jpg"),
+      textureLoader.load(`${PUBLIC_BASE_PATH}/textures/earth/specular.jpg`),
     );
     const earthCloudTexture = prepareTexture(
-      textureLoader.load("/textures/earth/clouds.png"),
+      textureLoader.load(`${PUBLIC_BASE_PATH}/textures/earth/clouds.png`),
       true,
     );
 

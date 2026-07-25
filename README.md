@@ -5,9 +5,10 @@ pixel response, Earth albedo, Sun and Moon interference, and gamma ray bursts.
 
 ## Live Demo
 
-[Open the simulator](https://crystal-eye-orbit-sim.francesco-basciani.chatgpt.site/)
+[Open the public simulator on GitHub Pages](https://francesco-basciani.github.io/crystal-eye-simulator/)
 
-> The hosted demo may require access granted by the owner.
+The project is also available on the
+[private project deployment](https://crystal-eye-orbit-sim.francesco-basciani.chatgpt.site/).
 
 ## How to Run Locally
 
@@ -49,5 +50,6 @@ The simulator uses:
 
 - `npm run dev`: start local development
 - `npm run build`: create and validate the production build
+- `npm run build:pages`: create the static GitHub Pages build in `out`
 - `npm run start`: serve the production build locally
 - `npm run lint`: run the source checks

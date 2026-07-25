@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { headers } from "next/headers";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,41 +12,36 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host =
-    requestHeaders.get("x-forwarded-host") ??
-    requestHeaders.get("host") ??
-    "localhost:3000";
-  const protocol =
-    requestHeaders.get("x-forwarded-proto") ??
-    (host.includes("localhost") ? "http" : "https");
-  const imageUrl = `${protocol}://${host}/og-v2.png`;
-  const title = "Crystal Eye · Orbital Photon Simulator";
-  const description =
-    "Digital twin interattivo per simulare l’orbita LEO del Crystal Eye, il background dinamico e la cattura di fotoni gamma.";
+const isGitHubPages = process.env.GITHUB_PAGES === "true";
+const publicBasePath = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const publicOrigin = isGitHubPages
+  ? "https://francesco-basciani.github.io/crystal-eye-simulator"
+  : "https://crystal-eye-orbit-sim.francesco-basciani.chatgpt.site";
+const imageUrl = `${publicOrigin}/og-v2.png`;
+const title = "Crystal Eye · Orbital Photon Simulator";
+const description =
+  "Digital twin interattivo per simulare l’orbita LEO del Crystal Eye, il background dinamico e la cattura di fotoni gamma.";
 
-  return {
+export const metadata: Metadata = {
+  title,
+  description,
+  icons: {
+    icon: `${publicBasePath}/favicon.svg`,
+    shortcut: `${publicBasePath}/favicon.svg`,
+  },
+  openGraph: {
     title,
     description,
-    icons: {
-      icon: "/favicon.svg",
-      shortcut: "/favicon.svg",
-    },
-    openGraph: {
-      title,
-      description,
-      type: "website",
-      images: [{ url: imageUrl, width: 1536, height: 1024, alt: title }],
-    },
-    twitter: {
-      card: "summary_large_image",
-      title,
-      description,
-      images: [imageUrl],
-    },
-  };
-}
+    type: "website",
+    images: [{ url: imageUrl, width: 1536, height: 1024, alt: title }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: [imageUrl],
+  },
+};
 
 export default function RootLayout({
   children,
