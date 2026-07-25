@@ -944,7 +944,7 @@ button {
 
 .celestial-scene-status {
   left: 25px;
-  top: 72px;
+  top: 96px;
   display: grid;
   gap: 5px;
 }
@@ -2011,6 +2011,25 @@ button {
 }
 
 .right-panel {
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+}
+
+.right-panel .detector-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.right-panel .detector-section > .chart-header {
+  flex: 0 0 auto;
+}
+
+.right-panel .detector-module {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -2380,6 +2399,7 @@ button {
 
   .detector-module {
     grid-template-columns: 156px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
       "map detail"
       "map cluster";
@@ -2389,9 +2409,14 @@ button {
 
   .detector-map {
     grid-area: map;
-    width: 156px;
-    height: 156px;
-    margin: 0;
+    width: auto;
+    height: 100%;
+    max-width: 156px;
+    max-height: 156px;
+    aspect-ratio: 1;
+    margin: 0 auto;
+    align-self: center;
+    justify-self: center;
   }
 
   .detector-pixel {
@@ -2404,6 +2429,8 @@ button {
   .cluster-readout {
     grid-area: cluster;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .cluster-heading,
@@ -2420,6 +2447,7 @@ button {
   .pixel-detail {
     grid-area: detail;
     min-height: 0;
+    overflow: hidden;
     padding: 6px;
     grid-template-columns: 1fr;
     gap: 5px;
@@ -2475,8 +2503,10 @@ button {
   }
 
   .detector-map {
-    width: 140px;
-    height: 140px;
+    width: auto;
+    height: 100%;
+    max-width: 140px;
+    max-height: 140px;
   }
 
   .signal-canvas {
