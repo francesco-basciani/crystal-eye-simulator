@@ -50,6 +50,7 @@ type Telemetry = Sample & {
   sunSeparation: number;
   moonSeparation: number;
   sunNoise: number;
+  sunExposure: number;
   moonNoise: number;
   sunInFov: boolean;
   moonInFov: boolean;
@@ -176,6 +177,21 @@ function getMountAlbedoTransmission(mountX: number, mountZ: number) {
   );
 }
 
+function getMountHorizonVisibility(mountX: number, mountZ: number) {
+  const horizonPixels = PIXEL_LAYOUT.filter((pixel) => pixel.ring >= 5);
+  return (
+    horizonPixels.reduce(
+      (sum, pixel) =>
+        sum + getMountSkyVisibility(pixel.index, mountX, mountZ),
+      0,
+    ) / horizonPixels.length
+  );
+}
+
+function getMountEffectiveFov(mountX: number, mountZ: number) {
+  return 92 + getMountHorizonVisibility(mountX, mountZ) * 38;
+}
+
 function getEarthAlbedoResponse(
   pixelIndex: number,
   illumination: number,
@@ -230,6 +246,7 @@ function isPixelLitByEarthAlbedo(
 const DEFAULT_SIMULATION_EPOCH_MS = Date.UTC(2026, 6, 24, 12, 0, 0);
 const BURST_DURATION_TICKS = 15;
 const BASE_BACKGROUND_RATE = 360;
+const DIRECT_SUN_BACKGROUND_RATE = 260;
 const AU_KM = 149_597_870.7;
 const EFFECTIVE_FOV_DEG = 130;
 const EFFECTIVE_HALF_ANGLE_DEG = EFFECTIVE_FOV_DEG / 2;
@@ -315,7 +332,9 @@ function getCelestialGeometry(
   const moonInFov = moonSeparation <= EFFECTIVE_HALF_ANGLE_DEG;
   const angularResponse = (separation: number) =>
     Math.max(0, Math.cos(THREE.MathUtils.degToRad(separation))) ** 2;
-  const sunNoise = sunInFov ? 115 * angularResponse(sunSeparation) : 0;
+  const sunNoise = sunInFov
+    ? DIRECT_SUN_BACKGROUND_RATE * angularResponse(sunSeparation)
+    : 0;
   const moonNoise = moonInFov
     ? 22 * angularResponse(moonSeparation) * (0.3 + 0.7 * moonIllumination.phase_fraction)
     : 0;
@@ -368,13 +387,15 @@ function getCelestialGeometry(
 
 const INITIAL_CELESTIAL = getCelestialGeometry(0, 0.72, 20, 550);
 const INITIAL_MOUNT_SUN_NOISE =
-  INITIAL_CELESTIAL.sunNoise *
-  getMountedDirectionVisibility(
-    INITIAL_CELESTIAL.sunDirection,
-    INITIAL_CELESTIAL.satelliteDirection,
-    0,
-    0,
-  );
+  INITIAL_CELESTIAL.sunSeparation <= getMountEffectiveFov(0, 0) / 2
+    ? INITIAL_CELESTIAL.sunNoise *
+      getMountedDirectionVisibility(
+        INITIAL_CELESTIAL.sunDirection,
+        INITIAL_CELESTIAL.satelliteDirection,
+        0,
+        0,
+      )
+    : 0;
 const INITIAL_MOUNT_MOON_NOISE =
   INITIAL_CELESTIAL.moonNoise *
   getMountedDirectionVisibility(
@@ -429,6 +450,7 @@ const INITIAL_TELEMETRY: Telemetry = {
   sunSeparation: INITIAL_CELESTIAL.sunSeparation,
   moonSeparation: INITIAL_CELESTIAL.moonSeparation,
   sunNoise: INITIAL_MOUNT_SUN_NOISE,
+  sunExposure: INITIAL_MOUNT_SUN_NOISE / DIRECT_SUN_BACKGROUND_RATE,
   moonNoise: INITIAL_MOUNT_MOON_NOISE,
   sunInFov: INITIAL_CELESTIAL.sunInFov,
   moonInFov: INITIAL_CELESTIAL.moonInFov,
@@ -2191,16 +2213,10 @@ function PayloadPlacementPanel({
   onClose: () => void;
 }) {
   const placementStats = useMemo(() => {
-    const horizonPixels = PIXEL_LAYOUT.filter((pixel) => pixel.ring >= 5);
-    const horizonVisibility =
-      horizonPixels.reduce(
-        (sum, pixel) =>
-          sum + getMountSkyVisibility(pixel.index, mountX, mountZ),
-        0,
-      ) / horizonPixels.length;
+    const horizonVisibility = getMountHorizonVisibility(mountX, mountZ);
     const earthExposure = getMountAlbedoTransmission(mountX, mountZ);
     return {
-      effectiveFov: 92 + horizonVisibility * 38,
+      effectiveFov: getMountEffectiveFov(mountX, mountZ),
       earthExposure,
       horizonVisibility,
     };
@@ -2402,22 +2418,30 @@ export default function Home() {
         settings.altitude,
         settings.epochMs,
       );
+      const mountedEffectiveFov = getMountEffectiveFov(
+        settings.mountX,
+        settings.mountZ,
+      );
       const mountedSunNoise =
-        celestial.sunNoise *
-        getMountedDirectionVisibility(
-          celestial.sunDirection,
-          celestial.satelliteDirection,
-          settings.mountX,
-          settings.mountZ,
-        );
+        celestial.sunSeparation <= mountedEffectiveFov / 2
+          ? celestial.sunNoise *
+            getMountedDirectionVisibility(
+              celestial.sunDirection,
+              celestial.satelliteDirection,
+              settings.mountX,
+              settings.mountZ,
+            )
+          : 0;
       const mountedMoonNoise =
-        celestial.moonNoise *
-        getMountedDirectionVisibility(
-          celestial.moonDirection,
-          celestial.satelliteDirection,
-          settings.mountX,
-          settings.mountZ,
-        );
+        celestial.moonSeparation <= mountedEffectiveFov / 2
+          ? celestial.moonNoise *
+            getMountedDirectionVisibility(
+              celestial.moonDirection,
+              celestial.satelliteDirection,
+              settings.mountX,
+              settings.mountZ,
+            )
+          : 0;
       const mountedEarthAlbedoNoise =
         celestial.earthAlbedoNoise *
         getMountAlbedoTransmission(settings.mountX, settings.mountZ);
@@ -2510,6 +2534,7 @@ export default function Home() {
         sunSeparation: celestial.sunSeparation,
         moonSeparation: celestial.moonSeparation,
         sunNoise: mountedSunNoise,
+        sunExposure: mountedSunNoise / DIRECT_SUN_BACKGROUND_RATE,
         moonNoise: mountedMoonNoise,
         sunInFov: celestial.sunInFov,
         moonInFov: celestial.moonInFov,
@@ -2604,22 +2629,27 @@ export default function Home() {
     setEpochMs(now);
     selectPixel(43);
     const celestial = getCelestialGeometry(0, 0.72, inclination, altitude, now);
+    const mountedEffectiveFov = getMountEffectiveFov(mountX, mountZ);
     const mountedSunNoise =
-      celestial.sunNoise *
-      getMountedDirectionVisibility(
-        celestial.sunDirection,
-        celestial.satelliteDirection,
-        mountX,
-        mountZ,
-      );
+      celestial.sunSeparation <= mountedEffectiveFov / 2
+        ? celestial.sunNoise *
+          getMountedDirectionVisibility(
+            celestial.sunDirection,
+            celestial.satelliteDirection,
+            mountX,
+            mountZ,
+          )
+        : 0;
     const mountedMoonNoise =
-      celestial.moonNoise *
-      getMountedDirectionVisibility(
-        celestial.moonDirection,
-        celestial.satelliteDirection,
-        mountX,
-        mountZ,
-      );
+      celestial.moonSeparation <= mountedEffectiveFov / 2
+        ? celestial.moonNoise *
+          getMountedDirectionVisibility(
+            celestial.moonDirection,
+            celestial.satelliteDirection,
+            mountX,
+            mountZ,
+          )
+        : 0;
     const mountedEarthAlbedoNoise =
       celestial.earthAlbedoNoise * getMountAlbedoTransmission(mountX, mountZ);
     const detectorHits = PIXEL_LAYOUT.map((pixel) => {
@@ -2653,6 +2683,7 @@ export default function Home() {
       sunSeparation: celestial.sunSeparation,
       moonSeparation: celestial.moonSeparation,
       sunNoise: mountedSunNoise,
+      sunExposure: mountedSunNoise / DIRECT_SUN_BACKGROUND_RATE,
       moonNoise: mountedMoonNoise,
       sunInFov: celestial.sunInFov,
       moonInFov: celestial.moonInFov,
@@ -2678,13 +2709,7 @@ export default function Home() {
   const occulted = Math.cos(telemetry.phase) < -0.45;
   const captureRate = telemetry.total > 0 ? (telemetry.captured / telemetry.total) * 100 : 0;
   const effectiveMountFov = useMemo(() => {
-    const horizonPixels = PIXEL_LAYOUT.filter((pixel) => pixel.ring >= 5);
-    const visibility =
-      horizonPixels.reduce(
-        (sum, pixel) => sum + getMountSkyVisibility(pixel.index, mountX, mountZ),
-        0,
-      ) / horizonPixels.length;
-    return 92 + visibility * 38;
+    return getMountEffectiveFov(mountX, mountZ);
   }, [mountX, mountZ]);
   const mountedSunInFov =
     telemetry.sunSeparation <= effectiveMountFov / 2 && telemetry.sunNoise > 0.1;
@@ -2960,7 +2985,12 @@ export default function Home() {
             <div className="celestial-rows">
               <div className={mountedSunInFov ? "in-fov sun" : ""}>
                 <Sun size={16} />
-                <span><small>SUN</small><strong>{telemetry.sunSeparation.toFixed(1)}° from boresight</strong></span>
+                <span>
+                  <small>SUN · DIRECT PHOTONS</small>
+                  <strong>
+                    {telemetry.sunSeparation.toFixed(1)}° · {(telemetry.sunExposure * 100).toFixed(0)}% exposure
+                  </strong>
+                </span>
                 <em>{mountedSunInFov ? `+${telemetry.sunNoise.toFixed(0)} c/s` : "OUT"}</em>
               </div>
               <div className={mountedMoonInFov ? "in-fov moon" : ""}>
