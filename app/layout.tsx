@@ -20,7 +20,7 @@ const publicOrigin = isGitHubPages
 const imageUrl = `${publicOrigin}/og-v2.png`;
 const title = "Crystal Eye · Orbital Photon Simulator";
 const description =
-  "Digital twin interattivo per simulare l’orbita LEO del Crystal Eye, il background dinamico e la cattura di fotoni gamma.";
+  "Interactive digital twin for simulating the Crystal Eye LEO orbit, dynamic background, and gamma photon capture.";
 
 export const metadata: Metadata = {
   title,
@@ -49,7 +49,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="it">
+    <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
       </body>

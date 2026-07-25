@@ -38,6 +38,7 @@ type Telemetry = Sample & {
   significance: number;
   grbActive: boolean;
   burstDirections: number[];
+  burstPixelGroups: number[][];
   detector: number[];
   detectorHits: number[];
   simulatedDate: string;
@@ -70,6 +71,7 @@ type PixelLayout = {
 type BurstEvent = {
   id: number;
   pixelIndex: number;
+  pixelIndices: number[];
   ageTicks: number;
   ticksRemaining: number;
 };
@@ -103,8 +105,6 @@ const PIXEL_NORMALS: [number, number, number][] = PIXEL_LAYOUT.map((pixel) => {
     Math.sin(polar) * Math.sin(pixel.angle),
   );
 });
-const BURST_FOOTPRINT_THRESHOLD = Math.cos(THREE.MathUtils.degToRad(38));
-
 function getBurstIncidence(pixelIndex: number, sourcePixelIndex: number) {
   const pixelNormal = PIXEL_NORMALS[pixelIndex];
   const sourceDirection = PIXEL_NORMALS[sourcePixelIndex];
@@ -116,8 +116,15 @@ function getBurstIncidence(pixelIndex: number, sourcePixelIndex: number) {
   );
 }
 
-function isPixelOnBurstFootprint(pixelIndex: number, sourcePixelIndex: number) {
-  return getBurstIncidence(pixelIndex, sourcePixelIndex) >= BURST_FOOTPRINT_THRESHOLD;
+function getBurstFootprint(sourcePixelIndex: number, pixelCount: number) {
+  return PIXEL_LAYOUT
+    .map((pixel) => ({
+      index: pixel.index,
+      incidence: getBurstIncidence(pixel.index, sourcePixelIndex),
+    }))
+    .sort((a, b) => b.incidence - a.incidence)
+    .slice(0, THREE.MathUtils.clamp(pixelCount, 1, PIXEL_LAYOUT.length))
+    .map(({ index }) => index);
 }
 
 function getEarthAlbedoResponse(
@@ -293,6 +300,7 @@ const INITIAL_TELEMETRY: Telemetry = {
   significance: 0,
   grbActive: false,
   burstDirections: [],
+  burstPixelGroups: [],
   detector: INITIAL_DETECTOR_HITS.map((hits) => (hits > 0 ? 0.55 : 0)),
   detectorHits: INITIAL_DETECTOR_HITS,
   simulatedDate: INITIAL_CELESTIAL.date.toISOString(),
@@ -327,6 +335,7 @@ function GlobeScene({
   phase,
   grbActive,
   burstDirections,
+  burstPixelGroups,
   selectedPixel,
   sunDirection,
   moonDirection,
@@ -349,6 +358,7 @@ function GlobeScene({
   phase: number;
   grbActive: boolean;
   burstDirections: number[];
+  burstPixelGroups: number[][];
   selectedPixel: number;
   sunDirection: [number, number, number];
   moonDirection: [number, number, number];
@@ -373,6 +383,7 @@ function GlobeScene({
     phase,
     grbActive,
     burstDirections,
+    burstPixelGroups,
     selectedPixel,
     sunDirection,
     moonDirection,
@@ -397,6 +408,7 @@ function GlobeScene({
       phase,
       grbActive,
       burstDirections,
+      burstPixelGroups,
       selectedPixel,
       sunDirection,
       moonDirection,
@@ -419,6 +431,7 @@ function GlobeScene({
     phase,
     grbActive,
     burstDirections,
+    burstPixelGroups,
     selectedPixel,
     sunDirection,
     moonDirection,
@@ -889,9 +902,7 @@ function GlobeScene({
         const hitCount = settings.detectorHits[index] ?? 0;
         const isFired = hitCount > 0;
         const isBurstPath =
-          settings.burstDirections.some((directionPixel) =>
-            isPixelOnBurstFootprint(index, directionPixel),
-          );
+          settings.burstPixelGroups.some((group) => group.includes(index));
         const albedoResponse = getEarthAlbedoResponse(
           index,
           settings.earthIllumination,
@@ -996,7 +1007,7 @@ function GlobeScene({
 
       const zoomFraction = settings.systemZoom / 100;
       const distance = THREE.MathUtils.lerp(12.8, 5.1, zoomFraction);
-      const followDistance = THREE.MathUtils.lerp(3.8, 1.15, zoomFraction);
+      const followDistance = THREE.MathUtils.lerp(12, 1.15, zoomFraction);
       if (settings.cameraMode === "satellite") {
         radialWorld.copy(satWorld).normalize();
         desiredCameraPosition
@@ -1051,31 +1062,31 @@ function GlobeScene({
   }, [onSystemZoomChange]);
 
   return (
-    <div className="globe-scene" ref={mountRef} aria-label="Simulazione tridimensionale dell’orbita">
+    <div className="globe-scene" ref={mountRef} aria-label="Three-dimensional orbital simulation">
       <div className="scene-hud scene-hud-top">
-        <span className="hud-tag"><CircleDot size={12} /> ORBITA LEO</span>
+        <span className="hud-tag"><CircleDot size={12} /> LEO ORBIT</span>
         <span>{altitude} km</span>
         <span>{inclination}° inc.</span>
       </div>
-      <div className="camera-modes" aria-label="Modalità camera">
+      <div className="camera-modes" aria-label="Camera mode">
         <button
           type="button"
           className={cameraMode === "orbit" ? "active" : ""}
           onClick={() => onCameraModeChange("orbit")}
         >
-          ORBITA
+          ORBIT
         </button>
         <button
           type="button"
           className={cameraMode === "satellite" ? "active" : ""}
           onClick={() => onCameraModeChange("satellite")}
         >
-          SATELLITE DALL’ALTO
+          SATELLITE TOP VIEW
         </button>
       </div>
       <label className="system-zoom-control">
         <span>
-          <b>ZOOM SISTEMA</b>
+          <b>SYSTEM ZOOM</b>
           <em>{Math.round(systemZoom)}%</em>
         </span>
         <input
@@ -1085,31 +1096,31 @@ function GlobeScene({
           step="1"
           value={systemZoom}
           style={{ "--zoom-progress": `${systemZoom}%` } as React.CSSProperties}
-          aria-label="Zoom dell’intero sistema Terra e satellite"
+          aria-label="Zoom the complete Earth and satellite system"
           onChange={(event) => onSystemZoomChange(Number(event.target.value))}
         />
       </label>
       <div className="scene-hud scene-hud-bottom">
         <span><span className="legend-dot background-dot" /> background</span>
-        <span><span className="legend-dot albedo-dot" /> albedo Terra</span>
-        <span><span className="legend-dot source-dot" /> sorgente</span>
+        <span><span className="legend-dot albedo-dot" /> Earth albedo</span>
+        <span><span className="legend-dot source-dot" /> source</span>
         <span><span className="legend-dot grb-dot" /> GRB</span>
       </div>
       <div className="celestial-scene-status">
         <span className={sunNoise > 0 ? "interfering" : ""}>
-          <Sun size={12} /> Sole {sunNoise > 0 ? `+${sunNoise.toFixed(0)} c/s` : "fuori cono"}
+          <Sun size={12} /> Sun {sunNoise > 0 ? `+${sunNoise.toFixed(0)} c/s` : "outside cone"}
         </span>
         <span className={moonNoise > 0 ? "interfering moon" : ""}>
-          <Moon size={12} /> Luna {moonNoise > 0 ? `+${moonNoise.toFixed(0)} c/s` : "fuori cono"}
+          <Moon size={12} /> Moon {moonNoise > 0 ? `+${moonNoise.toFixed(0)} c/s` : "outside cone"}
         </span>
         <span className={earthAlbedoNoise > 1 ? "interfering earth" : ""}>
-          <CircleDot size={12} /> Albedo Terra {earthAlbedoNoise > 1 ? `+${earthAlbedoNoise.toFixed(0)} c/s` : "minimo"}
+          <CircleDot size={12} /> Earth albedo {earthAlbedoNoise > 1 ? `+${earthAlbedoNoise.toFixed(0)} c/s` : "minimum"}
         </span>
       </div>
       <div className="drag-hint">
         {cameraMode === "satellite"
-          ? "camera agganciata al satellite · scorri per zoom"
-          : "trascina per ruotare · scorri per zoom"}
+          ? "camera locked to satellite · scroll to zoom"
+          : "drag to rotate · scroll to zoom"}
       </div>
     </div>
   );
@@ -1180,7 +1191,7 @@ function SignalChart({ data }: { data: Sample[] }) {
     drawSeries("source", "#ffc857", 1.5);
   }, [data]);
 
-  return <canvas ref={canvasRef} className="signal-canvas" aria-label="Serie temporale dei conteggi" />;
+  return <canvas ref={canvasRef} className="signal-canvas" aria-label="Photon count time series" />;
 }
 
 type SensorViewMode = "sky" | "mask" | "events";
@@ -1197,6 +1208,7 @@ function SensorView({
   detectorHits,
   selectedPixel,
   burstDirections,
+  burstPixelGroups,
   earthIllumination,
   earthAlbedoNoise,
   earthAlbedoAzimuth,
@@ -1213,6 +1225,7 @@ function SensorView({
   detectorHits: number[];
   selectedPixel: number;
   burstDirections: number[];
+  burstPixelGroups: number[][];
   earthIllumination: number;
   earthAlbedoNoise: number;
   earthAlbedoAzimuth: number;
@@ -1302,7 +1315,7 @@ function SensorView({
         context.fillStyle = "rgba(130, 164, 207, 0.55)";
         context.font = "6px monospace";
         context.textAlign = "left";
-        context.fillText("BACKGROUND DIFFUSO", cx - radius + 11, cy - radius + 17);
+        context.fillText("DIFFUSE BACKGROUND", cx - radius + 11, cy - radius + 17);
       }
     }
 
@@ -1332,7 +1345,7 @@ function SensorView({
         context.fillStyle = "#a6e3ff";
         context.font = "6px monospace";
         context.textAlign = "center";
-        context.fillText("ALBEDO TERRA", labelX, labelY);
+        context.fillText("EARTH ALBEDO", labelX, labelY);
       }
     }
 
@@ -1362,9 +1375,7 @@ function SensorView({
         const cellRadius = Math.max(2.2, radius * (0.036 - pixel.ring * 0.0008));
         const isSelected = pixel.index === selectedPixel;
         const isOnBurstFootprint =
-          burstDirections.some((directionPixel) =>
-            isPixelOnBurstFootprint(pixel.index, directionPixel),
-          );
+          burstPixelGroups.some((group) => group.includes(pixel.index));
         const isOnEarthAlbedo =
           isPixelLitByEarthAlbedo(
             pixel.index,
@@ -1413,7 +1424,7 @@ function SensorView({
           context.fillStyle = "#ffe09a";
           context.font = "6px monospace";
           context.textAlign = "center";
-          context.fillText("SOLE", sun.x, sun.y - radius * 0.055);
+          context.fillText("SUN", sun.x, sun.y - radius * 0.055);
         }
       }
       if (moon.visible) {
@@ -1442,7 +1453,7 @@ function SensorView({
           context.fillStyle = "#d7e5ff";
           context.font = "6px monospace";
           context.textAlign = "center";
-          context.fillText("LUNA", moon.x, moon.y - radius * 0.05);
+          context.fillText("MOON", moon.x, moon.y - radius * 0.05);
         }
       }
       burstDirections.forEach((directionPixel, burstIndex) => {
@@ -1513,6 +1524,7 @@ function SensorView({
     detector,
     detectorHits,
     burstDirections,
+    burstPixelGroups,
     earthAlbedoAzimuth,
     earthAlbedoDirectional,
     earthAlbedoNoise,
@@ -1529,7 +1541,7 @@ function SensorView({
   ]);
 
   return (
-    <section className="sensor-view" aria-label="Vista istantanea del campo del Crystal Eye">
+    <section className="sensor-view" aria-label="Instantaneous Crystal Eye field of view">
       <div className="sensor-view-header">
         <div>
           <small>CRYSTAL EYE VIEW</small>
@@ -1537,11 +1549,11 @@ function SensorView({
         </div>
         <span><i /> LIVE</span>
       </div>
-      <div className="sensor-view-tabs" role="group" aria-label="Modalità della vista sensore">
+      <div className="sensor-view-tabs" role="group" aria-label="Sensor view mode">
         {([
-          ["sky", "Cielo"],
-          ["mask", "Maschera"],
-          ["events", "Eventi"],
+          ["sky", "Sky"],
+          ["mask", "Mask"],
+          ["events", "Events"],
         ] as const).map(([value, label]) => (
           <button
             key={value}
@@ -1557,19 +1569,19 @@ function SensorView({
       <div className={`sensor-canvas-wrap mode-${mode}`}>
         <canvas ref={canvasRef} />
         <span className="sensor-north">+Y</span>
-        <span className="sensor-earth-shield">TERRA DIETRO IL PAYLOAD</span>
+        <span className="sensor-earth-shield">EARTH BEHIND PAYLOAD</span>
       </div>
       <div className="sensor-view-footer">
-        <span className={sunInFov ? "active sun" : ""}><i /> Sole</span>
-        <span className={moonInFov ? "active moon" : ""}><i /> Luna</span>
-        <span className={earthAlbedoNoise > 1 ? "active earth" : ""}><i /> Terra</span>
+        <span className={sunInFov ? "active sun" : ""}><i /> Sun</span>
+        <span className={moonInFov ? "active moon" : ""}><i /> Moon</span>
+        <span className={earthAlbedoNoise > 1 ? "active earth" : ""}><i /> Earth</span>
         <span className={burstDirections.length > 0 ? "active grb" : ""}>
           <i /> GRB ×{burstDirections.length}
         </span>
         <em>
           {mode === "events"
             ? `${detectorHits.filter((hits) => hits > 0).length} PX ON`
-            : "ricostruzione · non RGB"}
+            : "reconstruction · non-RGB"}
         </em>
       </div>
     </section>
@@ -1580,7 +1592,7 @@ function DetectorMap({
   values,
   hits,
   grbActive,
-  burstDirections,
+  burstPixelGroups,
   selectedPixel,
   earthIllumination,
   earthAlbedoAzimuth,
@@ -1590,7 +1602,7 @@ function DetectorMap({
   values: number[];
   hits: number[];
   grbActive: boolean;
-  burstDirections: number[];
+  burstPixelGroups: number[][];
   selectedPixel: number;
   earthIllumination: number;
   earthAlbedoAzimuth: number;
@@ -1614,7 +1626,7 @@ function DetectorMap({
     <div className="detector-module">
       <div
         className={`detector-map ${grbActive ? "is-grb" : ""}`}
-        aria-label="Mappa emisferica a nido d’ape dei 126 pixel"
+        aria-label="Hemispherical honeycomb map of the 126 pixels"
       >
         {PIXEL_LAYOUT.map((pixel) => {
           const value = values[pixel.index] ?? 0;
@@ -1622,9 +1634,7 @@ function DetectorMap({
           const isActive = hitCount > 0;
           const isBurstHit =
             isActive &&
-            burstDirections.some((directionPixel) =>
-              isPixelOnBurstFootprint(pixel.index, directionPixel),
-            );
+            burstPixelGroups.some((group) => group.includes(pixel.index));
           const isEarthAlbedo =
             isActive &&
             isPixelLitByEarthAlbedo(
@@ -1652,8 +1662,8 @@ function DetectorMap({
                 "--pixel-y": `${50 + Math.sin(pixel.angle) * pixel.radius * 44}%`,
                 "--delay": `${(pixel.index % 17) * 24}ms`,
               } as React.CSSProperties}
-              title={`${pixel.id} · ${hitCount} fotoni rilevati nel bin corrente`}
-              aria-label={`${pixel.id}, ${hitCount} fotoni rilevati`}
+              title={`${pixel.id} · ${hitCount} photons detected in the current bin`}
+              aria-label={`${pixel.id}, ${hitCount} photons detected`}
               onClick={() => onSelect(pixel.index)}
             >
               {String(pixel.index + 1).padStart(3, "0")}
@@ -1666,10 +1676,10 @@ function DetectorMap({
       <div className="cluster-readout">
         <div className="cluster-heading">
           <span>
-            <small>PIXEL ACCESI · HIT RILEVATI</small>
+            <small>ACTIVE PIXELS · DETECTED HITS</small>
             <strong>{activeCluster.length} / 126</strong>
           </span>
-          <em>Σ {totalHits} fotoni · Edep &gt; 30 keV</em>
+          <em>Σ {totalHits} photons · Edep &gt; 30 keV</em>
         </div>
         <div className="cluster-ids">
           {activeCluster.length > 0 ? (
@@ -1684,21 +1694,21 @@ function DetectorMap({
               </button>
             ))
           ) : (
-            <span>nessun pixel selezionato dal trigger</span>
+            <span>no pixels selected by the trigger</span>
           )}
         </div>
       </div>
 
       <div className="pixel-detail">
         <div className="pixel-id-block">
-          <small>PIXEL SELEZIONATO</small>
+          <small>SELECTED PIXEL</small>
           <strong>{PIXEL_LAYOUT[selectedPixel].id}</strong>
           <span>
             {selectedHits} hit · ring {PIXEL_LAYOUT[selectedPixel].ring} · slot{" "}
             {PIXEL_LAYOUT[selectedPixel].slot + 1}
           </span>
         </div>
-        <div className="pixel-stack" aria-label="Struttura del pixel selezionato">
+        <div className="pixel-stack" aria-label="Selected pixel structure">
           <span className="pixel-layer up"><b>UP · GAGG</b><em>4 cm · {upEnergy} keV</em></span>
           <i className="pixel-sipm">SiPM</i>
           <span className="pixel-layer down"><b>DOWN · LYSO</b><em>3 cm · {downEnergy} keV</em></span>
@@ -1763,8 +1773,8 @@ export default function Home() {
     })),
   );
   const [eventLog, setEventLog] = useState([
-    { time: "T+00:00", text: "Acquisizione scientifica avviata", kind: "system" },
-    { time: "T+00:00", text: "Modello background orbitale inizializzato", kind: "background" },
+    { time: "T+00:00", text: "Science acquisition started", kind: "system" },
+    { time: "T+00:00", text: "Orbital background model initialized", kind: "background" },
   ]);
   const phaseRef = useRef(INITIAL_TELEMETRY.phase);
   const elapsedRef = useRef(0);
@@ -1811,6 +1821,7 @@ export default function Home() {
         (burst) => burst.ticksRemaining > 0,
       );
       const burstDirections = activeBursts.map((burst) => burst.pixelIndex);
+      const burstPixelGroups = activeBursts.map((burst) => burst.pixelIndices);
       const isGRB = activeBursts.length > 0;
       const background = Math.round(backgroundMean);
       const source = Math.round(
@@ -1839,7 +1850,7 @@ export default function Home() {
               )
             : 0;
         activeBursts.forEach((burst) => {
-          if (!isPixelOnBurstFootprint(pixel.index, burst.pixelIndex)) return;
+          if (!burst.pixelIndices.includes(pixel.index)) return;
           const incidence = getBurstIncidence(pixel.index, burst.pixelIndex);
           const burstAmplitude = 6.2 * Math.exp(-burst.ageTicks / 6);
           hits += Math.max(1, Math.round(burstAmplitude * incidence ** 2.2));
@@ -1863,6 +1874,7 @@ export default function Home() {
         significance: source / Math.sqrt(Math.max(1, background)),
         grbActive: isGRB,
         burstDirections,
+        burstPixelGroups,
         detector,
         detectorHits,
         simulatedDate: celestial.date.toISOString(),
@@ -1898,10 +1910,10 @@ export default function Home() {
   }, []);
 
   const injectGRB = useCallback(() => {
-    const targetPixel = selectedPixelRef.current;
-    const footprintCount = PIXEL_LAYOUT.filter((pixel) =>
-      isPixelOnBurstFootprint(pixel.index, targetPixel),
-    ).length;
+    const targetPixel = Math.floor(Math.random() * PIXEL_LAYOUT.length);
+    const footprintCount = 4 + Math.floor(Math.random() * 25);
+    const pixelIndices = getBurstFootprint(targetPixel, footprintCount);
+    selectPixel(targetPixel);
     const burstId = nextBurstIdRef.current;
     nextBurstIdRef.current += 1;
     activeBurstsRef.current = [
@@ -1909,6 +1921,7 @@ export default function Home() {
       {
         id: burstId,
         pixelIndex: targetPixel,
+        pixelIndices,
         ageTicks: 0,
         ticksRemaining: BURST_DURATION_TICKS,
       },
@@ -1917,11 +1930,11 @@ export default function Home() {
       ...current.slice(-4),
       {
         time: `T+${formatTime(elapsedRef.current).slice(3)}`,
-        text: `GRB #${burstId} · direzione ${PIXEL_LAYOUT[targetPixel].id} · ${footprintCount} pixel colpiti`,
+        text: `GRB #${burstId} · direction ${PIXEL_LAYOUT[targetPixel].id} · ${pixelIndices.length} pixels hit`,
         kind: "grb",
       },
     ]);
-  }, []);
+  }, [selectPixel]);
 
   const setEphemerisUtc = useCallback((value: string) => {
     const requestedTime = Date.parse(`${value}Z`);
@@ -1963,8 +1976,8 @@ export default function Home() {
       earthAlbedoDirectional: celestial.earthAlbedoDirectional,
     });
     setEventLog([
-      { time: "T+00:00", text: "Simulazione ripristinata", kind: "system" },
-      { time: "T+00:00", text: "Acquisizione scientifica avviata", kind: "background" },
+      { time: "T+00:00", text: "Simulation reset", kind: "system" },
+      { time: "T+00:00", text: "Science acquisition started", kind: "background" },
     ]);
   }, [altitude, inclination, selectPixel]);
 
@@ -1994,7 +2007,7 @@ export default function Home() {
             <strong>{formatTime(telemetry.elapsed)}</strong>
           </div>
           <div className="header-metric celestial-time">
-            <small>DATA E ORA EFFEMERIDI · UTC</small>
+            <small>EPHEMERIS DATE AND TIME · UTC</small>
             <strong>
               {new Date(telemetry.simulatedDate)
                 .toISOString()
@@ -2017,11 +2030,11 @@ export default function Home() {
           </div>
 
           <div className="control-section">
-            <div className="section-label">CONFIGURAZIONE ORBITALE</div>
-            <RangeControl label="Altitudine" value={altitude} min={400} max={700} step={10} suffix=" km" onChange={setAltitude} />
-            <RangeControl label="Inclinazione" value={inclination} min={0} max={60} step={1} suffix="°" onChange={setInclination} />
-            <RangeControl label="Time warp fisico" value={speed} min={1} max={500} step={1} suffix="×" onChange={setSpeed} />
-            <div className="warp-presets" aria-label="Preset time warp">
+            <div className="section-label">ORBITAL CONFIGURATION</div>
+            <RangeControl label="Altitude" value={altitude} min={400} max={700} step={10} suffix=" km" onChange={setAltitude} />
+            <RangeControl label="Inclination" value={inclination} min={0} max={60} step={1} suffix="°" onChange={setInclination} />
+            <RangeControl label="Physical time warp" value={speed} min={1} max={500} step={1} suffix="×" onChange={setSpeed} />
+            <div className="warp-presets" aria-label="Time warp presets">
               {[1, 50, 200, 500].map((preset) => (
                 <button
                   type="button"
@@ -2034,7 +2047,7 @@ export default function Home() {
               ))}
             </div>
             <div className="ephemeris-control">
-              <label htmlFor="ephemeris-utc">DATA E ORA SIMULATA · UTC</label>
+              <label htmlFor="ephemeris-utc">SIMULATED DATE AND TIME · UTC</label>
               <div>
                 <input
                   id="ephemeris-utc"
@@ -2044,15 +2057,15 @@ export default function Home() {
                   onChange={(event) => setEphemerisUtc(event.target.value)}
                 />
                 <button type="button" onClick={setEphemerisToNow}>
-                  ORA
+                  NOW
                 </button>
               </div>
             </div>
             <div className="mini-grid">
-              <div><small>PERIODO</small><strong>{orbitPeriod.toFixed(1)} min</strong></div>
-              <div><small>FOV GEOMETRICO</small><strong>&gt; 2π sr</strong></div>
-              <div><small>CONO EFFICACE</small><strong>{EFFECTIVE_FOV_DEG}°</strong></div>
-              <div><small>POINTING</small><strong>anti-Terra</strong></div>
+              <div><small>PERIOD</small><strong>{orbitPeriod.toFixed(1)} min</strong></div>
+              <div><small>GEOMETRIC FOV</small><strong>&gt; 2π sr</strong></div>
+              <div><small>EFFECTIVE CONE</small><strong>{EFFECTIVE_FOV_DEG}°</strong></div>
+              <div><small>POINTING</small><strong>anti-Earth</strong></div>
             </div>
           </div>
 
@@ -2067,7 +2080,7 @@ export default function Home() {
               </div>
               <div>
                 <strong>Crystal Eye · Model 8</strong>
-                <span>Ø 30 cm · semisfera</span>
+                <span>Ø 30 cm · hemisphere</span>
                 <span>10 keV – 30 MeV</span>
                 <span>126 pixel · SiPM array</span>
               </div>
@@ -2075,12 +2088,12 @@ export default function Home() {
           </div>
 
           <div className="control-section grow">
-            <div className="section-label">STATO OSSERVAZIONE</div>
+            <div className="section-label">OBSERVATION STATUS</div>
             <div className={`observation-state ${occulted ? "occulted" : ""}`}>
               <div className="state-icon"><Satellite size={19} /></div>
               <div>
                 <small>EARTH OCCULTATION</small>
-                <strong>{occulted ? "Sorgente occultata" : "Campo visibile"}</strong>
+                <strong>{occulted ? "Source occulted" : "Field visible"}</strong>
               </div>
               <ChevronRight size={16} />
             </div>
@@ -2093,9 +2106,9 @@ export default function Home() {
           <div className="button-row">
             <button className="secondary-button" onClick={() => setPaused((value) => !value)}>
               {paused ? <Play size={16} /> : <Pause size={16} />}
-              {paused ? "Riprendi" : "Pausa"}
+              {paused ? "Resume" : "Pause"}
             </button>
-            <button className="icon-button" aria-label="Ripristina simulazione" onClick={resetSimulation}>
+            <button className="icon-button" aria-label="Reset simulation" onClick={resetSimulation}>
               <RotateCcw size={16} />
             </button>
           </div>
@@ -2110,6 +2123,7 @@ export default function Home() {
             phase={telemetry.phase}
             grbActive={telemetry.grbActive}
             burstDirections={telemetry.burstDirections}
+            burstPixelGroups={telemetry.burstPixelGroups}
             selectedPixel={selectedPixel}
             sunDirection={telemetry.sunDirection}
             moonDirection={telemetry.moonDirection}
@@ -2127,7 +2141,7 @@ export default function Home() {
           />
           <div className="stage-title">
             <span className="eyebrow">ORBITAL PHOTON CAPTURE</span>
-            <h2>Terra · LEO <em>{altitude} km</em></h2>
+            <h2>Earth · LEO <em>{altitude} km</em></h2>
           </div>
           <div className={`grb-alert ${telemetry.grbActive ? "visible" : ""}`}>
             <Zap size={18} />
@@ -2149,6 +2163,7 @@ export default function Home() {
             detectorHits={telemetry.detectorHits}
             selectedPixel={selectedPixel}
             burstDirections={telemetry.burstDirections}
+            burstPixelGroups={telemetry.burstPixelGroups}
             earthIllumination={telemetry.earthIllumination}
             earthAlbedoNoise={telemetry.earthAlbedoNoise}
             earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
@@ -2164,15 +2179,15 @@ export default function Home() {
 
           <div className="photon-summary">
             <div className="primary-count">
-              <small>CONTEGGI / 0.2 s</small>
+              <small>COUNTS / 0.2 s</small>
               <strong>{telemetry.observed}</strong>
               <span className={telemetry.grbActive ? "hot" : ""}>
-                {telemetry.grbActive ? "burst in corso" : "stream nominale"}
+                {telemetry.grbActive ? "burst in progress" : "nominal stream"}
               </span>
             </div>
             <div className="stat-stack">
               <div><span className="legend-dot background-dot" /><small>BACKGROUND</small><strong>{telemetry.background}</strong></div>
-              <div><span className="legend-dot source-dot" /><small>SORGENTE</small><strong>{telemetry.source}</strong></div>
+              <div><span className="legend-dot source-dot" /><small>SOURCE</small><strong>{telemetry.source}</strong></div>
             </div>
           </div>
 
@@ -2191,38 +2206,38 @@ export default function Home() {
             <div className="chart-header">
               <div>
                 <small>CELESTIAL INTERFERENCE</small>
-                <strong>Sole, Luna e albedo terrestre</strong>
+                <strong>Sun, Moon, and Earth albedo</strong>
               </div>
               <span>FOV {EFFECTIVE_FOV_DEG}°</span>
             </div>
             <div className="celestial-rows">
               <div className={telemetry.sunInFov ? "in-fov sun" : ""}>
                 <Sun size={16} />
-                <span><small>SOLE</small><strong>{telemetry.sunSeparation.toFixed(1)}° dal boresight</strong></span>
+                <span><small>SUN</small><strong>{telemetry.sunSeparation.toFixed(1)}° from boresight</strong></span>
                 <em>{telemetry.sunInFov ? `+${telemetry.sunNoise.toFixed(0)} c/s` : "OUT"}</em>
               </div>
               <div className={telemetry.moonInFov ? "in-fov moon" : ""}>
                 <Moon size={16} />
-                <span><small>LUNA · {(telemetry.moonPhase * 100).toFixed(0)}% illum.</small><strong>{telemetry.moonSeparation.toFixed(1)}° · {(telemetry.moonDistanceKm / 1000).toFixed(0)}k km</strong></span>
+                <span><small>MOON · {(telemetry.moonPhase * 100).toFixed(0)}% illum.</small><strong>{telemetry.moonSeparation.toFixed(1)}° · {(telemetry.moonDistanceKm / 1000).toFixed(0)}k km</strong></span>
                 <em>{telemetry.moonInFov ? `+${telemetry.moonNoise.toFixed(0)} c/s` : "OUT"}</em>
               </div>
               <div className={telemetry.earthAlbedoNoise > 1 ? "in-fov earth" : ""}>
                 <CircleDot size={16} />
                 <span>
-                  <small>TERRA · {(telemetry.earthIllumination * 100).toFixed(0)}% illuminata</small>
-                  <strong>albedo sui pixel periferici</strong>
+                  <small>EARTH · {(telemetry.earthIllumination * 100).toFixed(0)}% illuminated</small>
+                  <strong>albedo on peripheral pixels</strong>
                 </span>
                 <em>+{telemetry.earthAlbedoNoise.toFixed(0)} c/s</em>
               </div>
             </div>
-            <p>Geometria astronomica reale; ampiezze di disturbo parametriche, da calibrare.</p>
+            <p>Real astronomical geometry; parametric interference amplitudes require calibration.</p>
           </div>
 
           <div className="detector-section">
             <div className="chart-header">
               <div>
                 <small>DETECTOR RESPONSE</small>
-                <strong>Hit sopra soglia · bin 0.2 s</strong>
+                <strong>Hits above threshold · 0.2 s bin</strong>
               </div>
               <span>
                 {telemetry.detectorHits.filter((hits) => hits > 0).length} PX ON
@@ -2232,7 +2247,7 @@ export default function Home() {
               values={telemetry.detector}
               hits={telemetry.detectorHits}
               grbActive={telemetry.grbActive}
-              burstDirections={telemetry.burstDirections}
+              burstPixelGroups={telemetry.burstPixelGroups}
               selectedPixel={selectedPixel}
               earthIllumination={telemetry.earthIllumination}
               earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
@@ -2255,10 +2270,10 @@ export default function Home() {
           <button className="grb-button" onClick={injectGRB}>
             <Sparkles size={17} />
             <span>
-              <strong>AGGIUNGI GAMMA RAY BURST</strong>
+              <strong>INJECT GAMMA RAY BURST</strong>
               <small>
-                direzione {PIXEL_LAYOUT[selectedPixel].id} · attivi{" "}
-                {telemetry.burstDirections.length} · durata ≈ 3 s
+                random direction · 4–28 pixels · active{" "}
+                {telemetry.burstDirections.length} · duration ≈ 3 s
               </small>
             </span>
           </button>
