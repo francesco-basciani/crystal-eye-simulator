@@ -338,6 +338,8 @@ function GlobeScene({
   detectorHits,
   cameraMode,
   onCameraModeChange,
+  systemZoom,
+  onSystemZoomChange,
 }: {
   altitude: number;
   inclination: number;
@@ -358,6 +360,8 @@ function GlobeScene({
   detectorHits: number[];
   cameraMode: CameraMode;
   onCameraModeChange: (mode: CameraMode) => void;
+  systemZoom: number;
+  onSystemZoomChange: (value: number) => void;
 }) {
   const mountRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef({
@@ -379,6 +383,7 @@ function GlobeScene({
     earthAlbedoDirectional,
     detectorHits,
     cameraMode,
+    systemZoom,
     phaseUpdatedAt: 0,
   });
 
@@ -402,6 +407,7 @@ function GlobeScene({
       earthAlbedoDirectional,
       detectorHits,
       cameraMode,
+      systemZoom,
       phaseUpdatedAt: performance.now(),
     };
   }, [
@@ -423,6 +429,7 @@ function GlobeScene({
     earthAlbedoDirectional,
     detectorHits,
     cameraMode,
+    systemZoom,
   ]);
 
   useEffect(() => {
@@ -772,8 +779,6 @@ function GlobeScene({
     let lastY = 0;
     let yaw = 0;
     let pitch = 0.18;
-    let distance = 8.6;
-    let followDistance = 1.85;
     const onPointerDown = (event: PointerEvent) => {
       if (settingsRef.current.cameraMode === "satellite") return;
       dragging = true;
@@ -793,15 +798,13 @@ function GlobeScene({
     };
     const onWheel = (event: WheelEvent) => {
       event.preventDefault();
-      if (settingsRef.current.cameraMode === "satellite") {
-        followDistance = THREE.MathUtils.clamp(
-          followDistance + event.deltaY * 0.0025,
-          1.15,
-          3.8,
-        );
-      } else {
-        distance = THREE.MathUtils.clamp(distance + event.deltaY * 0.006, 5.2, 12);
-      }
+      onSystemZoomChange(
+        THREE.MathUtils.clamp(
+          settingsRef.current.systemZoom - event.deltaY * 0.045,
+          0,
+          100,
+        ),
+      );
     };
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
     renderer.domElement.addEventListener("pointermove", onPointerMove);
@@ -990,6 +993,9 @@ function GlobeScene({
       particleGeometry.attributes.position.needsUpdate = true;
       particleGeometry.attributes.color.needsUpdate = true;
 
+      const zoomFraction = settings.systemZoom / 100;
+      const distance = THREE.MathUtils.lerp(12.8, 5.1, zoomFraction);
+      const followDistance = THREE.MathUtils.lerp(3.8, 1.15, zoomFraction);
       if (settings.cameraMode === "satellite") {
         radialWorld.copy(satWorld).normalize();
         desiredCameraPosition
@@ -1041,7 +1047,7 @@ function GlobeScene({
       detectorShellMaterial.dispose();
       mount.removeChild(renderer.domElement);
     };
-  }, []);
+  }, [onSystemZoomChange]);
 
   return (
     <div className="globe-scene" ref={mountRef} aria-label="Simulazione tridimensionale dell’orbita">
@@ -1066,6 +1072,22 @@ function GlobeScene({
           SATELLITE DALL’ALTO
         </button>
       </div>
+      <label className="system-zoom-control">
+        <span>
+          <b>ZOOM SISTEMA</b>
+          <em>{Math.round(systemZoom)}%</em>
+        </span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          step="1"
+          value={systemZoom}
+          style={{ "--zoom-progress": `${systemZoom}%` } as React.CSSProperties}
+          aria-label="Zoom dell’intero sistema Terra e satellite"
+          onChange={(event) => onSystemZoomChange(Number(event.target.value))}
+        />
+      </label>
       <div className="scene-hud scene-hud-bottom">
         <span><span className="legend-dot background-dot" /> background</span>
         <span><span className="legend-dot albedo-dot" /> albedo Terra</span>
@@ -1728,6 +1750,7 @@ export default function Home() {
   const [speed, setSpeed] = useState(50);
   const [paused, setPaused] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
+  const [systemZoom, setSystemZoom] = useState(55);
   const [epochMs, setEpochMs] = useState(() => Date.now());
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
@@ -2098,6 +2121,8 @@ export default function Home() {
             detectorHits={telemetry.detectorHits}
             cameraMode={cameraMode}
             onCameraModeChange={setCameraMode}
+            systemZoom={systemZoom}
+            onSystemZoomChange={setSystemZoom}
           />
           <div className="stage-title">
             <span className="eyebrow">ORBITAL PHOTON CAPTURE</span>

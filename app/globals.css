@@ -18,6 +18,7 @@
 
 html,
 body {
+  height: 100%;
   min-height: 100%;
 }
 
@@ -28,7 +29,7 @@ body {
     linear-gradient(135deg, #030910 0%, #02070c 65%, #04121a 100%);
   color: var(--ink);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 button,
@@ -41,9 +42,10 @@ button {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   display: grid;
-  grid-template-rows: 70px minmax(650px, 1fr) 58px;
+  grid-template-rows: 70px minmax(0, 1fr) 58px;
   position: relative;
   isolation: isolate;
   background-image:
@@ -204,6 +206,7 @@ button {
   min-height: 0;
   display: grid;
   grid-template-columns: 286px minmax(420px, 1fr) 330px;
+  overflow: hidden;
 }
 
 .control-panel {
@@ -685,6 +688,73 @@ button {
   color: #061015;
   background: var(--cyan);
   box-shadow: 0 0 13px rgba(98, 217, 255, 0.25);
+}
+
+.system-zoom-control {
+  position: absolute;
+  z-index: 5;
+  top: 58px;
+  left: 50%;
+  width: min(220px, 34vw);
+  padding: 7px 10px 8px;
+  border: 1px solid var(--line);
+  background: rgba(2, 10, 16, 0.78);
+  backdrop-filter: blur(10px);
+  transform: translateX(-50%);
+}
+
+.system-zoom-control > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  color: #718f9e;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.system-zoom-control b {
+  font-weight: 500;
+}
+
+.system-zoom-control em {
+  color: var(--cyan);
+  font-style: normal;
+}
+
+.system-zoom-control input {
+  display: block;
+  width: 100%;
+  height: 3px;
+  appearance: none;
+  border-radius: 3px;
+  outline: 0;
+  cursor: ew-resize;
+  background: linear-gradient(
+    to right,
+    var(--cyan) 0 var(--zoom-progress),
+    rgba(117, 170, 193, 0.18) var(--zoom-progress) 100%
+  );
+}
+
+.system-zoom-control input::-webkit-slider-thumb {
+  width: 11px;
+  height: 11px;
+  appearance: none;
+  border: 2px solid #dcf9ff;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 9px rgba(98, 217, 255, 0.72);
+}
+
+.system-zoom-control input::-moz-range-thumb {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #dcf9ff;
+  border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 9px rgba(98, 217, 255, 0.72);
 }
 
 .scene-hud-bottom {
@@ -1504,9 +1574,7 @@ button {
 }
 
 .right-panel {
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(98, 217, 255, 0.24) transparent;
+  overflow: hidden;
 }
 
 .analysis-grid {
@@ -1689,6 +1757,300 @@ button {
   50% { opacity: 0.35; }
 }
 
+@media (max-height: 900px) and (min-width: 901px) {
+  .app-shell {
+    grid-template-rows: 58px minmax(0, 1fr) 44px;
+  }
+
+  .topbar {
+    padding-inline: 18px;
+  }
+
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+  }
+
+  .brand h1 {
+    font-size: 17px;
+  }
+
+  .eyebrow {
+    margin-bottom: 3px;
+    font-size: 7px;
+  }
+
+  .status-live {
+    margin-right: 12px;
+    padding: 6px 9px;
+    font-size: 8px;
+  }
+
+  .header-metric {
+    min-width: 110px;
+    height: 34px;
+    padding-inline: 12px;
+  }
+
+  .header-metric.celestial-time {
+    min-width: 170px;
+  }
+
+  .panel-heading {
+    height: 34px;
+    padding-inline: 13px;
+    font-size: 8px;
+  }
+
+  .control-section {
+    padding: 9px 13px;
+  }
+
+  .section-label {
+    margin-bottom: 8px;
+    font-size: 7px;
+  }
+
+  .range-control {
+    margin-bottom: 9px;
+  }
+
+  .range-control > span {
+    margin-bottom: 6px;
+    font-size: 9px;
+  }
+
+  .range-control strong {
+    font-size: 10px;
+  }
+
+  .warp-presets {
+    margin-bottom: 8px;
+  }
+
+  .warp-presets button {
+    height: 20px;
+  }
+
+  .ephemeris-control {
+    margin-bottom: 8px;
+  }
+
+  .ephemeris-control > label {
+    margin-bottom: 4px;
+  }
+
+  .ephemeris-control input,
+  .ephemeris-control button {
+    height: 24px;
+  }
+
+  .mini-grid {
+    gap: 5px;
+  }
+
+  .mini-grid > div {
+    padding: 6px 8px;
+  }
+
+  .mini-grid strong {
+    margin-top: 2px;
+    font-size: 9px;
+  }
+
+  .payload-card {
+    grid-template-columns: 62px 1fr;
+    gap: 9px;
+  }
+
+  .payload-visual {
+    height: 52px;
+    transform: scale(0.78);
+  }
+
+  .payload-card > div:last-child {
+    gap: 3px;
+  }
+
+  .observation-state {
+    grid-template-columns: 29px 1fr 13px;
+    padding: 7px;
+  }
+
+  .state-icon {
+    width: 28px;
+    height: 28px;
+  }
+
+  .coordinates {
+    padding-top: 7px;
+  }
+
+  .button-row {
+    padding: 8px 13px;
+  }
+
+  .secondary-button {
+    height: 31px;
+  }
+
+  .photon-summary {
+    min-height: 65px;
+  }
+
+  .primary-count {
+    padding: 8px 12px;
+  }
+
+  .primary-count > strong {
+    font-size: 24px;
+  }
+
+  .stat-stack > div {
+    padding: 5px 9px;
+  }
+
+  .chart-card,
+  .celestial-card,
+  .detector-section {
+    padding: 7px 10px;
+  }
+
+  .chart-header {
+    margin-bottom: 6px;
+  }
+
+  .signal-canvas {
+    height: 54px;
+  }
+
+  .celestial-rows {
+    gap: 4px;
+  }
+
+  .celestial-rows > div {
+    min-height: 37px;
+    padding: 5px 6px;
+  }
+
+  .celestial-card p {
+    display: none;
+  }
+
+  .detector-section {
+    flex: 1 1 auto;
+  }
+
+  .detector-module {
+    grid-template-columns: 156px minmax(0, 1fr);
+    grid-template-areas:
+      "map detail"
+      "map cluster";
+    gap: 6px;
+    align-items: stretch;
+  }
+
+  .detector-map {
+    grid-area: map;
+    width: 156px;
+    height: 156px;
+    margin: 0;
+  }
+
+  .detector-pixel {
+    width: 11px;
+    height: 10px;
+    font-size: 3.2px;
+    line-height: 10px;
+  }
+
+  .cluster-readout {
+    grid-area: cluster;
+    min-width: 0;
+  }
+
+  .cluster-heading,
+  .cluster-ids {
+    min-height: 0;
+    padding: 5px 6px;
+  }
+
+  .cluster-ids {
+    max-height: 58px;
+    overflow: hidden;
+  }
+
+  .pixel-detail {
+    grid-area: detail;
+    min-height: 0;
+    padding: 6px;
+    grid-template-columns: 1fr;
+    gap: 5px;
+  }
+
+  .pixel-id-block strong {
+    display: inline;
+    margin-right: 5px;
+    font-size: 12px;
+  }
+
+  .pixel-id-block span {
+    display: inline;
+  }
+
+  .pixel-layer {
+    min-height: 18px;
+  }
+
+  .analysis-grid {
+    padding: 6px 10px;
+    gap: 5px;
+  }
+
+  .analysis-grid > div {
+    min-height: 32px;
+    padding: 4px 6px;
+  }
+
+  .grb-button {
+    min-height: 40px;
+    margin: 6px 10px 8px;
+  }
+
+  .footer-label,
+  .event-stream,
+  .data-model {
+    padding-inline: 13px;
+  }
+}
+
+@media (max-height: 720px) and (min-width: 901px) {
+  .app-shell {
+    grid-template-rows: 52px minmax(0, 1fr) 38px;
+  }
+
+  .control-section {
+    padding-block: 6px;
+  }
+
+  .detector-module {
+    grid-template-columns: 140px minmax(0, 1fr);
+  }
+
+  .detector-map {
+    width: 140px;
+    height: 140px;
+  }
+
+  .signal-canvas {
+    height: 44px;
+  }
+
+  .system-zoom-control {
+    top: 53px;
+  }
+}
+
 @media (max-width: 1120px) {
   .workspace {
     grid-template-columns: 250px minmax(360px, 1fr) 292px;
@@ -1799,7 +2161,8 @@ button {
 
   .drag-hint,
   .scene-hud-top,
-  .camera-modes {
+  .camera-modes,
+  .system-zoom-control {
     display: none;
   }
 
