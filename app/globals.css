@@ -1222,109 +1222,6 @@ button {
     inset 0 1px rgba(172, 228, 248, 0.04);
 }
 
-.geometry-toggle,
-.system-geometry-panel {
-  position: absolute;
-  z-index: 6;
-  right: 18px;
-  top: 96px;
-}
-
-.geometry-toggle {
-  height: 31px;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 0 10px;
-  border: 1px solid rgba(98, 217, 255, 0.25);
-  color: #8fb7c6;
-  background: rgba(2, 10, 16, 0.82);
-  backdrop-filter: blur(10px);
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 7px;
-  letter-spacing: 0.09em;
-  cursor: pointer;
-}
-
-.geometry-toggle:hover {
-  color: var(--cyan);
-  border-color: rgba(98, 217, 255, 0.52);
-}
-
-.system-geometry-panel {
-  width: min(300px, calc(100% - 36px));
-  color: #dcecf3;
-  border: 1px solid rgba(98, 217, 255, 0.3);
-  background: rgba(2, 10, 17, 0.93);
-  backdrop-filter: blur(14px);
-  box-shadow:
-    0 18px 45px rgba(0, 0, 0, 0.4),
-    inset 0 1px rgba(172, 228, 248, 0.04);
-}
-
-.system-geometry-panel > header {
-  height: 34px;
-  padding: 0 7px 0 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid rgba(98, 217, 255, 0.14);
-}
-
-.system-geometry-panel > header span {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--cyan);
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 7px;
-  letter-spacing: 0.11em;
-}
-
-.system-geometry-panel > header button {
-  width: 25px;
-  height: 25px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  color: #688693;
-  background: transparent;
-  cursor: pointer;
-}
-
-.system-geometry-panel > header button:hover {
-  color: #e1f9ff;
-  background: rgba(98, 217, 255, 0.08);
-}
-
-.system-geometry-panel canvas {
-  width: 100%;
-  height: 160px;
-  display: block;
-  background:
-    linear-gradient(rgba(98, 217, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(98, 217, 255, 0.025) 1px, transparent 1px);
-  background-size: 18px 18px;
-}
-
-.system-geometry-panel > footer {
-  min-height: 31px;
-  padding: 6px 9px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 7px;
-  border-top: 1px solid rgba(98, 217, 255, 0.12);
-  color: #587986;
-  font-family: var(--font-geist-mono), monospace;
-  font-size: 6px;
-}
-
-.system-geometry-panel > footer b {
-  color: #a8d7e5;
-  font-weight: 500;
-}
-
 .sensor-view::before {
   content: "";
   position: absolute;
@@ -1379,7 +1276,7 @@ button {
 
 .sensor-view-tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   padding: 5px;
   gap: 4px;
   border-bottom: 1px solid rgba(113, 190, 219, 0.1);
@@ -1434,6 +1331,45 @@ button {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.system-geometry-view {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(98, 217, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(98, 217, 255, 0.025) 1px, transparent 1px),
+    #01050a;
+  background-size: 18px 18px;
+}
+
+.system-geometry-view canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.system-geometry-metrics {
+  position: absolute;
+  z-index: 2;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid rgba(98, 217, 255, 0.12);
+  color: #587986;
+  background: rgba(2, 10, 17, 0.78);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+  pointer-events: none;
+}
+
+.system-geometry-metrics b {
+  color: #a8d7e5;
+  font-weight: 500;
 }
 
 .sensor-north,

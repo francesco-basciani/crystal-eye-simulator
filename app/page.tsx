@@ -7,7 +7,6 @@ import {
   ChevronRight,
   CircleDot,
   Gauge,
-  Network,
   Orbit,
   Pause,
   Play,
@@ -1440,7 +1439,7 @@ function SignalChart({ data }: { data: Sample[] }) {
   return <canvas ref={canvasRef} className="signal-canvas" aria-label="Photon count time series" />;
 }
 
-type SensorViewMode = "sky" | "mask" | "events";
+type SensorViewMode = "sky" | "mask" | "events" | "geometry";
 
 function SensorView({
   phase,
@@ -1802,7 +1801,11 @@ function SensorView({
       <div className="sensor-view-header">
         <div>
           <small>CRYSTAL EYE VIEW</small>
-          <strong>Instantaneous FOV · {effectiveFov.toFixed(0)}°</strong>
+          <strong>
+            {mode === "geometry"
+              ? "Earth · satellite · Sun · Moon"
+              : `Instantaneous FOV · ${effectiveFov.toFixed(0)}°`}
+          </strong>
         </div>
         <span><i /> LIVE</span>
       </div>
@@ -1811,6 +1814,7 @@ function SensorView({
           ["sky", "Sky"],
           ["mask", "Mask"],
           ["events", "Events"],
+          ["geometry", "Geometry"],
         ] as const).map(([value, label]) => (
           <button
             key={value}
@@ -1824,9 +1828,22 @@ function SensorView({
         ))}
       </div>
       <div className={`sensor-canvas-wrap mode-${mode}`}>
-        <canvas ref={canvasRef} />
-        <span className="sensor-north">+Y</span>
-        <span className="sensor-earth-shield">EARTH BEHIND PAYLOAD</span>
+        {mode === "geometry" ? (
+          <SystemGeometryCanvas
+            phase={phase}
+            sunDirection={sunDirection}
+            moonDirection={moonDirection}
+            moonPhase={moonPhase}
+            earthIllumination={earthIllumination}
+            effectiveFov={effectiveFov}
+          />
+        ) : (
+          <>
+            <canvas ref={canvasRef} />
+            <span className="sensor-north">+Y</span>
+            <span className="sensor-earth-shield">EARTH BEHIND PAYLOAD</span>
+          </>
+        )}
       </div>
       <div className="sensor-view-footer">
         <span className={sunInFov ? "active sun" : ""}><i /> Sun</span>
@@ -1838,7 +1855,9 @@ function SensorView({
         <em>
           {mode === "events"
             ? `${detectorHits.filter((hits) => hits > 0).length} PX ON`
-            : "reconstruction · non-RGB"}
+            : mode === "geometry"
+              ? `FOV ${effectiveFov.toFixed(0)}° · top-down`
+              : "reconstruction · non-RGB"}
         </em>
       </div>
     </section>
@@ -2018,14 +2037,13 @@ function RangeControl({
   );
 }
 
-function SystemGeometryPanel({
+function SystemGeometryCanvas({
   phase,
   sunDirection,
   moonDirection,
   moonPhase,
   earthIllumination,
   effectiveFov,
-  onClose,
 }: {
   phase: number;
   sunDirection: [number, number, number];
@@ -2033,7 +2051,6 @@ function SystemGeometryPanel({
   moonPhase: number;
   earthIllumination: number;
   effectiveFov: number;
-  onClose: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -2184,20 +2201,14 @@ function SystemGeometryPanel({
   }, [earthIllumination, effectiveFov, moonDirection, phase, sunDirection]);
 
   return (
-    <aside className="system-geometry-panel" aria-label="Earth, satellite, Sun, and Moon geometry">
-      <header>
-        <span><Network size={14} /> SYSTEM GEOMETRY</span>
-        <button type="button" onClick={onClose} aria-label="Close system geometry">
-          <X size={14} />
-        </button>
-      </header>
+    <div className="system-geometry-view" aria-label="Earth, satellite, Sun, and Moon geometry">
       <canvas ref={canvasRef} />
-      <footer>
+      <div className="system-geometry-metrics">
         <span>FOV <b>{effectiveFov.toFixed(0)}°</b></span>
         <span>EARTH LIGHT <b>{(earthIllumination * 100).toFixed(0)}%</b></span>
         <span>MOON PHASE <b>{(moonPhase * 100).toFixed(0)}%</b></span>
-      </footer>
-    </aside>
+      </div>
+    </div>
   );
 }
 
@@ -2354,7 +2365,6 @@ export default function Home() {
   const [paused, setPaused] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [systemZoom, setSystemZoom] = useState(55);
-  const [geometryOpen, setGeometryOpen] = useState(false);
   const [placementOpen, setPlacementOpen] = useState(false);
   const [mountX, setMountX] = useState(0);
   const [mountZ, setMountZ] = useState(0);
@@ -2888,26 +2898,6 @@ export default function Home() {
             systemZoom={systemZoom}
             onSystemZoomChange={setSystemZoom}
           />
-          {geometryOpen ? (
-            <SystemGeometryPanel
-              phase={telemetry.phase}
-              sunDirection={telemetry.sunDirection}
-              moonDirection={telemetry.moonDirection}
-              moonPhase={telemetry.moonPhase}
-              earthIllumination={telemetry.earthIllumination}
-              effectiveFov={effectiveMountFov}
-              onClose={() => setGeometryOpen(false)}
-            />
-          ) : (
-            <button
-              type="button"
-              className="geometry-toggle"
-              onClick={() => setGeometryOpen(true)}
-            >
-              <Network size={14} />
-              SYSTEM GEOMETRY
-            </button>
-          )}
           <div className="stage-title">
             <span className="eyebrow">ORBITAL PHOTON CAPTURE</span>
             <h2>Earth · LEO <em>{altitude} km</em></h2>
