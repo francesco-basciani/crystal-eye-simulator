@@ -9,6 +9,7 @@ pixel response, Earth albedo, Sun and Moon interference, and gamma ray bursts.
 
 The project is also available on the
 [private project deployment](https://crystal-eye-orbit-sim.francesco-basciani.chatgpt.site/).
+Every push to `main` automatically updates the public GitHub Pages demo.
 
 ## How to Run Locally
 
