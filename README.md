@@ -1,17 +1,17 @@
 # Crystal Eye Simulator
 
-Simulatore interattivo del rivelatore Crystal Eye in orbita terrestre, con
-visualizzazione dei pixel, albedo della Terra, Sole, Luna e gamma ray burst.
+Interactive orbital simulator for the Crystal Eye detector, including its
+pixel response, Earth albedo, Sun and Moon interference, and gamma ray bursts.
 
-## Demo online
+## Live Demo
 
-[Apri il simulatore](https://crystal-eye-orbit-sim.francesco-basciani.chatgpt.site/)
+[Open the simulator](https://crystal-eye-orbit-sim.francesco-basciani.chatgpt.site/)
 
-> La demo può richiedere l’accesso autorizzato dal proprietario.
+> The hosted demo may require access granted by the owner.
 
-## Avvio locale
+## How to Run Locally
 
-Requisito: [Node.js](https://nodejs.org/) 22.13 o successivo.
+Prerequisite: Node.js `>=22.13.0`.
 
 ```bash
 git clone git@github.com:francesco-basciani/crystal-eye-simulator.git
@@ -20,24 +20,110 @@ npm install
 npm run dev
 ```
 
-Aprire nel browser l’indirizzo mostrato dal terminale, normalmente
-`http://localhost:3000`.
+Open the URL printed in the terminal, normally `http://localhost:3000`.
+Press `Ctrl+C` in the terminal to stop the development server.
 
-Per interrompere il simulatore premere `Ctrl+C` nel terminale.
+## Collaborating
 
-## Controllo della build
+Create a dedicated branch before starting a change:
 
 ```bash
+git switch -c feature/your-change
+```
+
+Push the branch to GitHub and open a Pull Request targeting `main`.
+
+## Tooling
+
+This project is based on a clean full-stack starter running on
+[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
+Drizzle support.
+
+### Quick Start
+
+```bash
+npm install
+npm run dev
 npm run build
 ```
 
-## Collaborare
+This starter does not use `wrangler.jsonc`.
 
-Creare un branch dedicato prima di iniziare una modifica:
+### Included Shape
 
-```bash
-git switch -c feature/nome-modifica
+- edit site code under `app/`
+- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
+- `vite.config.ts` simulates declared bindings for local development
+- `db/schema.ts` starts intentionally empty
+- `examples/d1/` contains an optional D1 example surface
+- `drizzle.config.ts` supports local migration generation when needed
+
+### Workspace Auth Headers
+
+OpenAI workspace sites can read the current user's email from
+`oai-authenticated-user-email`.
+
+SIWC-authenticated workspace sites may also receive
+`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
+`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
+`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+
+Treat the full name as optional and fall back to email when it is absent:
+
+```tsx
+import { headers } from "next/headers";
+
+export default async function Home() {
+  const requestHeaders = await headers();
+  const email = requestHeaders.get("oai-authenticated-user-email");
+  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
+  const fullName =
+    encodedFullName &&
+    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
+      "percent-encoded-utf-8"
+      ? decodeURIComponent(encodedFullName)
+      : null;
+
+  const displayName = fullName ?? email;
+  // ...
+}
 ```
 
-Al termine, pubblicare il branch su GitHub e aprire una Pull Request verso
-`main`.
+### Optional Dispatch-Owned ChatGPT Sign-In
+
+Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
+optional or required ChatGPT sign-in:
+
+- Use `getChatGPTUser()` for optional signed-in UI.
+- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
+  anonymous visitors through Sign in with ChatGPT.
+- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
+  browser links or actions.
+- Pass a same-origin relative `returnTo` path for the destination after sign-in
+  or sign-out. The helper validates and safely encodes it.
+- Mark protected pages with `export const dynamic = "force-dynamic"` because
+  they depend on per-request identity headers.
+
+Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
+OAuth cookies, and identity header injection. Do not implement app routes for
+those reserved paths. Routes that do not import and call the helper remain
+anonymous-compatible.
+
+SIWC establishes identity only; it does not prove workspace membership. Use the
+Sites hosting platform's access policy controls for workspace-wide restrictions,
+or enforce explicit server-side membership or allowlist checks.
+
+Use SIWC for account pages, user-specific dashboards, saved records, and write
+actions tied to the current ChatGPT user. Leave public content anonymous.
+
+### Useful Commands
+
+- `npm run dev`: start local development
+- `npm run build`: verify the vinext build output
+- `npm test`: build the starter and verify its rendered loading skeleton
+- `npm run db:generate`: generate Drizzle migrations after schema changes
+
+### Learn More
+
+- [vinext Documentation](https://github.com/cloudflare/vinext)
+- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
