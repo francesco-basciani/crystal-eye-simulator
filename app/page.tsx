@@ -173,7 +173,8 @@ const UNFOLDED_PIXEL_LAYOUT: UnfoldedPixelLayout[] = (() => {
     });
 
     ordered.slice(0, 3).forEach((pixel, position) => {
-      const offset = rotate(...seamPattern[position]);
+      const seamOffset = seamPattern[position];
+      const offset = rotate(seamOffset[0], seamOffset[1]);
       layout.push({
         index: pixel.index,
         x: 50 + Math.cos(sectorAngle) * 20.5 + offset.x,
