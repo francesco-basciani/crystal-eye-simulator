@@ -71,6 +71,13 @@ type PixelLayout = {
   radius: number;
 };
 
+type UnfoldedPixelLayout = {
+  index: number;
+  x: number;
+  y: number;
+  isSeam: boolean;
+};
+
 type BurstEvent = {
   id: number;
   pixelIndex: number;
@@ -101,6 +108,104 @@ const PIXEL_LAYOUT: PixelLayout[] = PIXEL_RING_COUNTS.flatMap((count, ring) =>
     };
   }),
 );
+const UNFOLDED_PIXEL_LAYOUT: UnfoldedPixelLayout[] = (() => {
+  const layout: UnfoldedPixelLayout[] = [];
+  const coreCoordinates: { q: number; r: number; radius: number; angle: number }[] = [];
+
+  for (let q = -2; q <= 2; q += 1) {
+    for (let r = -2; r <= 2; r += 1) {
+      const s = -q - r;
+      const radius = Math.max(Math.abs(q), Math.abs(r), Math.abs(s));
+      if (radius <= 2) {
+        coreCoordinates.push({
+          q,
+          r,
+          radius,
+          angle: Math.atan2(r, q + r / 2),
+        });
+      }
+    }
+  }
+
+  coreCoordinates
+    .sort((a, b) => a.radius - b.radius || a.angle - b.angle)
+    .forEach((coordinate, index) => {
+      layout.push({
+        index,
+        x: 50 + (coordinate.q + coordinate.r / 2) * 4.75,
+        y: 50 + coordinate.r * 5.25,
+        isSeam: false,
+      });
+    });
+
+  const sectorGroups = Array.from({ length: 6 }, () => [] as PixelLayout[]);
+  PIXEL_LAYOUT.filter((pixel) => pixel.ring > 2).forEach((pixel) => {
+    const shiftedAngle =
+      (pixel.angle + Math.PI / 6 + Math.PI * 2) % (Math.PI * 2);
+    sectorGroups[Math.floor(shiftedAngle / (Math.PI / 3))].push(pixel);
+  });
+
+  const seamPattern = [
+    [-2.15, -1.95],
+    [-2.15, 1.95],
+    [2.1, 0],
+  ] as const;
+  const bodyPatterns = {
+    14: [2, 3, 4, 3, 2],
+    15: [2, 3, 5, 3, 2],
+  } as const;
+
+  sectorGroups.forEach((group, sector) => {
+    const sectorAngle = sector * (Math.PI / 3);
+    const angularDistance = (angle: number) =>
+      Math.abs(
+        Math.atan2(
+          Math.sin(angle - sectorAngle),
+          Math.cos(angle - sectorAngle),
+        ),
+      );
+    const ordered = [...group].sort(
+      (a, b) => a.ring - b.ring || angularDistance(a.angle) - angularDistance(b.angle),
+    );
+    const rotate = (localX: number, localY: number) => ({
+      x: localX * Math.cos(sectorAngle) - localY * Math.sin(sectorAngle),
+      y: localX * Math.sin(sectorAngle) + localY * Math.cos(sectorAngle),
+    });
+
+    ordered.slice(0, 3).forEach((pixel, position) => {
+      const offset = rotate(...seamPattern[position]);
+      layout.push({
+        index: pixel.index,
+        x: 50 + Math.cos(sectorAngle) * 20.5 + offset.x,
+        y: 50 + Math.sin(sectorAngle) * 20.5 + offset.y,
+        isSeam: true,
+      });
+    });
+
+    const bodyPixels = ordered.slice(3);
+    const rowCounts =
+      bodyPatterns[bodyPixels.length as keyof typeof bodyPatterns] ??
+      bodyPatterns[15];
+    let bodyPosition = 0;
+    rowCounts.forEach((count, row) => {
+      for (let column = 0; column < count && bodyPosition < bodyPixels.length; column += 1) {
+        const localX = (column - (count - 1) / 2) * 4.15;
+        const localY = (row - 2) * 4.65;
+        const offset = rotate(localX, localY);
+        const pixel = bodyPixels[bodyPosition];
+        layout.push({
+          index: pixel.index,
+          x: 50 + Math.cos(sectorAngle) * 35 + offset.x,
+          y: 50 + Math.sin(sectorAngle) * 35 + offset.y,
+          isSeam: false,
+        });
+        bodyPosition += 1;
+      }
+    });
+  });
+
+  return layout.sort((a, b) => a.index - b.index);
+})();
 const PIXEL_NORMALS: [number, number, number][] = PIXEL_LAYOUT.map((pixel) => {
   const polar = THREE.MathUtils.lerp(0.04, Math.PI / 2 - 0.045, pixel.radius);
   return normalizeVector(
@@ -1901,14 +2006,47 @@ function DetectorMap({
       : 0;
   const upEnergy = Math.round(depositedEnergy * 0.61);
   const downEnergy = depositedEnergy - upEnergy;
+  const [projection, setProjection] = useState<"dome" | "unfolded">("dome");
 
   return (
-    <div className="detector-module">
+    <div className={`detector-module projection-${projection}`}>
+      <div className="detector-projection-tabs">
+        <div role="group" aria-label="Detector projection">
+          <button
+            type="button"
+            className={projection === "dome" ? "active" : ""}
+            aria-pressed={projection === "dome"}
+            onClick={() => setProjection("dome")}
+          >
+            DOME
+          </button>
+          <button
+            type="button"
+            className={projection === "unfolded" ? "active" : ""}
+            aria-pressed={projection === "unfolded"}
+            onClick={() => setProjection("unfolded")}
+          >
+            UNFOLDED
+          </button>
+        </div>
+        <span>
+          {projection === "unfolded"
+            ? "PROVISIONAL PX ID MAP"
+            : "HEMISPHERICAL RESPONSE"}
+        </span>
+      </div>
       <div
-        className={`detector-map ${grbActive ? "is-grb" : ""}`}
-        aria-label="Hemispherical honeycomb map of the 126 pixels"
+        className={`detector-map projection-${projection} ${
+          grbActive ? "is-grb" : ""
+        }`}
+        aria-label={
+          projection === "dome"
+            ? "Hemispherical honeycomb map of the 126 pixels"
+            : "Unfolded planar map of the 126 pixels with provisional IDs"
+        }
       >
         {PIXEL_LAYOUT.map((pixel) => {
+          const unfoldedPosition = UNFOLDED_PIXEL_LAYOUT[pixel.index];
           const value = values[pixel.index] ?? 0;
           const hitCount = hits[pixel.index] ?? 0;
           const isActive = hitCount > 0;
@@ -1937,14 +2075,26 @@ function DetectorMap({
                 isBurstHit && isEarthAlbedo ? "is-overlap" : ""
               } ${
                 selectedPixel === pixel.index ? "is-selected" : ""
+              } ${
+                projection === "unfolded" && unfoldedPosition.isSeam
+                  ? "is-unfolding-seam"
+                  : ""
               }`}
               style={{
                 "--heat": Math.min(1, value).toFixed(4),
-                "--pixel-x": `${50 + Math.cos(pixel.angle) * pixel.radius * 44}%`,
-                "--pixel-y": `${50 + Math.sin(pixel.angle) * pixel.radius * 44}%`,
+                "--pixel-x":
+                  projection === "dome"
+                    ? `${50 + Math.cos(pixel.angle) * pixel.radius * 44}%`
+                    : `${unfoldedPosition.x}%`,
+                "--pixel-y":
+                  projection === "dome"
+                    ? `${50 + Math.sin(pixel.angle) * pixel.radius * 44}%`
+                    : `${unfoldedPosition.y}%`,
                 "--delay": `${(pixel.index % 17) * 24}ms`,
               } as React.CSSProperties}
-              title={`${pixel.id} · ${hitCount} photons detected in the current bin`}
+              title={`${pixel.id}${
+                projection === "unfolded" ? " · provisional position" : ""
+              } · ${hitCount} photons detected in the current bin`}
               aria-label={`${pixel.id}, ${hitCount} photons detected`}
               onClick={() => onSelect(pixel.index)}
             >
@@ -1952,7 +2102,14 @@ function DetectorMap({
             </button>
           );
         })}
-        <div className="detector-axis"><i /> Z</div>
+        {projection === "dome" ? (
+          <div className="detector-axis"><i /> Z</div>
+        ) : (
+          <>
+            <div className="detector-axis unfolded-x"><i /> X</div>
+            <div className="detector-axis unfolded-y"><i /> Y</div>
+          </>
+        )}
       </div>
 
       <div className="cluster-readout">

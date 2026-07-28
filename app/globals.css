@@ -1667,6 +1667,58 @@ button {
   gap: 10px;
 }
 
+.detector-projection-tabs {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 8px;
+}
+
+.detector-projection-tabs > div {
+  display: flex;
+  gap: 3px;
+}
+
+.detector-projection-tabs button {
+  appearance: none;
+  min-width: 61px;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid rgba(105, 179, 190, 0.2);
+  background: rgba(6, 24, 31, 0.76);
+  color: #698b98;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.detector-projection-tabs button:hover,
+.detector-projection-tabs button:focus-visible {
+  color: #dffefa;
+  border-color: rgba(91, 231, 213, 0.58);
+  outline: 0;
+}
+
+.detector-projection-tabs button.active {
+  color: #dffefa;
+  border-color: rgba(91, 231, 213, 0.56);
+  background: rgba(42, 157, 156, 0.18);
+  box-shadow: inset 0 -2px 0 #55e6d6;
+}
+
+.detector-projection-tabs > span {
+  overflow: hidden;
+  color: #60808c;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+  letter-spacing: 0.07em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .detector-map {
   width: 236px;
   height: 236px;
@@ -1683,6 +1735,42 @@ button {
     inset -18px -20px 34px rgba(0, 0, 0, 0.55),
     inset 10px 9px 24px rgba(72, 200, 210, 0.08),
     0 0 26px rgba(35, 169, 183, 0.06);
+}
+
+.detector-map.projection-unfolded {
+  border-radius: 7px;
+  border-color: rgba(83, 224, 207, 0.18);
+  background:
+    linear-gradient(rgba(71, 165, 174, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(71, 165, 174, 0.05) 1px, transparent 1px),
+    radial-gradient(circle at 50% 50%, rgba(42, 177, 183, 0.1), transparent 63%),
+    rgba(4, 17, 23, 0.94);
+  background-size: 24px 24px, 24px 24px, auto, auto;
+  box-shadow:
+    inset 0 0 34px rgba(0, 0, 0, 0.48),
+    0 0 26px rgba(35, 169, 183, 0.05);
+}
+
+.detector-map.projection-unfolded::before,
+.detector-map.projection-unfolded::after {
+  content: "";
+  position: absolute;
+  pointer-events: none;
+  background: rgba(93, 181, 190, 0.13);
+}
+
+.detector-map.projection-unfolded::before {
+  top: 50%;
+  right: 7px;
+  left: 7px;
+  height: 1px;
+}
+
+.detector-map.projection-unfolded::after {
+  top: 7px;
+  bottom: 7px;
+  left: 50%;
+  width: 1px;
 }
 
 .detector-pixel {
@@ -1713,6 +1801,12 @@ button {
   cursor: pointer;
   transition: 120ms ease;
   animation-delay: var(--delay);
+}
+
+.detector-map.projection-unfolded .detector-pixel.is-unfolding-seam:not(.is-active) {
+  border-color: rgba(255, 125, 193, 0.42);
+  background: #3d2036;
+  color: rgba(255, 209, 235, 0.7);
 }
 
 .detector-pixel:hover,
@@ -1798,6 +1892,18 @@ button {
   background: var(--cyan);
   transform: rotate(-45deg);
   transform-origin: right center;
+}
+
+.detector-axis.unfolded-x {
+  right: 8px;
+  bottom: calc(50% + 4px);
+}
+
+.detector-axis.unfolded-y {
+  top: 7px;
+  right: calc(50% + 5px);
+  bottom: auto;
+  flex-direction: column;
 }
 
 .cluster-readout {
@@ -2335,12 +2441,21 @@ button {
 
   .detector-module {
     grid-template-columns: 156px minmax(0, 1fr);
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
     grid-template-areas:
+      "tabs tabs"
       "map detail"
       "map cluster";
     gap: 6px;
     align-items: stretch;
+  }
+
+  .detector-projection-tabs {
+    grid-area: tabs;
+  }
+
+  .detector-projection-tabs button {
+    height: 20px;
   }
 
   .detector-map {
