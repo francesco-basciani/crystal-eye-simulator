@@ -110,98 +110,76 @@ const PIXEL_LAYOUT: PixelLayout[] = PIXEL_RING_COUNTS.flatMap((count, ring) =>
 );
 const UNFOLDED_PIXEL_LAYOUT: UnfoldedPixelLayout[] = (() => {
   const layout: UnfoldedPixelLayout[] = [];
-  const coreCoordinates: { q: number; r: number; radius: number; angle: number }[] = [];
-
-  for (let q = -2; q <= 2; q += 1) {
-    for (let r = -2; r <= 2; r += 1) {
-      const s = -q - r;
-      const radius = Math.max(Math.abs(q), Math.abs(r), Math.abs(s));
-      if (radius <= 2) {
-        coreCoordinates.push({
-          q,
-          r,
-          radius,
-          angle: Math.atan2(r, q + r / 2),
-        });
-      }
+  const clusterPattern: [number, number][] = [];
+  [3, 4, 4, 3, 2].forEach((count, row) => {
+    for (let column = 0; column < count; column += 1) {
+      clusterPattern.push([
+        (column - (count - 1) / 2) * 3.85,
+        (row - 2) * 4.05,
+      ]);
     }
-  }
+  });
 
-  coreCoordinates
-    .sort((a, b) => a.radius - b.radius || a.angle - b.angle)
-    .forEach((coordinate, index) => {
+  const outerClusterAngles = [-126, -54, 18, 90, 162].map(
+    (degrees) => (degrees * Math.PI) / 180,
+  );
+  const clusterCenters = [
+    { x: 50, y: 50, angle: 0 },
+    ...outerClusterAngles.map((angle) => ({
+      x: 50 + Math.cos(angle) * 31.5,
+      y: 50 + Math.sin(angle) * 31.5,
+      angle,
+    })),
+  ];
+
+  clusterCenters.forEach((center, clusterIndex) => {
+    clusterPattern.forEach(([localX, localY], position) => {
+      const rotation = clusterIndex === 0 ? 0 : center.angle + Math.PI / 2;
+      const rotatedX =
+        localX * Math.cos(rotation) - localY * Math.sin(rotation);
+      const rotatedY =
+        localX * Math.sin(rotation) + localY * Math.cos(rotation);
       layout.push({
-        index,
-        x: 50 + (coordinate.q + coordinate.r / 2) * 4.75,
-        y: 50 + coordinate.r * 5.25,
+        index: clusterIndex * 16 + position,
+        x: center.x + rotatedX,
+        y: center.y + rotatedY,
         isSeam: false,
       });
     });
-
-  const sectorGroups = Array.from({ length: 6 }, () => [] as PixelLayout[]);
-  PIXEL_LAYOUT.filter((pixel) => pixel.ring > 2).forEach((pixel) => {
-    const shiftedAngle =
-      (pixel.angle + Math.PI / 6 + Math.PI * 2) % (Math.PI * 2);
-    sectorGroups[Math.floor(shiftedAngle / (Math.PI / 3))].push(pixel);
   });
 
-  const seamPattern = [
-    [-2.15, -1.95],
-    [-2.15, 1.95],
-    [2.1, 0],
+  const tripletPattern = [
+    [-2.05, -1.9],
+    [-2.05, 1.9],
+    [2.05, 0],
   ] as const;
-  const bodyPatterns = {
-    14: [2, 3, 4, 3, 2],
-    15: [2, 3, 5, 3, 2],
-  } as const;
+  const innerTriplets = outerClusterAngles.map((angle) => ({
+    angle,
+    radius: 17.7,
+  }));
+  const outerTriplets = outerClusterAngles.map((angle, index) => {
+    const nextAngle =
+      index === outerClusterAngles.length - 1
+        ? outerClusterAngles[0] + Math.PI * 2
+        : outerClusterAngles[index + 1];
+    return {
+      angle: (angle + nextAngle) / 2,
+      radius: 44,
+    };
+  });
 
-  sectorGroups.forEach((group, sector) => {
-    const sectorAngle = sector * (Math.PI / 3);
-    const angularDistance = (angle: number) =>
-      Math.abs(
-        Math.atan2(
-          Math.sin(angle - sectorAngle),
-          Math.cos(angle - sectorAngle),
-        ),
-      );
-    const ordered = [...group].sort(
-      (a, b) => a.ring - b.ring || angularDistance(a.angle) - angularDistance(b.angle),
-    );
-    const rotate = (localX: number, localY: number) => ({
-      x: localX * Math.cos(sectorAngle) - localY * Math.sin(sectorAngle),
-      y: localX * Math.sin(sectorAngle) + localY * Math.cos(sectorAngle),
-    });
-
-    ordered.slice(0, 3).forEach((pixel, position) => {
-      const seamOffset = seamPattern[position];
-      const offset = rotate(seamOffset[0], seamOffset[1]);
+  [...innerTriplets, ...outerTriplets].forEach((triplet, tripletIndex) => {
+    tripletPattern.forEach(([localX, localY], position) => {
+      const rotatedX =
+        localX * Math.cos(triplet.angle) - localY * Math.sin(triplet.angle);
+      const rotatedY =
+        localX * Math.sin(triplet.angle) + localY * Math.cos(triplet.angle);
       layout.push({
-        index: pixel.index,
-        x: 50 + Math.cos(sectorAngle) * 20.5 + offset.x,
-        y: 50 + Math.sin(sectorAngle) * 20.5 + offset.y,
+        index: 96 + tripletIndex * 3 + position,
+        x: 50 + Math.cos(triplet.angle) * triplet.radius + rotatedX,
+        y: 50 + Math.sin(triplet.angle) * triplet.radius + rotatedY,
         isSeam: true,
       });
-    });
-
-    const bodyPixels = ordered.slice(3);
-    const rowCounts =
-      bodyPatterns[bodyPixels.length as keyof typeof bodyPatterns] ??
-      bodyPatterns[15];
-    let bodyPosition = 0;
-    rowCounts.forEach((count, row) => {
-      for (let column = 0; column < count && bodyPosition < bodyPixels.length; column += 1) {
-        const localX = (column - (count - 1) / 2) * 4.15;
-        const localY = (row - 2) * 4.65;
-        const offset = rotate(localX, localY);
-        const pixel = bodyPixels[bodyPosition];
-        layout.push({
-          index: pixel.index,
-          x: 50 + Math.cos(sectorAngle) * 35 + offset.x,
-          y: 50 + Math.sin(sectorAngle) * 35 + offset.y,
-          isSeam: false,
-        });
-        bodyPosition += 1;
-      }
     });
   });
 
@@ -2032,7 +2010,7 @@ function DetectorMap({
         </div>
         <span>
           {projection === "unfolded"
-            ? "PROVISIONAL PX ID MAP"
+            ? "6×16 GRAY · 10×3 RED · PROVISIONAL IDs"
             : "HEMISPHERICAL RESPONSE"}
         </span>
       </div>
