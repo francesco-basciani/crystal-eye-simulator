@@ -94,8 +94,19 @@ type BurstEvent = {
   pixelIndex: number;
   pixelIndices: number[];
   transmission: number;
+  intensity: number;
+  raDeg: number;
+  decDeg: number;
   ageTicks: number;
   ticksRemaining: number;
+};
+
+type TestBurstDraft = {
+  raDeg: number;
+  decDeg: number;
+  intensity: number;
+  spreadPixels: number;
+  durationSeconds: number;
 };
 
 type CameraMode = "orbit" | "satellite";
@@ -524,6 +535,14 @@ const DIRECT_SUN_BACKGROUND_RATE = 260;
 const AU_KM = 149_597_870.7;
 const EFFECTIVE_FOV_DEG = 130;
 const EFFECTIVE_HALF_ANGLE_DEG = EFFECTIVE_FOV_DEG / 2;
+const IMPACT_COLOR_STOPS = [
+  { value: 0, color: "#172b8f" },
+  { value: 0.22, color: "#075bd8" },
+  { value: 0.42, color: "#00bce8" },
+  { value: 0.62, color: "#28d66f" },
+  { value: 0.8, color: "#f2e616" },
+  { value: 1, color: "#ff2217" },
+] as const;
 
 function normalizeVector(x: number, y: number, z: number): [number, number, number] {
   const length = Math.hypot(x, y, z) || 1;
@@ -536,6 +555,52 @@ function angleBetween(
 ) {
   const cosine = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
   return THREE.MathUtils.radToDeg(Math.acos(cosine));
+}
+
+function getImpactColor(value: number) {
+  const normalized = THREE.MathUtils.clamp(value, 0, 1);
+  const upperIndex = IMPACT_COLOR_STOPS.findIndex(
+    (stop) => stop.value >= normalized,
+  );
+  if (upperIndex <= 0) return IMPACT_COLOR_STOPS[0].color;
+  const lower = IMPACT_COLOR_STOPS[upperIndex - 1];
+  const upper = IMPACT_COLOR_STOPS[upperIndex];
+  const fraction = (normalized - lower.value) / (upper.value - lower.value);
+  return `#${new THREE.Color(lower.color)
+    .lerp(new THREE.Color(upper.color), fraction)
+    .getHexString()}`;
+}
+
+const IMPACT_THREE_COLORS = Array.from(
+  { length: 101 },
+  (_, index) => new THREE.Color(getImpactColor(index / 100)),
+);
+const WHITE_THREE_COLOR = new THREE.Color(0xffffff);
+
+function equatorialToSceneDirection(raDeg: number, decDeg: number) {
+  const rightAscension = THREE.MathUtils.degToRad(
+    ((raDeg % 360) + 360) % 360,
+  );
+  const declination = THREE.MathUtils.degToRad(
+    THREE.MathUtils.clamp(decDeg, -90, 90),
+  );
+  const equatorialX = Math.cos(declination) * Math.cos(rightAscension);
+  const equatorialY = Math.cos(declination) * Math.sin(rightAscension);
+  const equatorialZ = Math.sin(declination);
+  return normalizeVector(equatorialX, equatorialZ, equatorialY);
+}
+
+function sceneDirectionToEquatorial(direction: [number, number, number]) {
+  return {
+    raDeg:
+      ((THREE.MathUtils.radToDeg(Math.atan2(direction[2], direction[0])) %
+        360) +
+        360) %
+      360,
+    decDeg: THREE.MathUtils.radToDeg(
+      Math.asin(THREE.MathUtils.clamp(direction[1], -1, 1)),
+    ),
+  };
 }
 
 function getMountedDirectionVisibility(
@@ -762,6 +827,7 @@ function GlobeScene({
   earthAlbedoNoise,
   earthAlbedoAzimuth,
   earthAlbedoDirectional,
+  detectorIntensity,
   detectorHits,
   mountX,
   mountZ,
@@ -788,6 +854,7 @@ function GlobeScene({
   earthAlbedoNoise: number;
   earthAlbedoAzimuth: number;
   earthAlbedoDirectional: number;
+  detectorIntensity: number[];
   detectorHits: number[];
   mountX: number;
   mountZ: number;
@@ -816,6 +883,7 @@ function GlobeScene({
     earthAlbedoNoise,
     earthAlbedoAzimuth,
     earthAlbedoDirectional,
+    detectorIntensity,
     detectorHits,
     mountX,
     mountZ,
@@ -844,6 +912,7 @@ function GlobeScene({
       earthAlbedoNoise,
       earthAlbedoAzimuth,
       earthAlbedoDirectional,
+      detectorIntensity,
       detectorHits,
       mountX,
       mountZ,
@@ -870,6 +939,7 @@ function GlobeScene({
     earthAlbedoNoise,
     earthAlbedoAzimuth,
     earthAlbedoDirectional,
+    detectorIntensity,
     detectorHits,
     mountX,
     mountZ,
@@ -1390,6 +1460,7 @@ function GlobeScene({
       crystalPixels.forEach((crystal, index) => {
         const material = pixelMaterials[index];
         const isSelected = index === settings.selectedPixel;
+        const impact = settings.detectorIntensity[index] ?? 0;
         const hitCount = settings.detectorHits[index] ?? 0;
         const isFired = hitCount > 0;
         const isBurstPath =
@@ -1412,31 +1483,14 @@ function GlobeScene({
             settings.mountZ,
           );
         const isOverlap = isFired && isBurstPath && isEarthPath;
-        material.color.setHex(
-          isOverlap
-            ? 0xf4e9ff
-            : isFired && isBurstPath
-            ? 0xff4dbe
-            : isFired && isEarthPath
-              ? 0x7fd8ff
-              : isFired
-                ? 0x76efe0
-                : isSelected
-                  ? 0x665326
-                  : 0x24494e,
-        );
-        material.emissive.setHex(
-          isOverlap
-            ? 0x76539b
-            : isFired && isBurstPath
-            ? 0x8d124f
-            : isFired && isEarthPath
-              ? 0x155d83
-              : isFired
-                ? 0x0b766f
-                : isSelected
-                  ? 0x2a2105
-                  : 0x03191d,
+        const impactColor =
+          IMPACT_THREE_COLORS[Math.round(THREE.MathUtils.clamp(impact, 0, 1) * 100)];
+        material.color.copy(impactColor);
+        if (isSelected && !isFired) {
+          material.color.lerp(WHITE_THREE_COLOR, 0.32);
+        }
+        material.emissive.copy(impactColor).multiplyScalar(
+          isFired ? 0.48 : isSelected ? 0.2 : 0.07,
         );
         material.emissiveIntensity = isFired
           ? isOverlap
@@ -2233,6 +2287,7 @@ function DetectorMap({
               }`}
               style={{
                 "--heat": Math.min(1, value).toFixed(4),
+                "--impact-color": getImpactColor(value),
                 "--pixel-x": `${configuredPixel.x}%`,
                 "--pixel-y": `${configuredPixel.y}%`,
                 "--delay": `${(pixel.index % 17) * 24}ms`,
@@ -2245,6 +2300,12 @@ function DetectorMap({
             </button>
           );
         })}
+        <div
+          className="detector-color-scale"
+          aria-label="Impact intensity color scale from background 0 to maximum impact 100"
+        >
+          <span>0</span><i /><span>100</span>
+        </div>
       </div>
     </div>
   );
@@ -3152,6 +3213,14 @@ export default function Home() {
   const [epochMs, setEpochMs] = useState(() => Date.now());
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [detectorExpanded, setDetectorExpanded] = useState(false);
+  const [testBurstOpen, setTestBurstOpen] = useState(false);
+  const [testBurstDraft, setTestBurstDraft] = useState<TestBurstDraft>({
+    raDeg: 0,
+    decDeg: 0,
+    intensity: 100,
+    spreadPixels: 18,
+    durationSeconds: 1.2,
+  });
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
   const [samples, setSamples] = useState<Sample[]>(() =>
     Array.from({ length: 80 }, () => ({
@@ -3215,13 +3284,14 @@ export default function Home() {
   }, [altitude, inclination, speed, paused, epochMs, mountX, mountZ]);
 
   useEffect(() => {
-    if (!detectorExpanded) return;
+    if (!detectorExpanded && !testBurstOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setDetectorExpanded(false);
+      if (event.key === "Escape") setTestBurstOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [detectorExpanded]);
+  }, [detectorExpanded, testBurstOpen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -3284,6 +3354,7 @@ export default function Home() {
           (sum, burst) =>
             sum +
             135 *
+              (burst.intensity / 100) *
               burst.transmission *
               Math.exp(-burst.ageTicks / 5.5),
           0,
@@ -3292,7 +3363,7 @@ export default function Home() {
       const observed = background + source;
       totalRef.current += observed;
       capturedRef.current += source;
-      const detectorHits = PIXEL_LAYOUT.map((pixel) => {
+      const detectorResponse = PIXEL_LAYOUT.map((pixel) => {
         const albedoResponse = getEarthAlbedoResponse(
           pixel.index,
           celestial.earthIllumination,
@@ -3310,6 +3381,7 @@ export default function Home() {
                 ),
               )
             : 0;
+        let impact = THREE.MathUtils.clamp(albedoResponse * 0.42, 0, 0.42);
         activeBursts.forEach((burst) => {
           if (!burst.pixelIndices.includes(pixel.index)) return;
           const incidence = getConfiguredBurstIncidence(
@@ -3317,22 +3389,32 @@ export default function Home() {
             pixel.index,
             burst.pixelIndex,
           );
-          const burstAmplitude = 6.2 * Math.exp(-burst.ageTicks / 6);
+          const temporalResponse = Math.exp(
+            -Math.max(0, burst.ageTicks - 1) / 5,
+          );
+          const normalizedImpact =
+            (burst.intensity / 100) *
+            incidence ** 2.2 *
+            temporalResponse;
+          const burstAmplitude =
+            10.5 * (burst.intensity / 100) * temporalResponse;
           hits += Math.max(
             1,
             Math.round(
-              burstAmplitude *
-                incidence ** 2.2 *
-                burst.transmission,
+                burstAmplitude *
+                  incidence ** 2.2 *
+                  burst.transmission,
             ),
           );
+          impact = Math.max(impact, normalizedImpact);
         });
-        return hits;
+        return {
+          hits,
+          impact: THREE.MathUtils.clamp(impact, 0, 1),
+        };
       });
-      const maxPixelHits = Math.max(1, ...detectorHits);
-      const detector = detectorHits.map((hits) =>
-        hits > 0 ? Math.min(1, 0.3 + (hits / maxPixelHits) * 0.7) : 0,
-      );
+      const detectorHits = detectorResponse.map((pixel) => pixel.hits);
+      const detector = detectorResponse.map((pixel) => pixel.impact);
       const next = { observed, background, source };
       setSamples((current) => [...current.slice(-119), next]);
       setTelemetry({
@@ -3395,32 +3477,42 @@ export default function Home() {
     [],
   );
 
-  const injectGRB = useCallback(() => {
-    const visibleTargets = PIXEL_LAYOUT.filter(
-      (pixel) =>
-        getMountSkyVisibility(
-          pixel.index,
-          settingsRef.current.mountX,
-          settingsRef.current.mountZ,
-        ) >= 0.12,
-    );
-    const targetPixel =
-      visibleTargets[Math.floor(Math.random() * visibleTargets.length)]?.index ??
-      Math.floor(Math.random() * PIXEL_LAYOUT.length);
-    const footprintCount = 4 + Math.floor(Math.random() * 25);
+  const launchBurst = useCallback(({
+    targetPixel,
+    footprintCount,
+    intensity,
+    durationSeconds,
+    raDeg,
+    decDeg,
+    transmission,
+  }: {
+    targetPixel: number;
+    footprintCount: number;
+    intensity: number;
+    durationSeconds: number;
+    raDeg: number;
+    decDeg: number;
+    transmission: number;
+  }) => {
     const pixelIndices = getBurstFootprint(
-      pixelConfiguration,
+      pixelConfigurationRef.current,
       targetPixel,
       footprintCount,
-    );
-    const transmission = getMountSkyVisibility(
-      targetPixel,
-      settingsRef.current.mountX,
-      settingsRef.current.mountZ,
     );
     selectPixel(targetPixel);
     const burstId = nextBurstIdRef.current;
     nextBurstIdRef.current += 1;
+    if (transmission <= 0) {
+      setEventLog((current) => [
+        ...current.slice(-4),
+        {
+          time: `T+${formatTime(elapsedRef.current).slice(3)}`,
+          text: `Test GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · outside current FOV`,
+          kind: "grb",
+        },
+      ]);
+      return;
+    }
     activeBurstsRef.current = [
       ...activeBurstsRef.current,
       {
@@ -3428,19 +3520,184 @@ export default function Home() {
         pixelIndex: targetPixel,
         pixelIndices,
         transmission,
+        intensity,
+        raDeg,
+        decDeg,
         ageTicks: 0,
-        ticksRemaining: BURST_DURATION_TICKS,
+        ticksRemaining: Math.max(1, Math.round(durationSeconds / 0.2)),
       },
     ];
     setEventLog((current) => [
       ...current.slice(-4),
       {
         time: `T+${formatTime(elapsedRef.current).slice(3)}`,
-        text: `GRB #${burstId} · direction ${pixelConfiguration.pixels[targetPixel].id} · ${pixelIndices.length}/${footprintCount} pixels visible`,
+        text: `GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · ${intensity.toFixed(0)}% · ${pixelConfigurationRef.current.pixels[targetPixel].id}`,
         kind: "grb",
       },
     ]);
-  }, [pixelConfiguration, selectPixel]);
+  }, [selectPixel]);
+
+  const injectGRB = useCallback(() => {
+    const configuration = pixelConfigurationRef.current;
+    const configuredNormals = getConfiguredPixelNormals(configuration);
+    const halfFovCosine = Math.cos(
+      THREE.MathUtils.degToRad(
+        getMountEffectiveFov(
+          settingsRef.current.mountX,
+          settingsRef.current.mountZ,
+        ) / 2,
+      ),
+    );
+    const visibleTargets = PIXEL_LAYOUT.filter((pixel) => {
+      const normal = configuredNormals[pixel.index];
+      return (
+        normal[1] >= halfFovCosine &&
+        getMountSkyVisibility(
+          pixel.index,
+          settingsRef.current.mountX,
+          settingsRef.current.mountZ,
+        ) >= 0.12
+      );
+    });
+    const targetPixel =
+      visibleTargets[Math.floor(Math.random() * visibleTargets.length)]?.index ??
+      0;
+    const footprintCount = 4 + Math.floor(Math.random() * 25);
+    const intensity = 72 + Math.random() * 28;
+    const boresight = normalizeVector(
+      Math.cos(phaseRef.current) *
+        Math.cos(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
+      Math.cos(phaseRef.current) *
+        Math.sin(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
+      Math.sin(phaseRef.current),
+    );
+    const sourceDirection = new THREE.Vector3()
+      .fromArray(configuredNormals[targetPixel])
+      .applyQuaternion(
+        new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3().fromArray(boresight),
+        ),
+      )
+      .normalize();
+    const coordinates = sceneDirectionToEquatorial(
+      sourceDirection.toArray() as [number, number, number],
+    );
+    const angularResponse = Math.max(
+      0,
+      configuredNormals[targetPixel][1],
+    ) ** 2;
+    launchBurst({
+      targetPixel,
+      footprintCount,
+      intensity,
+      durationSeconds: BURST_DURATION_TICKS * 0.2,
+      raDeg: coordinates.raDeg,
+      decDeg: coordinates.decDeg,
+      transmission:
+        angularResponse *
+        getMountSkyVisibility(
+          targetPixel,
+          settingsRef.current.mountX,
+          settingsRef.current.mountZ,
+        ),
+    });
+  }, [launchBurst]);
+
+  const openTestBurst = useCallback(() => {
+    const boresight = normalizeVector(
+      Math.cos(phaseRef.current) *
+        Math.cos(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
+      Math.cos(phaseRef.current) *
+        Math.sin(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
+      Math.sin(phaseRef.current),
+    );
+    const coordinates = sceneDirectionToEquatorial(boresight);
+    setTestBurstDraft((current) => ({
+      ...current,
+      raDeg: Number(coordinates.raDeg.toFixed(3)),
+      decDeg: Number(coordinates.decDeg.toFixed(3)),
+    }));
+    setTestBurstOpen(true);
+  }, []);
+
+  const injectTestBurst = useCallback(() => {
+    const raDeg = ((testBurstDraft.raDeg % 360) + 360) % 360;
+    const decDeg = THREE.MathUtils.clamp(testBurstDraft.decDeg, -90, 90);
+    const intensity = THREE.MathUtils.clamp(
+      testBurstDraft.intensity,
+      0,
+      100,
+    );
+    const footprintCount = Math.round(
+      THREE.MathUtils.clamp(testBurstDraft.spreadPixels, 1, 60),
+    );
+    const durationSeconds = THREE.MathUtils.clamp(
+      testBurstDraft.durationSeconds,
+      0.2,
+      10,
+    );
+    const sourceDirection = equatorialToSceneDirection(raDeg, decDeg);
+    const boresight = normalizeVector(
+      Math.cos(phaseRef.current) *
+        Math.cos(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
+      Math.cos(phaseRef.current) *
+        Math.sin(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
+      Math.sin(phaseRef.current),
+    );
+    const sourceVector = new THREE.Vector3().fromArray(sourceDirection);
+    const localSource = sourceVector
+      .clone()
+      .applyQuaternion(
+        new THREE.Quaternion()
+          .setFromUnitVectors(
+            new THREE.Vector3(0, 1, 0),
+            new THREE.Vector3().fromArray(boresight),
+          )
+          .invert(),
+      )
+      .normalize();
+    const configuredNormals = getConfiguredPixelNormals(
+      pixelConfigurationRef.current,
+    );
+    let targetPixel = 0;
+    let bestDot = -Infinity;
+    configuredNormals.forEach((normal, index) => {
+      const dot =
+        normal[0] * localSource.x +
+        normal[1] * localSource.y +
+        normal[2] * localSource.z;
+      if (dot > bestDot) {
+        bestDot = dot;
+        targetPixel = index;
+      }
+    });
+    const separation = angleBetween(sourceDirection, boresight);
+    const inField =
+      separation <=
+      getMountEffectiveFov(
+        settingsRef.current.mountX,
+        settingsRef.current.mountZ,
+      ) /
+        2;
+    launchBurst({
+      targetPixel,
+      footprintCount,
+      intensity,
+      durationSeconds,
+      raDeg,
+      decDeg,
+      transmission: inField
+        ? Math.max(0, localSource.y) ** 2 *
+          getMountSkyVisibility(
+            targetPixel,
+            settingsRef.current.mountX,
+            settingsRef.current.mountZ,
+          )
+        : 0,
+    });
+    setTestBurstOpen(false);
+  }, [launchBurst, testBurstDraft]);
 
   const setEphemerisUtc = useCallback((value: string) => {
     const requestedTime = Date.parse(`${value}Z`);
@@ -3718,6 +3975,7 @@ export default function Home() {
             earthAlbedoNoise={telemetry.earthAlbedoNoise}
             earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
             earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
+            detectorIntensity={telemetry.detector}
             detectorHits={telemetry.detectorHits}
             mountX={mountX}
             mountZ={mountZ}
@@ -3819,18 +4077,173 @@ export default function Home() {
             />
           </div>
 
-          <button className="grb-button" onClick={injectGRB}>
-            <Sparkles size={17} />
-            <span>
-              <strong>INJECT GAMMA RAY BURST</strong>
-              <small>
-                random direction · nearest 4–28 pixels · active{" "}
-                {telemetry.burstDirections.length} · duration ≈ 3 s
-              </small>
-            </span>
-          </button>
+          <div className="grb-actions">
+            <button className="grb-button" onClick={injectGRB}>
+              <Sparkles size={17} />
+              <span>
+                <strong>INJECT RANDOM GRB</strong>
+                <small>
+                  random sky coordinates · 72–100% · active{" "}
+                  {telemetry.burstDirections.length}
+                </small>
+              </span>
+            </button>
+            <button className="test-burst-button" onClick={openTestBurst}>
+              RA / DEC TEST
+            </button>
+          </div>
         </aside>
       </section>
+
+      {testBurstOpen && (
+        <div
+          className="test-burst-backdrop"
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setTestBurstOpen(false);
+          }}
+        >
+          <form
+            className="test-burst-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="test-burst-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              injectTestBurst();
+            }}
+          >
+            <header>
+              <div>
+                <small>ASTRONOMICAL SOURCE INJECTION</small>
+                <strong id="test-burst-title">Test Gamma Ray Burst</strong>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTestBurstOpen(false)}
+                aria-label="Close test burst dialog"
+              >
+                <X size={17} />
+              </button>
+            </header>
+            <div className="test-burst-fields">
+              <label>
+                <span>RIGHT ASCENSION · RA</span>
+                <div>
+                  <input
+                    type="number"
+                    min="0"
+                    max="360"
+                    step="0.001"
+                    value={testBurstDraft.raDeg}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        raDeg: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>deg</em>
+                </div>
+              </label>
+              <label>
+                <span>DECLINATION · DEC</span>
+                <div>
+                  <input
+                    type="number"
+                    min="-90"
+                    max="90"
+                    step="0.001"
+                    value={testBurstDraft.decDeg}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        decDeg: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>deg</em>
+                </div>
+              </label>
+              <label>
+                <span>PEAK IMPACT</span>
+                <div>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={testBurstDraft.intensity}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        intensity: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>%</em>
+                </div>
+              </label>
+              <label>
+                <span>PROPAGATION FOOTPRINT</span>
+                <div>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    step="1"
+                    value={testBurstDraft.spreadPixels}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        spreadPixels: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>px</em>
+                </div>
+              </label>
+              <label>
+                <span>VISIBLE DURATION</span>
+                <div>
+                  <input
+                    type="number"
+                    min="0.2"
+                    max="10"
+                    step="0.2"
+                    value={testBurstDraft.durationSeconds}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        durationSeconds: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>s</em>
+                </div>
+              </label>
+            </div>
+            <div className="test-burst-scale">
+              <span>BACKGROUND · 0</span>
+              <i />
+              <span>PEAK · 100</span>
+            </div>
+            <p>
+              RA/Dec are interpreted in the geocentric equatorial frame at the
+              current simulated time. The current orbital attitude determines
+              whether the source is inside the detector FOV.
+            </p>
+            <footer>
+              <button type="button" onClick={() => setTestBurstOpen(false)}>
+                CANCEL
+              </button>
+              <button type="submit">
+                <Sparkles size={15} /> INJECT TEST BURST
+              </button>
+            </footer>
+          </form>
+        </div>
+      )}
 
       {detectorExpanded && (
         <div
