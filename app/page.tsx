@@ -259,6 +259,41 @@ const PIXEL_NORMALS: [number, number, number][] = PIXEL_LAYOUT.map((pixel) => {
     Math.sin(polar) * Math.sin(pixel.angle),
   );
 });
+
+function getConfiguredPixelNormals(
+  configuration: PixelConfiguration,
+): [number, number, number][] {
+  const planarCoordinates = configuration.pixels.map((pixel) => ({
+    x: ((pixel.x - 50) / 50) * 1.18,
+    z: (50 - pixel.y) / 50,
+  }));
+  const maximumRadius = Math.max(
+    0.01,
+    ...planarCoordinates.map(({ x, z }) => Math.hypot(x, z)),
+  );
+
+  return planarCoordinates.map(({ x, z }) => {
+    const planarRadius = Math.hypot(x, z);
+    if (planarRadius < 0.0001) return [0, 1, 0];
+    const radialFraction = THREE.MathUtils.clamp(
+      planarRadius / maximumRadius,
+      0,
+      1,
+    );
+    const polar = THREE.MathUtils.lerp(
+      0.025,
+      Math.PI / 2 - 0.045,
+      radialFraction,
+    );
+    const horizontal = Math.sin(polar);
+    return normalizeVector(
+      horizontal * (x / planarRadius),
+      Math.cos(polar),
+      horizontal * (z / planarRadius),
+    );
+  });
+}
+
 function getConfiguredPixelDistance(
   configuration: PixelConfiguration,
   pixelIndex: number,
@@ -647,6 +682,7 @@ function GlobeScene({
   grbActive,
   burstDirections,
   burstPixelGroups,
+  pixelConfiguration,
   selectedPixel,
   sunDirection,
   moonDirection,
@@ -672,6 +708,7 @@ function GlobeScene({
   grbActive: boolean;
   burstDirections: number[];
   burstPixelGroups: number[][];
+  pixelConfiguration: PixelConfiguration;
   selectedPixel: number;
   sunDirection: [number, number, number];
   moonDirection: [number, number, number];
@@ -699,6 +736,7 @@ function GlobeScene({
     grbActive,
     burstDirections,
     burstPixelGroups,
+    pixelConfiguration,
     selectedPixel,
     sunDirection,
     moonDirection,
@@ -726,6 +764,7 @@ function GlobeScene({
       grbActive,
       burstDirections,
       burstPixelGroups,
+      pixelConfiguration,
       selectedPixel,
       sunDirection,
       moonDirection,
@@ -751,6 +790,7 @@ function GlobeScene({
     grbActive,
     burstDirections,
     burstPixelGroups,
+    pixelConfiguration,
     selectedPixel,
     sunDirection,
     moonDirection,
@@ -1062,7 +1102,11 @@ function GlobeScene({
     const pixelGeometry = new THREE.CylinderGeometry(0.0135, 0.015, 0.025, 6, 1, false);
     const pixelMaterials = PIXEL_LAYOUT.map((pixel) =>
       new THREE.MeshStandardMaterial({
-        color: pixel.ring % 2 === 0 ? 0x4edfd4 : 0x54bedf,
+        color: settingsRef.current.pixelConfiguration.pixels[pixel.index].isSeam
+          ? 0x754059
+          : pixel.ring % 2 === 0
+            ? 0x4edfd4
+            : 0x54bedf,
         emissive: 0x086f79,
         emissiveIntensity: 0.65,
         metalness: 0.18,
@@ -1070,13 +1114,20 @@ function GlobeScene({
       }),
     );
     const upAxis = new THREE.Vector3(0, 1, 0);
+    let configuredPixelNormals = getConfiguredPixelNormals(
+      settingsRef.current.pixelConfiguration,
+    );
+    let appliedPixelConfiguration = settingsRef.current.pixelConfiguration;
     const crystalPixels = PIXEL_LAYOUT.map((pixel) => {
-      const normal = new THREE.Vector3().fromArray(PIXEL_NORMALS[pixel.index]);
+      const normal = new THREE.Vector3().fromArray(
+        configuredPixelNormals[pixel.index],
+      );
       const crystal = new THREE.Mesh(pixelGeometry, pixelMaterials[pixel.index]);
       crystal.position.copy(normal).multiplyScalar(0.173);
       crystal.quaternion.setFromUnitVectors(upAxis, normal.clone());
       crystal.userData.pixelIndex = pixel.index;
-      crystal.userData.pixelId = pixel.id;
+      crystal.userData.pixelId =
+        settingsRef.current.pixelConfiguration.pixels[pixel.index].id;
       pixelGroup.add(crystal);
       return crystal;
     });
@@ -1206,6 +1257,21 @@ function GlobeScene({
       animationFrame = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.05);
       const settings = settingsRef.current;
+      if (appliedPixelConfiguration !== settings.pixelConfiguration) {
+        configuredPixelNormals = getConfiguredPixelNormals(
+          settings.pixelConfiguration,
+        );
+        crystalPixels.forEach((crystal, index) => {
+          const normal = new THREE.Vector3().fromArray(
+            configuredPixelNormals[index],
+          );
+          crystal.position.copy(normal).multiplyScalar(0.173);
+          crystal.quaternion.setFromUnitVectors(upAxis, normal);
+          crystal.userData.pixelId =
+            settings.pixelConfiguration.pixels[index].id;
+        });
+        appliedPixelConfiguration = settings.pixelConfiguration;
+      }
       const orbitRadius = 3.1 + (settings.altitude - 550) / 1500;
       const extrapolation =
         !settings.paused && settings.phaseUpdatedAt > 0
@@ -1259,6 +1325,7 @@ function GlobeScene({
         const material = pixelMaterials[index];
         const isSelected = index === settings.selectedPixel;
         const layout = PIXEL_LAYOUT[index];
+        const configuredPixel = settings.pixelConfiguration.pixels[index];
         const hitCount = settings.detectorHits[index] ?? 0;
         const isFired = hitCount > 0;
         const isBurstPath =
@@ -1292,6 +1359,8 @@ function GlobeScene({
                 ? 0x76efe0
                 : isSelected
                   ? 0x665326
+                  : configuredPixel.isSeam
+                    ? 0x4d2639
                   : layout.ring % 2 === 0
                     ? 0x24494e
                     : 0x24424c,
@@ -1307,6 +1376,8 @@ function GlobeScene({
                 ? 0x0b766f
                 : isSelected
                   ? 0x2a2105
+                  : configuredPixel.isSeam
+                    ? 0x260b19
                   : 0x03191d,
         );
         material.emissiveIntensity = isFired
@@ -1336,7 +1407,7 @@ function GlobeScene({
           settings.burstDirections[index % Math.max(1, settings.burstDirections.length)] ??
           settings.selectedPixel;
         burstWorldDirection
-          .fromArray(PIXEL_NORMALS[directionPixel])
+          .fromArray(configuredPixelNormals[directionPixel])
           .applyQuaternion(satelliteWorldQuaternion)
           .normalize();
         const spread = 0.32;
@@ -3591,6 +3662,7 @@ export default function Home() {
             grbActive={telemetry.grbActive}
             burstDirections={telemetry.burstDirections}
             burstPixelGroups={telemetry.burstPixelGroups}
+            pixelConfiguration={pixelConfiguration}
             selectedPixel={selectedPixel}
             sunDirection={telemetry.sunDirection}
             moonDirection={telemetry.moonDirection}
