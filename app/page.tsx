@@ -3213,7 +3213,6 @@ export default function Home() {
   const [epochMs, setEpochMs] = useState(() => Date.now());
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [detectorExpanded, setDetectorExpanded] = useState(false);
-  const [testBurstOpen, setTestBurstOpen] = useState(false);
   const [testBurstDraft, setTestBurstDraft] = useState<TestBurstDraft>({
     raDeg: 0,
     decDeg: 0,
@@ -3284,14 +3283,13 @@ export default function Home() {
   }, [altitude, inclination, speed, paused, epochMs, mountX, mountZ]);
 
   useEffect(() => {
-    if (!detectorExpanded && !testBurstOpen) return;
+    if (!detectorExpanded) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setDetectorExpanded(false);
-      if (event.key === "Escape") setTestBurstOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [detectorExpanded, testBurstOpen]);
+  }, [detectorExpanded]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -3604,7 +3602,7 @@ export default function Home() {
     });
   }, [launchBurst]);
 
-  const openTestBurst = useCallback(() => {
+  const aimTestBurstAtBoresight = useCallback(() => {
     const boresight = normalizeVector(
       Math.cos(phaseRef.current) *
         Math.cos(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
@@ -3618,7 +3616,6 @@ export default function Home() {
       raDeg: Number(coordinates.raDeg.toFixed(3)),
       decDeg: Number(coordinates.decDeg.toFixed(3)),
     }));
-    setTestBurstOpen(true);
   }, []);
 
   const injectTestBurst = useCallback(() => {
@@ -3696,7 +3693,6 @@ export default function Home() {
           )
         : 0,
     });
-    setTestBurstOpen(false);
   }, [launchBurst, testBurstDraft]);
 
   const setEphemerisUtc = useCallback((value: string) => {
@@ -4052,15 +4048,21 @@ export default function Home() {
           </div>
 
           <div className="detector-section">
-            <button
-              type="button"
-              className="detector-expand-button"
-              onClick={() => setDetectorExpanded(true)}
-              aria-label="Open enlarged detector map"
-              title="Open enlarged detector map"
-            >
-              <Maximize2 size={14} />
-            </button>
+            <div className="detector-section-header">
+              <div>
+                <small>DETECTOR RESPONSE</small>
+                <strong>Configured pixel impact · 0–100</strong>
+              </div>
+              <button
+                type="button"
+                className="detector-expand-button"
+                onClick={() => setDetectorExpanded(true)}
+                aria-label="Open enlarged detector map"
+                title="Open enlarged detector map"
+              >
+                <Maximize2 size={13} />
+              </button>
+            </div>
             <DetectorMap
               values={telemetry.detector}
               hits={telemetry.detectorHits}
@@ -4077,56 +4079,24 @@ export default function Home() {
             />
           </div>
 
-          <div className="grb-actions">
-            <button className="grb-button" onClick={injectGRB}>
-              <Sparkles size={17} />
-              <span>
-                <strong>INJECT RANDOM GRB</strong>
-                <small>
-                  random sky coordinates · 72–100% · active{" "}
-                  {telemetry.burstDirections.length}
-                </small>
-              </span>
-            </button>
-            <button className="test-burst-button" onClick={openTestBurst}>
-              RA / DEC TEST
-            </button>
-          </div>
-        </aside>
-      </section>
-
-      {testBurstOpen && (
-        <div
-          className="test-burst-backdrop"
-          role="presentation"
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) setTestBurstOpen(false);
-          }}
-        >
           <form
-            className="test-burst-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="test-burst-title"
+            className="burst-inline-panel"
             onSubmit={(event) => {
               event.preventDefault();
               injectTestBurst();
             }}
           >
-            <header>
+            <div className="burst-inline-header">
               <div>
-                <small>ASTRONOMICAL SOURCE INJECTION</small>
-                <strong id="test-burst-title">Test Gamma Ray Burst</strong>
+                <small>TEST BURST CONFIGURATION</small>
+                <strong>Equatorial source · current epoch</strong>
               </div>
-              <button
-                type="button"
-                onClick={() => setTestBurstOpen(false)}
-                aria-label="Close test burst dialog"
-              >
-                <X size={17} />
+              <button type="button" onClick={aimTestBurstAtBoresight}>
+                AIM BORESIGHT
               </button>
-            </header>
-            <div className="test-burst-fields">
+            </div>
+
+            <div className="burst-inline-fields burst-coordinate-fields">
               <label>
                 <span>RIGHT ASCENSION · RA</span>
                 <div>
@@ -4165,6 +4135,9 @@ export default function Home() {
                   <em>deg</em>
                 </div>
               </label>
+            </div>
+
+            <div className="burst-inline-fields burst-response-fields">
               <label>
                 <span>PEAK IMPACT</span>
                 <div>
@@ -4185,7 +4158,7 @@ export default function Home() {
                 </div>
               </label>
               <label>
-                <span>PROPAGATION FOOTPRINT</span>
+                <span>FOOTPRINT</span>
                 <div>
                   <input
                     type="number"
@@ -4204,7 +4177,7 @@ export default function Home() {
                 </div>
               </label>
               <label>
-                <span>VISIBLE DURATION</span>
+                <span>DURATION</span>
                 <div>
                   <input
                     type="number"
@@ -4223,27 +4196,24 @@ export default function Home() {
                 </div>
               </label>
             </div>
-            <div className="test-burst-scale">
-              <span>BACKGROUND · 0</span>
+
+            <div className="burst-inline-scale">
+              <span>0</span>
               <i />
-              <span>PEAK · 100</span>
+              <span>100</span>
             </div>
-            <p>
-              RA/Dec are interpreted in the geocentric equatorial frame at the
-              current simulated time. The current orbital attitude determines
-              whether the source is inside the detector FOV.
-            </p>
-            <footer>
-              <button type="button" onClick={() => setTestBurstOpen(false)}>
-                CANCEL
+
+            <div className="burst-inline-actions">
+              <button type="button" className="random-grb-mini" onClick={injectGRB}>
+                <Sparkles size={12} /> RANDOM GRB
               </button>
-              <button type="submit">
-                <Sparkles size={15} /> INJECT TEST BURST
+              <button type="submit" className="inject-test-inline">
+                <Sparkles size={13} /> INJECT TEST BURST
               </button>
-            </footer>
+            </div>
           </form>
-        </div>
-      )}
+        </aside>
+      </section>
 
       {detectorExpanded && (
         <div
