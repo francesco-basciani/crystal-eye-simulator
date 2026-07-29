@@ -32,6 +32,24 @@ type Sample = {
   source: number;
 };
 
+type PhotonRecord = Sample & {
+  bin: number;
+  elapsed: number;
+  simulatedDate: string;
+  sun: number;
+  moon: number;
+  earthAlbedo: number;
+  activeBursts: number;
+  hitPixels: number;
+};
+
+type EventRecord = {
+  time: string;
+  utc: string;
+  text: string;
+  kind: "system" | "background" | "grb";
+};
+
 type Telemetry = Sample & {
   elapsed: number;
   phase: number;
@@ -1792,6 +1810,220 @@ function SignalChart({ data }: { data: Sample[] }) {
   return <canvas ref={canvasRef} className="signal-canvas" aria-label="Photon count time series" />;
 }
 
+function HistoryDialog({
+  mode,
+  events,
+  photons,
+  onClose,
+}: {
+  mode: "events" | "photons";
+  events: EventRecord[];
+  photons: PhotonRecord[];
+  onClose: () => void;
+}) {
+  const pageSize = 100;
+  const [page, setPage] = useState(0);
+  const records = mode === "events" ? events : photons;
+  const pageCount = Math.max(1, Math.ceil(records.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageStart = Math.max(0, records.length - (safePage + 1) * pageSize);
+  const pageEnd = records.length - safePage * pageSize;
+  const visibleEvents =
+    mode === "events" ? events.slice(pageStart, pageEnd).reverse() : [];
+  const visiblePhotons =
+    mode === "photons" ? photons.slice(pageStart, pageEnd).reverse() : [];
+
+  const downloadCsv = () => {
+    const rows =
+      mode === "events"
+        ? [
+            ["mission_time", "simulated_utc", "type", "description"],
+            ...events.map((event) => [
+              event.time,
+              event.utc,
+              event.kind,
+              event.text,
+            ]),
+          ]
+        : [
+            [
+              "bin",
+              "mission_elapsed_s",
+              "simulated_utc",
+              "background_c_s",
+              "source_c_s",
+              "observed_c_s",
+              "sun_c_s",
+              "moon_c_s",
+              "earth_albedo_c_s",
+              "active_bursts",
+              "hit_pixels",
+            ],
+            ...photons.map((sample) => [
+              sample.bin,
+              sample.elapsed.toFixed(1),
+              sample.simulatedDate,
+              sample.background,
+              sample.source,
+              sample.observed,
+              sample.sun.toFixed(3),
+              sample.moon.toFixed(3),
+              sample.earthAlbedo.toFixed(3),
+              sample.activeBursts,
+              sample.hitPixels,
+            ]),
+          ];
+    const csv = rows
+      .map((row) =>
+        row
+          .map((value) => `"${String(value).replaceAll('"', '""')}"`)
+          .join(","),
+      )
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download =
+      mode === "events"
+        ? "crystal-eye-event-history.csv"
+        : "crystal-eye-photon-stream.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div
+      className="history-backdrop"
+      role="presentation"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="history-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="history-dialog-title"
+      >
+        <header>
+          <div>
+            <small>ACQUISITION ARCHIVE · CURRENT SIMULATION SESSION</small>
+            <strong id="history-dialog-title">
+              {mode === "events" ? "Event History" : "Photon Stream History"}
+            </strong>
+          </div>
+          <div className="history-header-actions">
+            <button type="button" onClick={downloadCsv}>
+              <Download size={14} /> EXPORT CSV
+            </button>
+            <button type="button" onClick={onClose} aria-label="Close history table">
+              <X size={17} />
+            </button>
+          </div>
+        </header>
+
+        <div className="history-summary">
+          <span>
+            <strong>{records.length.toLocaleString("en-US")}</strong> stored records
+          </span>
+          <span>Newest records first · 100 rows per page</span>
+        </div>
+
+        <div className="history-table-wrap">
+          {mode === "events" ? (
+            <table className="history-table event-history-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>MISSION TIME</th>
+                  <th>SIMULATED UTC</th>
+                  <th>TYPE</th>
+                  <th>EVENT DETAILS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visibleEvents.map((event, index) => (
+                  <tr key={`${event.utc}-${pageEnd - index}`}>
+                    <td>{pageEnd - index}</td>
+                    <td>{event.time}</td>
+                    <td>{event.utc.replace("T", " ").replace(".000Z", " Z")}</td>
+                    <td><span className={`history-kind ${event.kind}`}>{event.kind}</span></td>
+                    <td>{event.text}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table className="history-table photon-history-table">
+              <thead>
+                <tr>
+                  <th>BIN</th>
+                  <th>MISSION TIME</th>
+                  <th>SIMULATED UTC</th>
+                  <th>BACKGROUND</th>
+                  <th>SOURCE</th>
+                  <th>OBSERVED</th>
+                  <th>SUN</th>
+                  <th>MOON</th>
+                  <th>EARTH ALBEDO</th>
+                  <th>GRB</th>
+                  <th>HIT PIXELS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visiblePhotons.map((sample) => (
+                  <tr key={sample.bin}>
+                    <td>{sample.bin}</td>
+                    <td>T+{formatTime(sample.elapsed).slice(3)}</td>
+                    <td>{sample.simulatedDate.replace("T", " ").replace(".000Z", " Z")}</td>
+                    <td>{sample.background.toFixed(0)} c/s</td>
+                    <td className={sample.source > 0 ? "source-value" : ""}>
+                      {sample.source.toFixed(0)} c/s
+                    </td>
+                    <td>{sample.observed.toFixed(0)} c/s</td>
+                    <td>{sample.sun.toFixed(1)}</td>
+                    <td>{sample.moon.toFixed(1)}</td>
+                    <td>{sample.earthAlbedo.toFixed(1)}</td>
+                    <td>{sample.activeBursts}</td>
+                    <td>{sample.hitPixels}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {records.length === 0 && (
+            <div className="history-empty">Waiting for acquisition records…</div>
+          )}
+        </div>
+
+        <footer>
+          <span>
+            Rows {records.length === 0 ? 0 : pageStart + 1}–{pageEnd} of{" "}
+            {records.length.toLocaleString("en-US")}
+          </span>
+          <div>
+            <button
+              type="button"
+              disabled={safePage >= pageCount - 1}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              OLDER
+            </button>
+            <strong>{safePage + 1} / {pageCount}</strong>
+            <button
+              type="button"
+              disabled={safePage === 0}
+              onClick={() => setPage((current) => Math.max(0, current - 1))}
+            >
+              NEWER
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 type SensorViewMode = "sky" | "mask" | "events" | "geometry";
 
 function SensorView({
@@ -3213,6 +3445,7 @@ export default function Home() {
   const [epochMs, setEpochMs] = useState(() => Date.now());
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [detectorExpanded, setDetectorExpanded] = useState(false);
+  const [historyView, setHistoryView] = useState<"events" | "photons" | null>(null);
   const [testBurstDraft, setTestBurstDraft] = useState<TestBurstDraft>({
     raDeg: 0,
     decDeg: 0,
@@ -3228,12 +3461,17 @@ export default function Home() {
       observed: INITIAL_TELEMETRY.background,
     })),
   );
-  const [eventLog, setEventLog] = useState([
-    { time: "T+00:00", text: "Science acquisition started", kind: "system" },
-    { time: "T+00:00", text: "Orbital background model initialized", kind: "background" },
-  ]);
+  const [photonHistory, setPhotonHistory] = useState<PhotonRecord[]>([]);
+  const [eventLog, setEventLog] = useState<EventRecord[]>(() => {
+    const utc = new Date().toISOString();
+    return [
+      { time: "T+00:00", utc, text: "Science acquisition started", kind: "system" },
+      { time: "T+00:00", utc, text: "Orbital background model initialized", kind: "background" },
+    ];
+  });
   const phaseRef = useRef(INITIAL_TELEMETRY.phase);
   const elapsedRef = useRef(0);
+  const photonBinRef = useRef(0);
   const activeBurstsRef = useRef<BurstEvent[]>([]);
   const nextBurstIdRef = useRef(1);
   const totalRef = useRef(0);
@@ -3283,13 +3521,14 @@ export default function Home() {
   }, [altitude, inclination, speed, paused, epochMs, mountX, mountZ]);
 
   useEffect(() => {
-    if (!detectorExpanded) return;
+    if (!detectorExpanded && !historyView) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setDetectorExpanded(false);
+      if (event.key === "Escape") setHistoryView(null);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [detectorExpanded]);
+  }, [detectorExpanded, historyView]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -3414,7 +3653,22 @@ export default function Home() {
       const detectorHits = detectorResponse.map((pixel) => pixel.hits);
       const detector = detectorResponse.map((pixel) => pixel.impact);
       const next = { observed, background, source };
+      photonBinRef.current += 1;
       setSamples((current) => [...current.slice(-119), next]);
+      setPhotonHistory((current) => [
+        ...current,
+        {
+          ...next,
+          bin: photonBinRef.current,
+          elapsed: elapsedRef.current,
+          simulatedDate: celestial.date.toISOString(),
+          sun: mountedSunNoise,
+          moon: mountedMoonNoise,
+          earthAlbedo: mountedEarthAlbedoNoise,
+          activeBursts: activeBursts.length,
+          hitPixels: detectorHits.filter((hits) => hits > 0).length,
+        },
+      ]);
       setTelemetry({
         ...next,
         elapsed: elapsedRef.current,
@@ -3502,10 +3756,13 @@ export default function Home() {
     nextBurstIdRef.current += 1;
     if (transmission <= 0) {
       setEventLog((current) => [
-        ...current.slice(-4),
+        ...current,
         {
           time: `T+${formatTime(elapsedRef.current).slice(3)}`,
-          text: `Test GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · outside current FOV`,
+          utc: new Date(
+            settingsRef.current.epochMs + elapsedRef.current * 1000,
+          ).toISOString(),
+          text: `Test GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · ${intensity.toFixed(0)}% · ${durationSeconds.toFixed(1)} s · ${pixelIndices.length} px footprint · outside current FOV`,
           kind: "grb",
         },
       ]);
@@ -3526,10 +3783,13 @@ export default function Home() {
       },
     ];
     setEventLog((current) => [
-      ...current.slice(-4),
+      ...current,
       {
         time: `T+${formatTime(elapsedRef.current).slice(3)}`,
-        text: `GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · ${intensity.toFixed(0)}% · ${pixelConfigurationRef.current.pixels[targetPixel].id}`,
+        utc: new Date(
+          settingsRef.current.epochMs + elapsedRef.current * 1000,
+        ).toISOString(),
+        text: `GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · ${intensity.toFixed(0)}% · ${durationSeconds.toFixed(1)} s · ${pixelIndices.length} px · ${(transmission * 100).toFixed(0)}% transmission · target ${pixelConfigurationRef.current.pixels[targetPixel].id}`,
         kind: "grb",
       },
     ]);
@@ -3781,9 +4041,10 @@ export default function Home() {
       earthAlbedoAzimuth: celestial.earthAlbedoAzimuth,
       earthAlbedoDirectional: celestial.earthAlbedoDirectional,
     });
-    setEventLog([
-      { time: "T+00:00", text: "Simulation reset", kind: "system" },
-      { time: "T+00:00", text: "Science acquisition started", kind: "background" },
+    setEventLog((current) => [
+      ...current,
+      { time: "T+00:00", utc: new Date(now).toISOString(), text: "Simulation reset", kind: "system" },
+      { time: "T+00:00", utc: new Date(now).toISOString(), text: "Science acquisition started", kind: "background" },
     ]);
   }, [altitude, inclination, mountX, mountZ, selectPixel]);
 
@@ -3995,10 +4256,19 @@ export default function Home() {
         </section>
 
         <aside className="control-panel right-panel">
-          <div className="panel-heading">
+          <button
+            type="button"
+            className="panel-heading history-launch"
+            onClick={() => setHistoryView("photons")}
+            aria-label="Open photon stream history table"
+          >
             <span>PHOTON STREAM</span>
-            <Activity size={17} />
-          </div>
+            <span className="history-launch-icon">
+              <small>{photonHistory.length.toLocaleString("en-US")} ROWS</small>
+              <Activity size={17} />
+              <ChevronRight size={13} />
+            </span>
+          </button>
 
           <div className="chart-card">
             <div className="chart-header">
@@ -4215,6 +4485,15 @@ export default function Home() {
         </aside>
       </section>
 
+      {historyView && (
+        <HistoryDialog
+          mode={historyView}
+          events={eventLog}
+          photons={photonHistory}
+          onClose={() => setHistoryView(null)}
+        />
+      )}
+
       {detectorExpanded && (
         <div
           className="detector-expanded-backdrop"
@@ -4257,19 +4536,30 @@ export default function Home() {
       )}
 
       <footer className="bottom-panel">
-        <div className="footer-label">
+        <button
+          type="button"
+          className="footer-label history-launch"
+          onClick={() => setHistoryView("events")}
+          aria-label="Open complete event history table"
+        >
           <CircleDot size={15} />
           <span>EVENT LOG</span>
-        </div>
-        <div className="event-stream">
-          {eventLog.map((event, index) => (
+          <ChevronRight size={12} className="footer-open-icon" />
+        </button>
+        <button
+          type="button"
+          className="event-stream event-stream-button"
+          onClick={() => setHistoryView("events")}
+          aria-label="Open complete event history table"
+        >
+          {eventLog.slice(-5).map((event, index) => (
             <div key={`${event.time}-${index}`} className={`event-item ${event.kind}`}>
               <time>{event.time}</time>
               <i />
               <span>{event.text}</span>
             </div>
           ))}
-        </div>
+        </button>
         <div className="data-model">
           <span>DATA MODEL</span>
           <strong>time × pixel × energy</strong>
