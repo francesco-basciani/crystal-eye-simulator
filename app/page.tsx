@@ -3333,7 +3333,7 @@ function PixelConfigurationEditor({
               <header>
                 <span>PIXEL GEOMETRY</span>
                 <strong>{selectedPixel.id}</strong>
-                <em>GEOMETRY ONLY</em>
+                <em>LONGITUDINAL HALF-SECTION · GEOMETRY ONLY</em>
               </header>
               <div className="pixel-geometry-stack">
                 <i className="pixel-geometry-axis" />
@@ -3341,21 +3341,21 @@ function PixelConfigurationEditor({
                   <div className="pixel-geometry-shape geometry-tacs" />
                   <span>
                     <strong>T-ACS<sub>0</sub></strong>
-                    <small>UPPER PLATE · CH 0–1</small>
+                    <small>UPPER FRUSTUM · CH 0–1</small>
                   </span>
                 </div>
                 <div className="pixel-geometry-stage up-stage">
                   <div className="pixel-geometry-shape geometry-up" />
                   <span>
                     <strong>UP<sub>0</sub></strong>
-                    <small>CENTRAL VOLUME · CH 2–4</small>
+                    <small>MIDDLE FRUSTUM · CH 2–4</small>
                   </span>
                 </div>
                 <div className="pixel-geometry-stage down-stage">
                   <div className="pixel-geometry-shape geometry-down" />
                   <span>
                     <strong>DOWN<sub>0</sub></strong>
-                    <small>LOWER VOLUME · CH 5–7</small>
+                    <small>LOWER FRUSTUM · CH 5–7</small>
                   </span>
                 </div>
               </div>
