@@ -995,7 +995,8 @@ button {
 .pixel-editor-selected small,
 .pixel-editor-inspector > label,
 .pixel-editor-coordinates span,
-.pixel-editor-nudge > span {
+.pixel-editor-nudge > span,
+.pixel-editor-shape-control > span {
   color: #65838f;
   font-family: var(--font-geist-mono), monospace;
   font-size: 7px;
@@ -1049,6 +1050,53 @@ button {
 
 .pixel-editor-coordinates.is-disabled {
   opacity: 0.62;
+}
+
+.pixel-editor-shape-control {
+  padding: 9px;
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: rgba(41, 121, 148, 0.045);
+}
+
+.pixel-editor-shape-control strong {
+  color: #c9e7ef;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 520;
+  letter-spacing: 0.06em;
+}
+
+.pixel-editor-shape-control button {
+  min-height: 31px;
+  border: 1px solid rgba(255, 200, 87, 0.34);
+  color: #ffe2a0;
+  background: rgba(102, 70, 8, 0.24);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.pixel-editor-shape-control button:hover:not(:disabled),
+.pixel-editor-shape-control button:focus-visible:not(:disabled) {
+  border-color: var(--yellow);
+  outline: 0;
+  background: rgba(126, 86, 7, 0.42);
+}
+
+.pixel-editor-shape-control button:disabled {
+  color: #6f8993;
+  border-color: var(--line);
+  background: rgba(27, 62, 73, 0.16);
+  cursor: default;
+}
+
+.pixel-editor-shape-control small {
+  color: #607c87;
+  font-size: 7px;
+  line-height: 1.4;
 }
 
 .pixel-editor-coordinates {
@@ -2482,7 +2530,7 @@ button {
 
 .pixel-editor-node.is-pentagon,
 .detector-pixel.is-pentagon {
-  clip-path: polygon(50% 2%, 98% 38%, 80% 96%, 20% 96%, 2% 38%);
+  clip-path: polygon(21% 4%, 79% 4%, 98% 61%, 50% 98%, 2% 61%);
 }
 
 .detector-map.projection-unfolded .detector-pixel.is-unfolding-seam {

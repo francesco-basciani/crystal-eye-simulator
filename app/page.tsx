@@ -96,6 +96,7 @@ type UnfoldedPixelLayout = {
   x: number;
   y: number;
   isSeam: boolean;
+  isPentagon: boolean;
 };
 
 type PixelConfigurationEntry = UnfoldedPixelLayout & {
@@ -179,6 +180,7 @@ const UNFOLDED_PIXEL_LAYOUT: UnfoldedPixelLayout[] = (() => {
         x: center.x + localX,
         y: center.y + localY,
         isSeam: false,
+        isPentagon: position === 7,
       });
     });
   });
@@ -214,6 +216,7 @@ const UNFOLDED_PIXEL_LAYOUT: UnfoldedPixelLayout[] = (() => {
         x: triplet.x + rotatedX,
         y: triplet.y + rotatedY,
         isSeam: true,
+        isPentagon: false,
       });
     });
   });
@@ -228,27 +231,12 @@ const DEFAULT_PIXEL_CONFIGURATION: PixelConfiguration = {
   })),
 };
 
-function getCentralPentagonPixelIndices(configuration: PixelConfiguration) {
-  const indices = new Set<number>();
-  for (let cluster = 0; cluster < GRAY_CLUSTER_COUNT; cluster += 1) {
-    const members = configuration.pixels.slice(
-      cluster * GRAY_CLUSTER_SIZE,
-      (cluster + 1) * GRAY_CLUSTER_SIZE,
-    );
-    const center = members.reduce(
-      (sum, pixel) => ({ x: sum.x + pixel.x, y: sum.y + pixel.y }),
-      { x: 0, y: 0 },
-    );
-    center.x /= members.length;
-    center.y /= members.length;
-    const central = members.reduce((best, pixel) => {
-      const distance = Math.hypot(pixel.x - center.x, pixel.y - center.y);
-      const bestDistance = Math.hypot(best.x - center.x, best.y - center.y);
-      return distance < bestDistance ? pixel : best;
-    });
-    indices.add(central.index);
-  }
-  return indices;
+function getPentagonPixelIndices(configuration: PixelConfiguration) {
+  return new Set(
+    configuration.pixels
+      .filter((pixel) => pixel.isPentagon)
+      .map((pixel) => pixel.index),
+  );
 }
 
 function normalizePixelConfiguration(value: unknown): PixelConfiguration | null {
@@ -265,6 +253,7 @@ function normalizePixelConfiguration(value: unknown): PixelConfiguration | null 
         id?: unknown;
         x?: unknown;
         y?: unknown;
+        isPentagon?: unknown;
       };
       const index =
         typeof pixel.index === "number" && Number.isInteger(pixel.index)
@@ -291,6 +280,9 @@ function normalizePixelConfiguration(value: unknown): PixelConfiguration | null 
         y: THREE.MathUtils.clamp(pixel.y, 0.8, 99.2),
         isSeam: DEFAULT_PIXEL_CONFIGURATION?.pixels?.[index]?.isSeam ??
           UNFOLDED_PIXEL_LAYOUT[index].isSeam,
+        isPentagon:
+          index < GRAY_CLUSTER_COUNT * GRAY_CLUSTER_SIZE &&
+          pixel.isPentagon === true,
       };
     })
     .filter((pixel): pixel is PixelConfigurationEntry => pixel !== null)
@@ -302,7 +294,36 @@ function normalizePixelConfiguration(value: unknown): PixelConfiguration | null 
   ) {
     return null;
   }
-  return { version: 1, pixels: normalized };
+  const pixels = normalized.map((pixel) => ({ ...pixel }));
+  for (let cluster = 0; cluster < GRAY_CLUSTER_COUNT; cluster += 1) {
+    const members = pixels.slice(
+      cluster * GRAY_CLUSTER_SIZE,
+      (cluster + 1) * GRAY_CLUSTER_SIZE,
+    );
+    const explicitlyAssigned = members.filter((pixel) => pixel.isPentagon);
+    let pentagonIndex = explicitlyAssigned[0]?.index;
+    if (pentagonIndex === undefined) {
+      const center = members.reduce(
+        (sum, pixel) => ({ x: sum.x + pixel.x, y: sum.y + pixel.y }),
+        { x: 0, y: 0 },
+      );
+      center.x /= members.length;
+      center.y /= members.length;
+      pentagonIndex = members.reduce((best, pixel) =>
+        Math.hypot(pixel.x - center.x, pixel.y - center.y) <
+        Math.hypot(best.x - center.x, best.y - center.y)
+          ? pixel
+          : best,
+      ).index;
+    }
+    members.forEach((pixel) => {
+      pixel.isPentagon = pixel.index === pentagonIndex;
+    });
+  }
+  pixels.slice(GRAY_CLUSTER_COUNT * GRAY_CLUSTER_SIZE).forEach((pixel) => {
+    pixel.isPentagon = false;
+  });
+  return { version: 1, pixels };
 }
 const PIXEL_NORMALS: [number, number, number][] = PIXEL_LAYOUT.map((pixel) => {
   const polar = THREE.MathUtils.lerp(0.04, Math.PI / 2 - 0.045, pixel.radius);
@@ -1297,6 +1318,7 @@ function GlobeScene({
       5,
       1,
       false,
+      Math.PI / 10,
     );
     const pixelMaterials = PIXEL_LAYOUT.map(() =>
       new THREE.MeshStandardMaterial({
@@ -1311,7 +1333,7 @@ function GlobeScene({
     let configuredPixelNormals = getConfiguredPixelNormals(
       settingsRef.current.pixelConfiguration,
     );
-    let centralPentagonPixelIndices = getCentralPentagonPixelIndices(
+    let pentagonPixelIndices = getPentagonPixelIndices(
       settingsRef.current.pixelConfiguration,
     );
     let appliedPixelConfiguration = settingsRef.current.pixelConfiguration;
@@ -1320,7 +1342,7 @@ function GlobeScene({
         configuredPixelNormals[pixel.index],
       );
       const crystal = new THREE.Mesh(
-        centralPentagonPixelIndices.has(pixel.index)
+        pentagonPixelIndices.has(pixel.index)
           ? pentagonPixelGeometry
           : hexPixelGeometry,
         pixelMaterials[pixel.index],
@@ -1463,7 +1485,7 @@ function GlobeScene({
         configuredPixelNormals = getConfiguredPixelNormals(
           settings.pixelConfiguration,
         );
-        centralPentagonPixelIndices = getCentralPentagonPixelIndices(
+        pentagonPixelIndices = getPentagonPixelIndices(
           settings.pixelConfiguration,
         );
         crystalPixels.forEach((crystal, index) => {
@@ -1474,7 +1496,7 @@ function GlobeScene({
           crystal.quaternion.setFromUnitVectors(upAxis, normal);
           crystal.userData.pixelId =
             settings.pixelConfiguration.pixels[index].id;
-          crystal.geometry = centralPentagonPixelIndices.has(index)
+          crystal.geometry = pentagonPixelIndices.has(index)
             ? pentagonPixelGeometry
             : hexPixelGeometry;
         });
@@ -2282,7 +2304,9 @@ function SensorView({
         context.beginPath();
         const sideCount = pentagonPixelIndices.has(pixel.index) ? 5 : 6;
         for (let side = 0; side < sideCount; side += 1) {
-          const angle = (side / sideCount) * Math.PI * 2 - Math.PI / 2;
+          const angle =
+            (side / sideCount) * Math.PI * 2 +
+            (sideCount === 5 ? Math.PI / 2 : -Math.PI / 2);
           const px = x + Math.cos(angle) * cellRadius;
           const py = y + Math.sin(angle) * cellRadius;
           if (side === 0) context.moveTo(px, py);
@@ -2535,8 +2559,8 @@ function DetectorMap({
   mountZ: number;
   onSelect: (index: number) => void;
 }) {
-  const centralPentagonPixelIndices = useMemo(
-    () => getCentralPentagonPixelIndices(pixelConfiguration),
+  const pentagonPixelIndices = useMemo(
+    () => getPentagonPixelIndices(pixelConfiguration),
     [pixelConfiguration],
   );
   return (
@@ -2580,7 +2604,7 @@ function DetectorMap({
               } ${
                 configuredPixel.isSeam ? "is-unfolding-seam" : ""
               } ${
-                centralPentagonPixelIndices.has(pixel.index) ? "is-pentagon" : ""
+                pentagonPixelIndices.has(pixel.index) ? "is-pentagon" : ""
               }`}
               style={{
                 "--heat": Math.min(1, value).toFixed(4),
@@ -2590,12 +2614,12 @@ function DetectorMap({
                 "--delay": `${(pixel.index % 17) * 24}ms`,
               } as React.CSSProperties}
               title={`${configuredPixel.id} · ${
-                centralPentagonPixelIndices.has(pixel.index)
+                pentagonPixelIndices.has(pixel.index)
                   ? "central pentagon"
                   : "hexagon"
               } · ${hitCount} photons detected in the current bin`}
               aria-label={`${configuredPixel.id}, ${
-                centralPentagonPixelIndices.has(pixel.index)
+                pentagonPixelIndices.has(pixel.index)
                   ? "central pentagon"
                   : "hexagon"
               }, ${hitCount} photons detected`}
@@ -2915,8 +2939,8 @@ function PixelConfigurationEditor({
     () => new Set(selectedIndices),
     [selectedIndices],
   );
-  const centralPentagonPixelIndices = useMemo(
-    () => getCentralPentagonPixelIndices(draft),
+  const pentagonPixelIndices = useMemo(
+    () => getPentagonPixelIndices(draft),
     [draft],
   );
 
@@ -2931,6 +2955,24 @@ function PixelConfigurationEditor({
     },
     [],
   );
+
+  const assignClusterPentagon = useCallback((index: number) => {
+    if (index >= GRAY_CLUSTER_COUNT * GRAY_CLUSTER_SIZE) return;
+    const cluster = Math.floor(index / GRAY_CLUSTER_SIZE);
+    const clusterStart = cluster * GRAY_CLUSTER_SIZE;
+    const clusterEnd = clusterStart + GRAY_CLUSTER_SIZE;
+    setDraft((current) => ({
+      ...current,
+      pixels: current.pixels.map((pixel) =>
+        pixel.index >= clusterStart && pixel.index < clusterEnd
+          ? { ...pixel, isPentagon: pixel.index === index }
+          : pixel,
+      ),
+    }));
+    setMessage(
+      `Pixel ${String(index + 1).padStart(3, "0")} is now the permanent pentagon for gray cluster ${cluster + 1}.`,
+    );
+  }, []);
 
   const movePixels = useCallback(
     (indices: number[], requestedDeltaX: number, requestedDeltaY: number) => {
@@ -3085,7 +3127,7 @@ function PixelConfigurationEditor({
                   className={`pixel-editor-node ${
                     pixel.isSeam ? "is-red" : "is-gray"
                   } ${
-                    centralPentagonPixelIndices.has(pixel.index) ? "is-pentagon" : ""
+                    pentagonPixelIndices.has(pixel.index) ? "is-pentagon" : ""
                   } ${selectedIndexSet.has(pixel.index) ? "selected" : ""} ${
                     pixel.index === primarySelectedIndex ? "primary-selected" : ""
                   }`}
@@ -3225,7 +3267,7 @@ function PixelConfigurationEditor({
                 {selectedIndices.length === 1
                   ? selectedPixel.isSeam
                     ? "RED TRIPLET"
-                    : centralPentagonPixelIndices.has(selectedPixel.index)
+                    : pentagonPixelIndices.has(selectedPixel.index)
                       ? "GRAY CLUSTER · CENTRAL PENTAGON"
                       : "GRAY CLUSTER · HEXAGON"
                   : "DRAG OR NUDGE AS A GROUP"}
@@ -3248,6 +3290,36 @@ function PixelConfigurationEditor({
               }
               onFocus={(event) => event.currentTarget.select()}
             />
+
+            <div className="pixel-editor-shape-control">
+              <span>PIXEL SHAPE</span>
+              <strong>
+                {selectedPixel.isSeam
+                  ? "HEXAGON · RED TRIPLET"
+                  : selectedPixel.isPentagon
+                    ? "PENTAGON · FIXED IDENTITY"
+                    : "HEXAGON · GRAY CLUSTER"}
+              </strong>
+              <button
+                type="button"
+                disabled={
+                  selectedIndices.length !== 1 ||
+                  selectedPixel.isSeam ||
+                  selectedPixel.isPentagon
+                }
+                onClick={() => assignClusterPentagon(primarySelectedIndex)}
+              >
+                {selectedPixel.isPentagon
+                  ? "CLUSTER PENTAGON"
+                  : selectedPixel.isSeam
+                    ? "RED PIXELS STAY HEXAGONAL"
+                    : "SET AS CLUSTER PENTAGON"}
+              </button>
+              <small>
+                One permanent pentagon per gray cluster. Moving pixels never
+                changes their shape.
+              </small>
+            </div>
 
             <div
               className={`pixel-editor-coordinates ${
@@ -4141,8 +4213,8 @@ export default function Home() {
   const effectiveMountFov = useMemo(() => {
     return getMountEffectiveFov(mountX, mountZ);
   }, [mountX, mountZ]);
-  const centralPentagonPixelIndices = useMemo(
-    () => getCentralPentagonPixelIndices(pixelConfiguration),
+  const pentagonPixelIndices = useMemo(
+    () => getPentagonPixelIndices(pixelConfiguration),
     [pixelConfiguration],
   );
   const mountedSunInFov =
@@ -4276,7 +4348,7 @@ export default function Home() {
               moonPhase={telemetry.moonPhase}
               detector={telemetry.detector}
               detectorHits={telemetry.detectorHits}
-              pentagonPixelIndices={centralPentagonPixelIndices}
+              pentagonPixelIndices={pentagonPixelIndices}
               selectedPixel={selectedPixel}
               burstDirections={telemetry.burstDirections}
               burstPixelGroups={telemetry.burstPixelGroups}
