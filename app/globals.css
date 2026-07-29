@@ -536,6 +536,139 @@ button {
   cursor: pointer;
 }
 
+.configuration-hub-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 85;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(0, 5, 9, 0.82);
+  backdrop-filter: blur(9px);
+}
+
+.configuration-hub {
+  width: min(760px, 96vw);
+  border: 1px solid rgba(98, 217, 255, 0.34);
+  color: #dcecf3;
+  background: rgba(3, 13, 21, 0.985);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.68);
+}
+
+.configuration-hub > header {
+  min-height: 62px;
+  padding: 11px 12px 11px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line-strong);
+  background: linear-gradient(90deg, rgba(39, 151, 183, 0.13), transparent);
+}
+
+.configuration-hub > header small,
+.configuration-hub > header strong {
+  display: block;
+}
+
+.configuration-hub > header small {
+  color: var(--cyan);
+  font-size: 7px;
+  letter-spacing: 0.14em;
+}
+
+.configuration-hub > header strong {
+  margin-top: 4px;
+  font-size: 16px;
+  font-weight: 520;
+}
+
+.configuration-hub > header button {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  color: #7895a0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.configuration-hub > header button:hover {
+  color: #e5fbff;
+  border-color: var(--line);
+}
+
+.configuration-hub > div {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 18px;
+}
+
+.configuration-hub > div > button {
+  min-height: 142px;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid rgba(98, 217, 255, 0.18);
+  color: #86a7b3;
+  background:
+    linear-gradient(135deg, rgba(43, 141, 164, 0.09), transparent 68%),
+    rgba(4, 18, 25, 0.78);
+  text-align: left;
+  cursor: pointer;
+}
+
+.configuration-hub > div > button:hover,
+.configuration-hub > div > button:focus-visible {
+  color: var(--cyan);
+  border-color: rgba(98, 217, 255, 0.48);
+  outline: 0;
+  background:
+    linear-gradient(135deg, rgba(43, 141, 164, 0.17), transparent 68%),
+    rgba(4, 18, 25, 0.9);
+}
+
+.configuration-hub > div span,
+.configuration-hub > div small,
+.configuration-hub > div strong,
+.configuration-hub > div em {
+  display: block;
+}
+
+.configuration-hub > div small {
+  color: #62818d;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.configuration-hub > div strong {
+  margin-top: 7px;
+  color: #dff8fc;
+  font-size: 15px;
+  font-weight: 520;
+}
+
+.configuration-hub > div em {
+  margin-top: 8px;
+  color: #6d8995;
+  font-size: 8px;
+  font-style: normal;
+  line-height: 1.55;
+}
+
+.configuration-hub > footer {
+  min-height: 45px;
+  padding: 0 18px;
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  color: #66838f;
+  font-size: 8px;
+}
+
 .pixel-editor-backdrop {
   position: fixed;
   inset: 0;
@@ -657,6 +790,28 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.pixel-editor-toolbar > div {
+  display: flex;
+  gap: 4px;
+}
+
+.pixel-editor-toolbar button {
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  color: #7898a4;
+  background: rgba(35, 119, 145, 0.055);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+  letter-spacing: 0.07em;
+  cursor: pointer;
+}
+
+.pixel-editor-toolbar button:hover {
+  color: var(--cyan);
+  border-color: rgba(98, 217, 255, 0.4);
 }
 
 .pixel-editor-toolbar b {
@@ -798,6 +953,15 @@ button {
 .pixel-editor-node.selected {
   z-index: 6;
   color: #071014;
+  background: #63d6d2;
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 2px #bafbf7,
+    0 0 12px rgba(83, 224, 207, 0.56);
+}
+
+.pixel-editor-node.primary-selected {
+  z-index: 7;
   background: var(--yellow);
   filter: brightness(1.08);
   box-shadow:
@@ -873,6 +1037,18 @@ button {
 .pixel-editor-coordinates input:focus {
   border-color: var(--cyan);
   box-shadow: 0 0 0 1px rgba(98, 217, 255, 0.18);
+}
+
+.pixel-editor-inspector > input:disabled,
+.pixel-editor-coordinates input:disabled {
+  color: #526c77;
+  border-color: rgba(98, 217, 255, 0.1);
+  background: rgba(1, 8, 12, 0.7);
+  cursor: not-allowed;
+}
+
+.pixel-editor-coordinates.is-disabled {
+  opacity: 0.62;
 }
 
 .pixel-editor-coordinates {
@@ -2106,53 +2282,31 @@ button {
   gap: 10px;
 }
 
-.detector-projection-tabs {
+.detector-projection-status {
   display: flex;
   align-items: center;
   justify-content: space-between;
   min-width: 0;
   gap: 8px;
-}
-
-.detector-projection-tabs > div {
-  display: flex;
-  gap: 3px;
-}
-
-.detector-projection-tabs button {
-  appearance: none;
-  min-width: 61px;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid rgba(105, 179, 190, 0.2);
-  background: rgba(6, 24, 31, 0.76);
-  color: #698b98;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid rgba(105, 179, 190, 0.16);
+  background: rgba(6, 24, 31, 0.48);
   font-family: var(--font-geist-mono), monospace;
+  letter-spacing: 0.08em;
+}
+
+.detector-projection-status span {
+  color: #9ac5cd;
   font-size: 7px;
   font-weight: 650;
-  letter-spacing: 0.08em;
-  cursor: pointer;
 }
 
-.detector-projection-tabs button:hover,
-.detector-projection-tabs button:focus-visible {
-  color: #dffefa;
-  border-color: rgba(91, 231, 213, 0.58);
-  outline: 0;
-}
-
-.detector-projection-tabs button.active {
-  color: #dffefa;
-  border-color: rgba(91, 231, 213, 0.56);
-  background: rgba(42, 157, 156, 0.18);
-  box-shadow: inset 0 -2px 0 #55e6d6;
-}
-
-.detector-projection-tabs > span {
+.detector-projection-status em {
   overflow: hidden;
   color: #60808c;
-  font-family: var(--font-geist-mono), monospace;
   font-size: 6px;
+  font-style: normal;
   letter-spacing: 0.07em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2903,12 +3057,8 @@ button {
     align-items: stretch;
   }
 
-  .detector-projection-tabs {
+  .detector-projection-status {
     grid-area: tabs;
-  }
-
-  .detector-projection-tabs button {
-    height: 20px;
   }
 
   .detector-map {
@@ -3038,6 +3188,10 @@ button {
 }
 
 @media (max-width: 900px) {
+  .configuration-hub > div {
+    grid-template-columns: 1fr;
+  }
+
   .pixel-editor-backdrop {
     padding: 0;
   }

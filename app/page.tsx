@@ -2028,7 +2028,6 @@ function DetectorMap({
   mountX,
   mountZ,
   onSelect,
-  onConfigure,
 }: {
   values: number[];
   hits: number[];
@@ -2042,7 +2041,6 @@ function DetectorMap({
   mountX: number;
   mountZ: number;
   onSelect: (index: number) => void;
-  onConfigure: () => void;
 }) {
   const activeCluster = PIXEL_LAYOUT
     .filter((pixel) => (hits[pixel.index] ?? 0) > 0)
@@ -2056,48 +2054,19 @@ function DetectorMap({
       : 0;
   const upEnergy = Math.round(depositedEnergy * 0.61);
   const downEnergy = depositedEnergy - upEnergy;
-  const [projection, setProjection] = useState<"dome" | "unfolded">("dome");
   const selectedConfiguredPixel = pixelConfiguration.pixels[selectedPixel];
 
   return (
-    <div className={`detector-module projection-${projection}`}>
-      <div className="detector-projection-tabs">
-        <div role="group" aria-label="Detector projection">
-          <button
-            type="button"
-            className={projection === "dome" ? "active" : ""}
-            aria-pressed={projection === "dome"}
-            onClick={() => setProjection("dome")}
-          >
-            DOME
-          </button>
-          <button
-            type="button"
-            className={projection === "unfolded" ? "active" : ""}
-            aria-pressed={projection === "unfolded"}
-            onClick={() => setProjection("unfolded")}
-          >
-            UNFOLDED
-          </button>
-          <button type="button" onClick={onConfigure}>
-            CONFIGURE
-          </button>
-        </div>
-        <span>
-          {projection === "unfolded"
-            ? "EDITABLE MAP · SAVED LOCALLY"
-            : "HEMISPHERICAL RESPONSE"}
-        </span>
+    <div className="detector-module projection-unfolded">
+      <div className="detector-projection-status">
+        <span>CONFIGURED DETECTOR MAP</span>
+        <em>126 PX · PERSISTENT LAYOUT</em>
       </div>
       <div
-        className={`detector-map projection-${projection} ${
+        className={`detector-map projection-unfolded ${
           grbActive ? "is-grb" : ""
         }`}
-        aria-label={
-          projection === "dome"
-            ? "Hemispherical honeycomb map of the 126 pixels"
-            : "Configured unfolded planar map of the 126 pixels"
-        }
+        aria-label="Configured planar map of the 126 pixels"
       >
         {PIXEL_LAYOUT.map((pixel) => {
           const configuredPixel = pixelConfiguration.pixels[pixel.index];
@@ -2130,25 +2099,15 @@ function DetectorMap({
               } ${
                 selectedPixel === pixel.index ? "is-selected" : ""
               } ${
-                projection === "unfolded" && configuredPixel.isSeam
-                  ? "is-unfolding-seam"
-                  : ""
+                configuredPixel.isSeam ? "is-unfolding-seam" : ""
               }`}
               style={{
                 "--heat": Math.min(1, value).toFixed(4),
-                "--pixel-x":
-                  projection === "dome"
-                    ? `${50 + Math.cos(pixel.angle) * pixel.radius * 44}%`
-                    : `${configuredPixel.x}%`,
-                "--pixel-y":
-                  projection === "dome"
-                    ? `${50 + Math.sin(pixel.angle) * pixel.radius * 44}%`
-                    : `${configuredPixel.y}%`,
+                "--pixel-x": `${configuredPixel.x}%`,
+                "--pixel-y": `${configuredPixel.y}%`,
                 "--delay": `${(pixel.index % 17) * 24}ms`,
               } as React.CSSProperties}
-              title={`${configuredPixel.id}${
-                projection === "unfolded" ? " · configured position" : ""
-              } · ${hitCount} photons detected in the current bin`}
+              title={`${configuredPixel.id} · configured position · ${hitCount} photons detected in the current bin`}
               aria-label={`${configuredPixel.id}, ${hitCount} photons detected`}
               onClick={() => onSelect(pixel.index)}
             >
@@ -2156,14 +2115,8 @@ function DetectorMap({
             </button>
           );
         })}
-        {projection === "dome" ? (
-          <div className="detector-axis"><i /> Z</div>
-        ) : (
-          <>
-            <div className="detector-axis unfolded-x"><i /> X</div>
-            <div className="detector-axis unfolded-y"><i /> Y</div>
-          </>
-        )}
+        <div className="detector-axis unfolded-x"><i /> X</div>
+        <div className="detector-axis unfolded-y"><i /> Y</div>
       </div>
 
       <div className="cluster-readout">
@@ -2423,6 +2376,61 @@ function SystemGeometryCanvas({
   );
 }
 
+function ConfigurationHub({
+  onOpenPayload,
+  onOpenPixels,
+  onClose,
+}: {
+  onOpenPayload: () => void;
+  onOpenPixels: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="configuration-hub-backdrop" role="presentation">
+      <section
+        className="configuration-hub"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="configuration-hub-title"
+      >
+        <header>
+          <div>
+            <small>SIMULATOR CONFIGURATION</small>
+            <strong id="configuration-hub-title">Crystal Eye configuration</strong>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close configuration">
+            <X size={17} />
+          </button>
+        </header>
+        <div>
+          <button type="button" onClick={onOpenPayload}>
+            <SlidersHorizontal size={24} />
+            <span>
+              <small>MECHANICAL CONFIGURATION</small>
+              <strong>Payload placement</strong>
+              <em>Position the Crystal Eye on the 60 × 60 cm satellite surface.</em>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+          <button type="button" onClick={onOpenPixels}>
+            <Move size={24} />
+            <span>
+              <small>DETECTOR CONFIGURATION</small>
+              <strong>Pixel map and IDs</strong>
+              <em>Arrange, group, identify, save, import, and export all 126 pixels.</em>
+            </span>
+            <ChevronRight size={18} />
+          </button>
+        </div>
+        <footer>
+          Configuration changes are applied to the simulator and retained by their
+          respective controls.
+        </footer>
+      </section>
+    </div>
+  );
+}
+
 function PixelConfigurationEditor({
   configuration,
   onSave,
@@ -2436,12 +2444,25 @@ function PixelConfigurationEditor({
     version: 1,
     pixels: configuration.pixels.map((pixel) => ({ ...pixel })),
   }));
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndices, setSelectedIndices] = useState<number[]>([0]);
+  const [primarySelectedIndex, setPrimarySelectedIndex] = useState(0);
   const [message, setMessage] = useState(
-    "Drag pixels on the canvas, then assign the definitive detector ID.",
+    "Shift/Ctrl/Cmd-click to select multiple pixels, then drag the group.",
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const selectedPixel = draft.pixels[selectedIndex];
+  const dragRef = useRef<{
+    indices: number[];
+    startClientX: number;
+    startClientY: number;
+    canvasWidth: number;
+    canvasHeight: number;
+    initialPositions: { index: number; x: number; y: number }[];
+  } | null>(null);
+  const selectedPixel = draft.pixels[primarySelectedIndex];
+  const selectedIndexSet = useMemo(
+    () => new Set(selectedIndices),
+    [selectedIndices],
+  );
 
   const updatePixel = useCallback(
     (index: number, updates: Partial<PixelConfigurationEntry>) => {
@@ -2455,18 +2476,34 @@ function PixelConfigurationEditor({
     [],
   );
 
-  const updatePositionFromPointer = (
-    index: number,
-    clientX: number,
-    clientY: number,
-    canvas: HTMLElement,
-  ) => {
-    const rect = canvas.getBoundingClientRect();
-    updatePixel(index, {
-      x: THREE.MathUtils.clamp(((clientX - rect.left) / rect.width) * 100, 1.2, 98.8),
-      y: THREE.MathUtils.clamp(((clientY - rect.top) / rect.height) * 100, 1.2, 98.8),
-    });
-  };
+  const movePixels = useCallback(
+    (indices: number[], requestedDeltaX: number, requestedDeltaY: number) => {
+      if (indices.length === 0) return;
+      setDraft((current) => {
+        const moving = indices.map((index) => current.pixels[index]);
+        const deltaX = THREE.MathUtils.clamp(
+          requestedDeltaX,
+          Math.max(...moving.map((pixel) => 1.2 - pixel.x)),
+          Math.min(...moving.map((pixel) => 98.8 - pixel.x)),
+        );
+        const deltaY = THREE.MathUtils.clamp(
+          requestedDeltaY,
+          Math.max(...moving.map((pixel) => 1.2 - pixel.y)),
+          Math.min(...moving.map((pixel) => 98.8 - pixel.y)),
+        );
+        const movingSet = new Set(indices);
+        return {
+          ...current,
+          pixels: current.pixels.map((pixel) =>
+            movingSet.has(pixel.index)
+              ? { ...pixel, x: pixel.x + deltaX, y: pixel.y + deltaY }
+              : pixel,
+          ),
+        };
+      });
+    },
+    [],
+  );
 
   const saveConfiguration = () => {
     const ids = draft.pixels.map((pixel) => pixel.id.trim());
@@ -2502,7 +2539,8 @@ function PixelConfigurationEditor({
       const imported = normalizePixelConfiguration(JSON.parse(await file.text()));
       if (!imported) throw new Error("Invalid configuration");
       setDraft(imported);
-      setSelectedIndex(0);
+      setSelectedIndices([0]);
+      setPrimarySelectedIndex(0);
       setMessage("Configuration imported. Review it, then press Save configuration.");
     } catch {
       setMessage("The selected file is not a valid 126-pixel configuration.");
@@ -2555,8 +2593,27 @@ function PixelConfigurationEditor({
           <div className="pixel-editor-workspace">
             <div className="pixel-editor-toolbar">
               <span><Move size={13} /> DRAG TO POSITION</span>
-              <span>CLICK A PIXEL TO EDIT ITS ID</span>
-              <b>126 PIXELS</b>
+              <span>SHIFT / CTRL / CMD + CLICK · MULTI-SELECT</span>
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedIndices(draft.pixels.map((pixel) => pixel.index));
+                    setPrimarySelectedIndex(0);
+                  }}
+                >
+                  SELECT ALL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedIndices([primarySelectedIndex]);
+                  }}
+                >
+                  CLEAR GROUP
+                </button>
+              </div>
+              <b>{selectedIndices.length} / 126 SELECTED</b>
             </div>
             <div
               className="pixel-editor-canvas"
@@ -2571,7 +2628,9 @@ function PixelConfigurationEditor({
                   type="button"
                   className={`pixel-editor-node ${
                     pixel.isSeam ? "is-red" : "is-gray"
-                  } ${pixel.index === selectedIndex ? "selected" : ""}`}
+                  } ${selectedIndexSet.has(pixel.index) ? "selected" : ""} ${
+                    pixel.index === primarySelectedIndex ? "primary-selected" : ""
+                  }`}
                   style={{
                     "--editor-x": `${pixel.x}%`,
                     "--editor-y": `${pixel.y}%`,
@@ -2580,34 +2639,96 @@ function PixelConfigurationEditor({
                   aria-label={`Pixel ${pixel.index + 1}, ID ${pixel.id}`}
                   onPointerDown={(event) => {
                     event.preventDefault();
-                    setSelectedIndex(pixel.index);
+                    const additiveSelection =
+                      event.shiftKey || event.ctrlKey || event.metaKey;
+                    let dragIndices: number[];
+                    if (additiveSelection) {
+                      dragIndices = selectedIndexSet.has(pixel.index)
+                        ? selectedIndices.filter((index) => index !== pixel.index)
+                        : [...selectedIndices, pixel.index];
+                      if (dragIndices.length === 0) dragIndices = [pixel.index];
+                      setSelectedIndices(dragIndices);
+                    } else if (selectedIndexSet.has(pixel.index)) {
+                      dragIndices = selectedIndices;
+                    } else {
+                      dragIndices = [pixel.index];
+                      setSelectedIndices(dragIndices);
+                    }
+                    setPrimarySelectedIndex(
+                      dragIndices.includes(pixel.index)
+                        ? pixel.index
+                        : dragIndices[0],
+                    );
                     event.currentTarget.setPointerCapture(event.pointerId);
                     const canvas = event.currentTarget.parentElement;
                     if (canvas) {
-                      updatePositionFromPointer(
-                        pixel.index,
-                        event.clientX,
-                        event.clientY,
-                        canvas,
-                      );
+                      const rect = canvas.getBoundingClientRect();
+                      dragRef.current = {
+                        indices: dragIndices,
+                        startClientX: event.clientX,
+                        startClientY: event.clientY,
+                        canvasWidth: rect.width,
+                        canvasHeight: rect.height,
+                        initialPositions: dragIndices.map((index) => ({
+                          index,
+                          x: draft.pixels[index].x,
+                          y: draft.pixels[index].y,
+                        })),
+                      };
                     }
                   }}
                   onPointerMove={(event) => {
                     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
-                    const canvas = event.currentTarget.parentElement;
-                    if (canvas) {
-                      updatePositionFromPointer(
-                        pixel.index,
-                        event.clientX,
-                        event.clientY,
-                        canvas,
-                      );
-                    }
+                    const drag = dragRef.current;
+                    if (!drag) return;
+                    const requestedDeltaX =
+                      ((event.clientX - drag.startClientX) / drag.canvasWidth) * 100;
+                    const requestedDeltaY =
+                      ((event.clientY - drag.startClientY) / drag.canvasHeight) * 100;
+                    const deltaX = THREE.MathUtils.clamp(
+                      requestedDeltaX,
+                      Math.max(
+                        ...drag.initialPositions.map((position) => 1.2 - position.x),
+                      ),
+                      Math.min(
+                        ...drag.initialPositions.map((position) => 98.8 - position.x),
+                      ),
+                    );
+                    const deltaY = THREE.MathUtils.clamp(
+                      requestedDeltaY,
+                      Math.max(
+                        ...drag.initialPositions.map((position) => 1.2 - position.y),
+                      ),
+                      Math.min(
+                        ...drag.initialPositions.map((position) => 98.8 - position.y),
+                      ),
+                    );
+                    const dragSet = new Set(drag.indices);
+                    setDraft((current) => ({
+                      ...current,
+                      pixels: current.pixels.map((currentPixel) => {
+                        if (!dragSet.has(currentPixel.index)) return currentPixel;
+                        const initial = drag.initialPositions.find(
+                          (position) => position.index === currentPixel.index,
+                        );
+                        return initial
+                          ? {
+                              ...currentPixel,
+                              x: initial.x + deltaX,
+                              y: initial.y + deltaY,
+                            }
+                          : currentPixel;
+                      }),
+                    }));
                   }}
                   onPointerUp={(event) => {
+                    dragRef.current = null;
                     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
                       event.currentTarget.releasePointerCapture(event.pointerId);
                     }
+                  }}
+                  onPointerCancel={() => {
+                    dragRef.current = null;
                   }}
                   onKeyDown={(event) => {
                     const step = event.shiftKey ? 1 : 0.25;
@@ -2619,10 +2740,10 @@ function PixelConfigurationEditor({
                     }[event.key];
                     if (!delta) return;
                     event.preventDefault();
-                    updatePixel(pixel.index, {
-                      x: THREE.MathUtils.clamp(pixel.x + delta[0], 1.2, 98.8),
-                      y: THREE.MathUtils.clamp(pixel.y + delta[1], 1.2, 98.8),
-                    });
+                    const keyboardSelection = selectedIndexSet.has(pixel.index)
+                      ? selectedIndices
+                      : [pixel.index];
+                    movePixels(keyboardSelection, delta[0], delta[1]);
                   }}
                 >
                   <span>{String(pixel.index + 1).padStart(3, "0")}</span>
@@ -2634,24 +2755,45 @@ function PixelConfigurationEditor({
 
           <aside className="pixel-editor-inspector">
             <div className="pixel-editor-selected">
-              <small>SELECTED PIXEL</small>
-              <strong>#{String(selectedPixel.index + 1).padStart(3, "0")}</strong>
-              <em>{selectedPixel.isSeam ? "RED TRIPLET" : "GRAY CLUSTER"}</em>
+              <small>
+                {selectedIndices.length === 1 ? "SELECTED PIXEL" : "MULTIPLE SELECTION"}
+              </small>
+              <strong>
+                {selectedIndices.length === 1
+                  ? `#${String(selectedPixel.index + 1).padStart(3, "0")}`
+                  : `${selectedIndices.length} PIXELS`}
+              </strong>
+              <em>
+                {selectedIndices.length === 1
+                  ? selectedPixel.isSeam
+                    ? "RED TRIPLET"
+                    : "GRAY CLUSTER"
+                  : "DRAG OR NUDGE AS A GROUP"}
+              </em>
             </div>
 
             <label htmlFor="pixel-config-id">DETECTOR ID</label>
             <input
               id="pixel-config-id"
-              value={selectedPixel.id}
+              value={
+                selectedIndices.length === 1
+                  ? selectedPixel.id
+                  : "Select one pixel to edit its ID"
+              }
               maxLength={24}
               spellCheck={false}
+              disabled={selectedIndices.length !== 1}
               onChange={(event) =>
-                updatePixel(selectedIndex, { id: event.target.value })
+                updatePixel(primarySelectedIndex, { id: event.target.value })
               }
               onFocus={(event) => event.currentTarget.select()}
             />
 
-            <div className="pixel-editor-coordinates">
+            <div
+              className={`pixel-editor-coordinates ${
+                selectedIndices.length !== 1 ? "is-disabled" : ""
+              }`}
+            >
               <label>
                 <span>X POSITION</span>
                 <input
@@ -2660,8 +2802,9 @@ function PixelConfigurationEditor({
                   max={98.8}
                   step={0.1}
                   value={selectedPixel.x.toFixed(2)}
+                  disabled={selectedIndices.length !== 1}
                   onChange={(event) =>
-                    updatePixel(selectedIndex, {
+                    updatePixel(primarySelectedIndex, {
                       x: THREE.MathUtils.clamp(Number(event.target.value), 1.2, 98.8),
                     })
                   }
@@ -2675,8 +2818,9 @@ function PixelConfigurationEditor({
                   max={98.8}
                   step={0.1}
                   value={selectedPixel.y.toFixed(2)}
+                  disabled={selectedIndices.length !== 1}
                   onChange={(event) =>
-                    updatePixel(selectedIndex, {
+                    updatePixel(primarySelectedIndex, {
                       y: THREE.MathUtils.clamp(Number(event.target.value), 1.2, 98.8),
                     })
                   }
@@ -2689,30 +2833,30 @@ function PixelConfigurationEditor({
               <div>
                 <button
                   type="button"
-                  aria-label="Move selected pixel up"
+                  aria-label="Move selection up"
                   onClick={() =>
-                    updatePixel(selectedIndex, { y: Math.max(1.2, selectedPixel.y - 0.25) })
+                    movePixels(selectedIndices, 0, -0.25)
                   }
                 >↑</button>
                 <button
                   type="button"
-                  aria-label="Move selected pixel left"
+                  aria-label="Move selection left"
                   onClick={() =>
-                    updatePixel(selectedIndex, { x: Math.max(1.2, selectedPixel.x - 0.25) })
+                    movePixels(selectedIndices, -0.25, 0)
                   }
                 >←</button>
                 <button
                   type="button"
-                  aria-label="Move selected pixel right"
+                  aria-label="Move selection right"
                   onClick={() =>
-                    updatePixel(selectedIndex, { x: Math.min(98.8, selectedPixel.x + 0.25) })
+                    movePixels(selectedIndices, 0.25, 0)
                   }
                 >→</button>
                 <button
                   type="button"
-                  aria-label="Move selected pixel down"
+                  aria-label="Move selection down"
                   onClick={() =>
-                    updatePixel(selectedIndex, { y: Math.min(98.8, selectedPixel.y + 0.25) })
+                    movePixels(selectedIndices, 0, 0.25)
                   }
                 >↓</button>
               </div>
@@ -2728,6 +2872,8 @@ function PixelConfigurationEditor({
                     ...pixel,
                   })),
                 });
+                setSelectedIndices([0]);
+                setPrimarySelectedIndex(0);
                 setMessage("Default draft restored. Press Save to make it permanent.");
               }}
             >
@@ -2910,8 +3056,9 @@ export default function Home() {
   const [paused, setPaused] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [systemZoom, setSystemZoom] = useState(55);
-  const [placementOpen, setPlacementOpen] = useState(false);
-  const [pixelEditorOpen, setPixelEditorOpen] = useState(false);
+  const [configurationView, setConfigurationView] = useState<
+    "hub" | "payload" | "pixels" | null
+  >(null);
   const [pixelConfiguration, setPixelConfiguration] =
     useState<PixelConfiguration>(DEFAULT_PIXEL_CONFIGURATION);
   const [mountX, setMountX] = useState(0);
@@ -3143,7 +3290,7 @@ export default function Home() {
         PIXEL_CONFIGURATION_STORAGE_KEY,
         JSON.stringify(configuration),
       );
-      setPixelEditorOpen(false);
+      setConfigurationView("hub");
     },
     [],
   );
@@ -3317,10 +3464,10 @@ export default function Home() {
           <button
             type="button"
             className="placement-settings-button"
-            onClick={() => setPlacementOpen(true)}
+            onClick={() => setConfigurationView("hub")}
           >
             <SlidersHorizontal size={14} />
-            PAYLOAD PLACEMENT
+            CONFIGURATION
           </button>
           <span className="status-live"><i /> SCIENCE MODE</span>
           <div className="header-metric">
@@ -3343,7 +3490,15 @@ export default function Home() {
         </div>
       </header>
 
-      {placementOpen && (
+      {configurationView === "hub" && (
+        <ConfigurationHub
+          onOpenPayload={() => setConfigurationView("payload")}
+          onOpenPixels={() => setConfigurationView("pixels")}
+          onClose={() => setConfigurationView(null)}
+        />
+      )}
+
+      {configurationView === "payload" && (
         <PayloadPlacementPanel
           mountX={mountX}
           mountZ={mountZ}
@@ -3351,15 +3506,15 @@ export default function Home() {
             setMountX(THREE.MathUtils.clamp(x, -1, 1));
             setMountZ(THREE.MathUtils.clamp(z, -1, 1));
           }}
-          onClose={() => setPlacementOpen(false)}
+          onClose={() => setConfigurationView("hub")}
         />
       )}
 
-      {pixelEditorOpen && (
+      {configurationView === "pixels" && (
         <PixelConfigurationEditor
           configuration={pixelConfiguration}
           onSave={savePixelConfiguration}
-          onClose={() => setPixelEditorOpen(false)}
+          onClose={() => setConfigurationView("hub")}
         />
       )}
 
@@ -3608,7 +3763,6 @@ export default function Home() {
               mountX={mountX}
               mountZ={mountZ}
               onSelect={selectPixel}
-              onConfigure={() => setPixelEditorOpen(true)}
             />
           </div>
 
