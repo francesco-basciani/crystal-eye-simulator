@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CircleDot,
   Download,
+  Maximize2,
   Move,
   Orbit,
   Pause,
@@ -3021,6 +3022,7 @@ export default function Home() {
   const [mountZ, setMountZ] = useState(0);
   const [epochMs, setEpochMs] = useState(() => Date.now());
   const [selectedPixel, setSelectedPixel] = useState(43);
+  const [detectorExpanded, setDetectorExpanded] = useState(false);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
   const [samples, setSamples] = useState<Sample[]>(() =>
     Array.from({ length: 80 }, () => ({
@@ -3082,6 +3084,15 @@ export default function Home() {
       mountZ,
     };
   }, [altitude, inclination, speed, paused, epochMs, mountX, mountZ]);
+
+  useEffect(() => {
+    if (!detectorExpanded) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDetectorExpanded(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [detectorExpanded]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -3686,6 +3697,15 @@ export default function Home() {
           </div>
 
           <div className="detector-section">
+            <button
+              type="button"
+              className="detector-expand-button"
+              onClick={() => setDetectorExpanded(true)}
+              aria-label="Open enlarged detector map"
+              title="Open enlarged detector map"
+            >
+              <Maximize2 size={14} />
+            </button>
             <DetectorMap
               values={telemetry.detector}
               hits={telemetry.detectorHits}
@@ -3714,6 +3734,47 @@ export default function Home() {
           </button>
         </aside>
       </section>
+
+      {detectorExpanded && (
+        <div
+          className="detector-expanded-backdrop"
+          role="presentation"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setDetectorExpanded(false);
+          }}
+        >
+          <section
+            className="detector-expanded-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Enlarged configured detector map"
+          >
+            <button
+              type="button"
+              className="detector-expand-button close-expanded"
+              onClick={() => setDetectorExpanded(false)}
+              aria-label="Close enlarged detector map"
+              title="Close enlarged detector map"
+            >
+              <X size={18} />
+            </button>
+            <DetectorMap
+              values={telemetry.detector}
+              hits={telemetry.detectorHits}
+              grbActive={telemetry.grbActive}
+              burstPixelGroups={telemetry.burstPixelGroups}
+              pixelConfiguration={pixelConfiguration}
+              selectedPixel={selectedPixel}
+              earthIllumination={telemetry.earthIllumination}
+              earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
+              earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
+              mountX={mountX}
+              mountZ={mountZ}
+              onSelect={selectPixel}
+            />
+          </section>
+        </div>
+      )}
 
       <footer className="bottom-panel">
         <div className="footer-label">

@@ -2275,13 +2275,16 @@ button {
 .detector-section {
   flex: 1;
   min-height: 0;
+  position: relative;
 }
 
 .detector-module {
-  display: block;
+  display: grid;
+  place-items: center;
   width: 100%;
   height: 100%;
   padding: 0;
+  container-type: size;
 }
 
 .detector-map {
@@ -2304,11 +2307,11 @@ button {
 }
 
 .detector-map.projection-unfolded {
-  width: 100%;
-  height: 100%;
+  width: min(100cqw, 118cqh);
+  height: min(84.7458cqw, 100cqh);
   max-width: none;
   max-height: none;
-  aspect-ratio: auto;
+  aspect-ratio: 1.18;
   margin: 0;
   border: 0;
   border-radius: 0;
@@ -2318,6 +2321,70 @@ button {
   box-shadow:
     inset 0 0 34px rgba(0, 0, 0, 0.48),
     0 0 26px rgba(35, 169, 183, 0.05);
+}
+
+.detector-expand-button {
+  appearance: none;
+  position: absolute;
+  z-index: 12;
+  top: 7px;
+  right: 7px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(98, 217, 255, 0.32);
+  border-radius: 4px;
+  color: #a8d6df;
+  background: rgba(3, 15, 21, 0.9);
+  box-shadow: 0 0 18px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.detector-expand-button:hover,
+.detector-expand-button:focus-visible {
+  color: #071014;
+  border-color: #b9f2ff;
+  outline: 0;
+  background: var(--cyan);
+}
+
+.detector-expanded-backdrop {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 3vh 3vw;
+  background: rgba(0, 7, 11, 0.9);
+  backdrop-filter: blur(10px);
+}
+
+.detector-expanded-dialog {
+  position: relative;
+  width: min(94vw, 103.84vh);
+  max-height: 88vh;
+  aspect-ratio: 1.18;
+  overflow: hidden;
+  border: 1px solid rgba(98, 217, 255, 0.3);
+  background: #041117;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.7),
+    0 24px 80px rgba(0, 0, 0, 0.72),
+    0 0 54px rgba(35, 169, 183, 0.11);
+}
+
+.detector-expanded-dialog .detector-module {
+  width: 100%;
+  height: 100%;
+}
+
+.detector-expand-button.close-expanded {
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
 }
 
 .detector-pixel {
