@@ -3326,6 +3326,41 @@ function PixelConfigurationEditor({
               </em>
             </div>
 
+            <section
+              className="pixel-geometry-card"
+              aria-label={`Geometric internal structure for ${selectedPixel.id}`}
+            >
+              <header>
+                <span>PIXEL GEOMETRY</span>
+                <strong>{selectedPixel.id}</strong>
+                <em>GEOMETRY ONLY</em>
+              </header>
+              <div className="pixel-geometry-stack">
+                <i className="pixel-geometry-axis" />
+                <div className="pixel-geometry-stage tacs-stage">
+                  <div className="pixel-geometry-shape geometry-tacs" />
+                  <span>
+                    <strong>T-ACS<sub>0</sub></strong>
+                    <small>UPPER PLATE · CH 0–1</small>
+                  </span>
+                </div>
+                <div className="pixel-geometry-stage up-stage">
+                  <div className="pixel-geometry-shape geometry-up" />
+                  <span>
+                    <strong>UP<sub>0</sub></strong>
+                    <small>CENTRAL VOLUME · CH 2–4</small>
+                  </span>
+                </div>
+                <div className="pixel-geometry-stage down-stage">
+                  <div className="pixel-geometry-shape geometry-down" />
+                  <span>
+                    <strong>DOWN<sub>0</sub></strong>
+                    <small>LOWER VOLUME · CH 5–7</small>
+                  </span>
+                </div>
+              </div>
+            </section>
+
             <label htmlFor="pixel-config-id">DETECTOR ID</label>
             <input
               id="pixel-config-id"
