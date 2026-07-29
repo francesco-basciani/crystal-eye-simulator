@@ -2060,20 +2060,8 @@ function DetectorMap({
   mountZ: number;
   onSelect: (index: number) => void;
 }) {
-  const activeCluster = PIXEL_LAYOUT
-    .filter((pixel) => (hits[pixel.index] ?? 0) > 0)
-    .sort((a, b) => (hits[b.index] ?? 0) - (hits[a.index] ?? 0));
-  const totalHits = hits.reduce((sum, value) => sum + value, 0);
-  const selectedConfiguredPixel = pixelConfiguration.pixels[selectedPixel];
-
   return (
     <div className="detector-module projection-unfolded">
-      <div className="detector-projection-status">
-        <span>CONFIGURED DETECTOR MAP</span>
-        <em>
-          {activeCluster.length} ON · Σ {totalHits} PH · {selectedConfiguredPixel.id}
-        </em>
-      </div>
       <div
         className={`detector-map projection-unfolded ${
           grbActive ? "is-grb" : ""
@@ -2127,8 +2115,6 @@ function DetectorMap({
             </button>
           );
         })}
-        <div className="detector-axis unfolded-x"><i /> X</div>
-        <div className="detector-axis unfolded-y"><i /> Y</div>
       </div>
     </div>
   );
@@ -3700,15 +3686,6 @@ export default function Home() {
           </div>
 
           <div className="detector-section">
-            <div className="chart-header">
-              <div>
-                <small>DETECTOR RESPONSE</small>
-                <strong>Hits above threshold · 0.2 s bin</strong>
-              </div>
-              <span>
-                {telemetry.detectorHits.filter((hits) => hits > 0).length} PX ON
-              </span>
-            </div>
             <DetectorMap
               values={telemetry.detector}
               hits={telemetry.detectorHits}
