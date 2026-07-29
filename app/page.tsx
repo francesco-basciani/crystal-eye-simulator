@@ -13,7 +13,6 @@ import {
   Play,
   Radio,
   RotateCcw,
-  Satellite,
   Save,
   SlidersHorizontal,
   Sparkles,
@@ -1100,13 +1099,9 @@ function GlobeScene({
     pixelGroup.position.y = 0.155;
     payloadMountGroup.add(pixelGroup);
     const pixelGeometry = new THREE.CylinderGeometry(0.0135, 0.015, 0.025, 6, 1, false);
-    const pixelMaterials = PIXEL_LAYOUT.map((pixel) =>
+    const pixelMaterials = PIXEL_LAYOUT.map(() =>
       new THREE.MeshStandardMaterial({
-        color: settingsRef.current.pixelConfiguration.pixels[pixel.index].isSeam
-          ? 0x754059
-          : pixel.ring % 2 === 0
-            ? 0x4edfd4
-            : 0x54bedf,
+        color: 0x4edfd4,
         emissive: 0x086f79,
         emissiveIntensity: 0.65,
         metalness: 0.18,
@@ -1324,8 +1319,6 @@ function GlobeScene({
       crystalPixels.forEach((crystal, index) => {
         const material = pixelMaterials[index];
         const isSelected = index === settings.selectedPixel;
-        const layout = PIXEL_LAYOUT[index];
-        const configuredPixel = settings.pixelConfiguration.pixels[index];
         const hitCount = settings.detectorHits[index] ?? 0;
         const isFired = hitCount > 0;
         const isBurstPath =
@@ -1359,11 +1352,7 @@ function GlobeScene({
                 ? 0x76efe0
                 : isSelected
                   ? 0x665326
-                  : configuredPixel.isSeam
-                    ? 0x4d2639
-                  : layout.ring % 2 === 0
-                    ? 0x24494e
-                    : 0x24424c,
+                  : 0x24494e,
         );
         material.emissive.setHex(
           isOverlap
@@ -1376,8 +1365,6 @@ function GlobeScene({
                 ? 0x0b766f
                 : isSelected
                   ? 0x2a2105
-                  : configuredPixel.isSeam
-                    ? 0x260b19
                   : 0x03191d,
         );
         material.emissiveIntensity = isFired
@@ -3482,7 +3469,6 @@ export default function Home() {
     return (2 * Math.PI * Math.sqrt(((earthRadius + altitude) ** 3) / gravitationalParameter)) / 60;
   }, [altitude]);
 
-  const occulted = Math.cos(telemetry.phase) < -0.45;
   const effectiveMountFov = useMemo(() => {
     return getMountEffectiveFov(mountX, mountZ);
   }, [mountX, mountZ]);
@@ -3606,39 +3592,28 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="control-section">
-            <div className="section-label">PAYLOAD</div>
-            <div className="payload-card">
-              <div className="payload-visual">
-                <div className="payload-dome">
-                  {Array.from({ length: 24 }, (_, index) => <i key={index} />)}
-                </div>
-                <div className="payload-bus" />
-              </div>
-              <div>
-                <strong>Crystal Eye · Model 8</strong>
-                <span>Ø 30 cm · hemisphere</span>
-                <span>10 keV – 30 MeV</span>
-                <span>126 pixel · SiPM array</span>
-                <span>mount X {Math.round(mountX * 30)} cm · Z {Math.round(mountZ * 30)} cm</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="control-section grow">
-            <div className="section-label">OBSERVATION STATUS</div>
-            <div className={`observation-state ${occulted ? "occulted" : ""}`}>
-              <div className="state-icon"><Satellite size={19} /></div>
-              <div>
-                <small>EARTH OCCULTATION</small>
-                <strong>{occulted ? "Source occulted" : "Field visible"}</strong>
-              </div>
-              <ChevronRight size={16} />
-            </div>
-            <div className="coordinates">
-              <span>LAT <b>{telemetry.latitude >= 0 ? "N" : "S"} {Math.abs(telemetry.latitude).toFixed(2)}°</b></span>
-              <span>LON <b>{telemetry.longitude >= 0 ? "E" : "W"} {Math.abs(telemetry.longitude).toFixed(2)}°</b></span>
-            </div>
+          <div className="left-sensor-slot">
+            <SensorView
+              phase={telemetry.phase}
+              inclination={inclination}
+              sunDirection={telemetry.sunDirection}
+              moonDirection={telemetry.moonDirection}
+              sunInFov={mountedSunInFov}
+              moonInFov={mountedMoonInFov}
+              moonPhase={telemetry.moonPhase}
+              detector={telemetry.detector}
+              detectorHits={telemetry.detectorHits}
+              selectedPixel={selectedPixel}
+              burstDirections={telemetry.burstDirections}
+              burstPixelGroups={telemetry.burstPixelGroups}
+              earthIllumination={telemetry.earthIllumination}
+              earthAlbedoNoise={telemetry.earthAlbedoNoise}
+              earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
+              earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
+              mountX={mountX}
+              mountZ={mountZ}
+              effectiveFov={effectiveMountFov}
+            />
           </div>
 
           <div className="button-row">
@@ -3692,27 +3667,6 @@ export default function Home() {
             <span>ORB {((telemetry.phase / (Math.PI * 2)) * 100).toFixed(1)}%</span>
             <div><i style={{ width: `${(telemetry.phase / (Math.PI * 2)) * 100}%` }} /></div>
           </div>
-          <SensorView
-            phase={telemetry.phase}
-            inclination={inclination}
-            sunDirection={telemetry.sunDirection}
-            moonDirection={telemetry.moonDirection}
-            sunInFov={mountedSunInFov}
-            moonInFov={mountedMoonInFov}
-            moonPhase={telemetry.moonPhase}
-            detector={telemetry.detector}
-            detectorHits={telemetry.detectorHits}
-            selectedPixel={selectedPixel}
-            burstDirections={telemetry.burstDirections}
-            burstPixelGroups={telemetry.burstPixelGroups}
-            earthIllumination={telemetry.earthIllumination}
-            earthAlbedoNoise={telemetry.earthAlbedoNoise}
-            earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
-            earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
-            mountX={mountX}
-            mountZ={mountZ}
-            effectiveFov={effectiveMountFov}
-          />
         </section>
 
         <aside className="control-panel right-panel">

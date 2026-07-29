@@ -2056,6 +2056,34 @@ button {
   white-space: nowrap;
 }
 
+.left-sensor-slot {
+  flex: 1 1 auto;
+  min-height: 220px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+}
+
+.left-sensor-slot .sensor-view {
+  position: relative;
+  inset: auto;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.left-sensor-slot .sensor-canvas-wrap {
+  min-height: 0;
+  height: auto;
+}
+
+.left-sensor-slot .sensor-view-footer {
+  overflow: hidden;
+}
+
 .legend-dot {
   width: 6px;
   height: 6px;
@@ -3231,6 +3259,11 @@ button {
     width: min(340px, 42vw);
   }
 
+  .left-sensor-slot {
+    flex: 0 0 340px;
+    min-height: 340px;
+  }
+
   .left-panel,
   .right-panel {
     min-height: 650px;
@@ -3307,6 +3340,11 @@ button {
     right: 12px;
     bottom: 42px;
     width: auto;
+  }
+
+  .left-sensor-slot .sensor-view {
+    inset: auto;
+    width: 100%;
   }
 
   .sensor-canvas-wrap {
