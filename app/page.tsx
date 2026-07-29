@@ -3,11 +3,9 @@
 import {
   Activity,
   Aperture,
-  Atom,
   ChevronRight,
   CircleDot,
   Download,
-  Gauge,
   Move,
   Orbit,
   Pause,
@@ -260,24 +258,44 @@ const PIXEL_NORMALS: [number, number, number][] = PIXEL_LAYOUT.map((pixel) => {
     Math.sin(polar) * Math.sin(pixel.angle),
   );
 });
-function getBurstIncidence(pixelIndex: number, sourcePixelIndex: number) {
-  const pixelNormal = PIXEL_NORMALS[pixelIndex];
-  const sourceDirection = PIXEL_NORMALS[sourcePixelIndex];
-  return Math.max(
-    0,
-    pixelNormal[0] * sourceDirection[0] +
-      pixelNormal[1] * sourceDirection[1] +
-      pixelNormal[2] * sourceDirection[2],
-  );
+function getConfiguredPixelDistance(
+  configuration: PixelConfiguration,
+  pixelIndex: number,
+  sourcePixelIndex: number,
+) {
+  const pixel = configuration.pixels[pixelIndex];
+  const source = configuration.pixels[sourcePixelIndex];
+  return Math.hypot(pixel.x - source.x, pixel.y - source.y);
 }
 
-function getBurstFootprint(sourcePixelIndex: number, pixelCount: number) {
-  return PIXEL_LAYOUT
+function getConfiguredBurstIncidence(
+  configuration: PixelConfiguration,
+  pixelIndex: number,
+  sourcePixelIndex: number,
+) {
+  const distance = getConfiguredPixelDistance(
+    configuration,
+    pixelIndex,
+    sourcePixelIndex,
+  );
+  return 1 / (1 + (distance / 8.5) ** 2);
+}
+
+function getBurstFootprint(
+  configuration: PixelConfiguration,
+  sourcePixelIndex: number,
+  pixelCount: number,
+) {
+  return configuration.pixels
     .map((pixel) => ({
       index: pixel.index,
-      incidence: getBurstIncidence(pixel.index, sourcePixelIndex),
+      distance: getConfiguredPixelDistance(
+        configuration,
+        pixel.index,
+        sourcePixelIndex,
+      ),
     }))
-    .sort((a, b) => b.incidence - a.incidence)
+    .sort((a, b) => a.distance - b.distance || a.index - b.index)
     .slice(0, THREE.MathUtils.clamp(pixelCount, 1, PIXEL_LAYOUT.length))
     .map(({ index }) => index);
 }
@@ -2046,21 +2064,15 @@ function DetectorMap({
     .filter((pixel) => (hits[pixel.index] ?? 0) > 0)
     .sort((a, b) => (hits[b.index] ?? 0) - (hits[a.index] ?? 0));
   const totalHits = hits.reduce((sum, value) => sum + value, 0);
-  const selectedValue = values[selectedPixel] ?? 0;
-  const selectedHits = hits[selectedPixel] ?? 0;
-  const depositedEnergy =
-    selectedHits > 0
-      ? Math.round(8 + selectedValue * (grbActive ? 980 : 190))
-      : 0;
-  const upEnergy = Math.round(depositedEnergy * 0.61);
-  const downEnergy = depositedEnergy - upEnergy;
   const selectedConfiguredPixel = pixelConfiguration.pixels[selectedPixel];
 
   return (
     <div className="detector-module projection-unfolded">
       <div className="detector-projection-status">
         <span>CONFIGURED DETECTOR MAP</span>
-        <em>126 PX · PERSISTENT LAYOUT</em>
+        <em>
+          {activeCluster.length} ON · Σ {totalHits} PH · {selectedConfiguredPixel.id}
+        </em>
       </div>
       <div
         className={`detector-map projection-unfolded ${
@@ -2117,48 +2129,6 @@ function DetectorMap({
         })}
         <div className="detector-axis unfolded-x"><i /> X</div>
         <div className="detector-axis unfolded-y"><i /> Y</div>
-      </div>
-
-      <div className="cluster-readout">
-        <div className="cluster-heading">
-          <span>
-            <small>ACTIVE PIXELS · DETECTED HITS</small>
-            <strong>{activeCluster.length} / 126</strong>
-          </span>
-          <em>Σ {totalHits} photons · Edep &gt; 30 keV</em>
-        </div>
-        <div className="cluster-ids">
-          {activeCluster.length > 0 ? (
-            activeCluster.map((pixel) => (
-              <button
-                key={pixel.index}
-                type="button"
-                className={pixel.index === selectedPixel ? "selected" : ""}
-                onClick={() => onSelect(pixel.index)}
-              >
-                {pixelConfiguration.pixels[pixel.index].id}
-              </button>
-            ))
-          ) : (
-            <span>no pixels selected by the trigger</span>
-          )}
-        </div>
-      </div>
-
-      <div className="pixel-detail">
-        <div className="pixel-id-block">
-          <small>SELECTED PIXEL</small>
-          <strong>{selectedConfiguredPixel.id}</strong>
-          <span>
-            {selectedHits} hit · ring {PIXEL_LAYOUT[selectedPixel].ring} · slot{" "}
-            {PIXEL_LAYOUT[selectedPixel].slot + 1}
-          </span>
-        </div>
-        <div className="pixel-stack" aria-label="Selected pixel structure">
-          <span className="pixel-layer up"><b>UP · GAGG</b><em>4 cm · {upEnergy} keV</em></span>
-          <i className="pixel-sipm">SiPM</i>
-          <span className="pixel-layer down"><b>DOWN · LYSO</b><em>3 cm · {downEnergy} keV</em></span>
-        </div>
       </div>
     </div>
   );
@@ -3084,6 +3054,7 @@ export default function Home() {
   const totalRef = useRef(0);
   const capturedRef = useRef(0);
   const selectedPixelRef = useRef(43);
+  const pixelConfigurationRef = useRef(DEFAULT_PIXEL_CONFIGURATION);
   const settingsRef = useRef({
     altitude,
     inclination,
@@ -3101,7 +3072,10 @@ export default function Home() {
       if (!stored) return;
       const configuration = normalizePixelConfiguration(JSON.parse(stored));
       if (configuration) {
-        timer = window.setTimeout(() => setPixelConfiguration(configuration), 0);
+        timer = window.setTimeout(() => {
+          pixelConfigurationRef.current = configuration;
+          setPixelConfiguration(configuration);
+        }, 0);
       }
     } catch {
       // A malformed local draft should never prevent the simulator from opening.
@@ -3212,19 +3186,18 @@ export default function Home() {
             : 0;
         activeBursts.forEach((burst) => {
           if (!burst.pixelIndices.includes(pixel.index)) return;
-          const incidence = getBurstIncidence(pixel.index, burst.pixelIndex);
-          const burstAmplitude = 6.2 * Math.exp(-burst.ageTicks / 6);
-          const mountVisibility = getMountSkyVisibility(
+          const incidence = getConfiguredBurstIncidence(
+            pixelConfigurationRef.current,
             pixel.index,
-            settings.mountX,
-            settings.mountZ,
+            burst.pixelIndex,
           );
+          const burstAmplitude = 6.2 * Math.exp(-burst.ageTicks / 6);
           hits += Math.max(
             1,
             Math.round(
               burstAmplitude *
                 incidence ** 2.2 *
-                mountVisibility,
+                burst.transmission,
             ),
           );
         });
@@ -3285,6 +3258,7 @@ export default function Home() {
 
   const savePixelConfiguration = useCallback(
     (configuration: PixelConfiguration) => {
+      pixelConfigurationRef.current = configuration;
       setPixelConfiguration(configuration);
       window.localStorage.setItem(
         PIXEL_CONFIGURATION_STORAGE_KEY,
@@ -3296,28 +3270,28 @@ export default function Home() {
   );
 
   const injectGRB = useCallback(() => {
-    const targetPixel = Math.floor(Math.random() * PIXEL_LAYOUT.length);
+    const visibleTargets = PIXEL_LAYOUT.filter(
+      (pixel) =>
+        getMountSkyVisibility(
+          pixel.index,
+          settingsRef.current.mountX,
+          settingsRef.current.mountZ,
+        ) >= 0.12,
+    );
+    const targetPixel =
+      visibleTargets[Math.floor(Math.random() * visibleTargets.length)]?.index ??
+      Math.floor(Math.random() * PIXEL_LAYOUT.length);
     const footprintCount = 4 + Math.floor(Math.random() * 25);
-    const geometricFootprint = getBurstFootprint(targetPixel, footprintCount);
-    const visibilityByPixel = geometricFootprint.map((pixelIndex) => ({
-      pixelIndex,
-      visibility: getMountSkyVisibility(
-        pixelIndex,
-        settingsRef.current.mountX,
-        settingsRef.current.mountZ,
-      ),
-    }));
-    let pixelIndices = visibilityByPixel
-      .filter(({ visibility }) => visibility >= 0.12)
-      .map(({ pixelIndex }) => pixelIndex);
-    if (pixelIndices.length === 0) {
-      pixelIndices = [
-        visibilityByPixel.sort((a, b) => b.visibility - a.visibility)[0].pixelIndex,
-      ];
-    }
-    const transmission =
-      visibilityByPixel.reduce((sum, pixel) => sum + pixel.visibility, 0) /
-      visibilityByPixel.length;
+    const pixelIndices = getBurstFootprint(
+      pixelConfiguration,
+      targetPixel,
+      footprintCount,
+    );
+    const transmission = getMountSkyVisibility(
+      targetPixel,
+      settingsRef.current.mountX,
+      settingsRef.current.mountZ,
+    );
     selectPixel(targetPixel);
     const burstId = nextBurstIdRef.current;
     nextBurstIdRef.current += 1;
@@ -3441,7 +3415,6 @@ export default function Home() {
   }, [altitude]);
 
   const occulted = Math.cos(telemetry.phase) < -0.45;
-  const captureRate = telemetry.total > 0 ? (telemetry.captured / telemetry.total) * 100 : 0;
   const effectiveMountFov = useMemo(() => {
     return getMountEffectiveFov(mountX, mountZ);
   }, [mountX, mountZ]);
@@ -3679,20 +3652,6 @@ export default function Home() {
             <Activity size={17} />
           </div>
 
-          <div className="photon-summary">
-            <div className="primary-count">
-              <small>COUNTS / 0.2 s</small>
-              <strong>{telemetry.observed}</strong>
-              <span className={telemetry.grbActive ? "hot" : ""}>
-                {telemetry.grbActive ? "burst in progress" : "nominal stream"}
-              </span>
-            </div>
-            <div className="stat-stack">
-              <div><span className="legend-dot background-dot" /><small>BACKGROUND</small><strong>{telemetry.background}</strong></div>
-              <div><span className="legend-dot source-dot" /><small>GRB EXCESS</small><strong>{telemetry.source}</strong></div>
-            </div>
-          </div>
-
           <div className="chart-card">
             <div className="chart-header">
               <div>
@@ -3766,23 +3725,12 @@ export default function Home() {
             />
           </div>
 
-          <div className="analysis-grid">
-            <div>
-              <Gauge size={15} />
-              <span><small>SIGNIFICANCE</small><strong>{telemetry.significance.toFixed(2)}σ</strong></span>
-            </div>
-            <div>
-              <Atom size={15} />
-              <span><small>CAPTURE RATIO</small><strong>{captureRate.toFixed(2)}%</strong></span>
-            </div>
-          </div>
-
           <button className="grb-button" onClick={injectGRB}>
             <Sparkles size={17} />
             <span>
               <strong>INJECT GAMMA RAY BURST</strong>
               <small>
-                random direction · 4–28 pixels · active{" "}
+                random direction · nearest 4–28 pixels · active{" "}
                 {telemetry.burstDirections.length} · duration ≈ 3 s
               </small>
             </span>

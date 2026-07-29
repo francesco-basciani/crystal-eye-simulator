@@ -2279,7 +2279,10 @@ button {
 
 .detector-module {
   display: grid;
-  gap: 10px;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 7px;
+  height: 100%;
+  padding: 7px 12px 10px;
 }
 
 .detector-projection-status {
@@ -2332,6 +2335,12 @@ button {
 }
 
 .detector-map.projection-unfolded {
+  width: min(100%, 310px);
+  height: auto;
+  max-width: none;
+  max-height: 100%;
+  aspect-ratio: 1.18;
+  margin: auto;
   border-radius: 7px;
   border-color: rgba(83, 224, 207, 0.18);
   background:
@@ -2661,7 +2670,7 @@ button {
 
 .right-panel {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -3047,14 +3056,14 @@ button {
   }
 
   .detector-module {
-    grid-template-columns: 156px minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
-      "tabs tabs"
-      "map detail"
-      "map cluster";
+      "tabs"
+      "map";
     gap: 6px;
     align-items: stretch;
+    padding: 5px 10px 7px;
   }
 
   .detector-projection-status {
@@ -3063,11 +3072,11 @@ button {
 
   .detector-map {
     grid-area: map;
-    width: auto;
-    height: 100%;
-    max-width: 156px;
-    max-height: 156px;
-    aspect-ratio: 1;
+    width: min(100%, 300px);
+    height: auto;
+    max-width: 300px;
+    max-height: 100%;
+    aspect-ratio: 1.18;
     margin: 0 auto;
     align-self: center;
     justify-self: center;
@@ -3153,14 +3162,14 @@ button {
   }
 
   .detector-module {
-    grid-template-columns: 140px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .detector-map {
-    width: auto;
-    height: 100%;
-    max-width: 140px;
-    max-height: 140px;
+    width: min(100%, 300px);
+    height: auto;
+    max-width: 300px;
+    max-height: 100%;
   }
 
   .signal-canvas {
