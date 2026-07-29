@@ -553,12 +553,11 @@ const DIRECT_SUN_BACKGROUND_RATE = 260;
 const AU_KM = 149_597_870.7;
 const EFFECTIVE_FOV_DEG = 130;
 const EFFECTIVE_HALF_ANGLE_DEG = EFFECTIVE_FOV_DEG / 2;
-const IMPACT_COLOR_STOPS = [
-  { value: 0, color: "#172b8f" },
-  { value: 0.22, color: "#075bd8" },
-  { value: 0.42, color: "#00bce8" },
-  { value: 0.62, color: "#28d66f" },
-  { value: 0.8, color: "#f2e616" },
+const BASE_PIXEL_COLOR = "#1739b8";
+const ACTIVE_IMPACT_COLOR_STOPS = [
+  { value: 0, color: "#00bce8" },
+  { value: 0.38, color: "#28d66f" },
+  { value: 0.72, color: "#f2e616" },
   { value: 1, color: "#ff2217" },
 ] as const;
 
@@ -577,12 +576,13 @@ function angleBetween(
 
 function getImpactColor(value: number) {
   const normalized = THREE.MathUtils.clamp(value, 0, 1);
-  const upperIndex = IMPACT_COLOR_STOPS.findIndex(
+  if (normalized <= 0) return BASE_PIXEL_COLOR;
+  const upperIndex = ACTIVE_IMPACT_COLOR_STOPS.findIndex(
     (stop) => stop.value >= normalized,
   );
-  if (upperIndex <= 0) return IMPACT_COLOR_STOPS[0].color;
-  const lower = IMPACT_COLOR_STOPS[upperIndex - 1];
-  const upper = IMPACT_COLOR_STOPS[upperIndex];
+  if (upperIndex <= 0) return ACTIVE_IMPACT_COLOR_STOPS[0].color;
+  const lower = ACTIVE_IMPACT_COLOR_STOPS[upperIndex - 1];
+  const upper = ACTIVE_IMPACT_COLOR_STOPS[upperIndex];
   const fraction = (normalized - lower.value) / (upper.value - lower.value);
   return `#${new THREE.Color(lower.color)
     .lerp(new THREE.Color(upper.color), fraction)
@@ -1260,9 +1260,9 @@ function GlobeScene({
     const pixelGeometry = new THREE.CylinderGeometry(0.0135, 0.015, 0.025, 6, 1, false);
     const pixelMaterials = PIXEL_LAYOUT.map(() =>
       new THREE.MeshStandardMaterial({
-        color: 0x4edfd4,
-        emissive: 0x086f79,
-        emissiveIntensity: 0.65,
+        color: 0x1739b8,
+        emissive: 0x0b247d,
+        emissiveIntensity: 0.9,
         metalness: 0.18,
         roughness: 0.3,
       }),
@@ -1508,7 +1508,7 @@ function GlobeScene({
           material.color.lerp(WHITE_THREE_COLOR, 0.32);
         }
         material.emissive.copy(impactColor).multiplyScalar(
-          isFired ? 0.48 : isSelected ? 0.2 : 0.07,
+          isFired ? 0.5 : isSelected ? 0.34 : 0.28,
         );
         material.emissiveIntensity = isFired
           ? isOverlap
@@ -1519,8 +1519,8 @@ function GlobeScene({
               ? 0.8 + albedoResponse * 1.4 + Math.min(4, hitCount) * 0.22
               : 0.9 + Math.min(4, hitCount) * 0.22
           : isSelected
-            ? 0.28
-            : 0.12;
+            ? 0.9
+            : 0.72;
         crystal.scale.setScalar(
           isFired ? 1.06 + Math.min(3, hitCount) * 0.018 : isSelected ? 1.035 : 1,
         );
@@ -3618,7 +3618,10 @@ export default function Home() {
                 ),
               )
             : 0;
-        let impact = THREE.MathUtils.clamp(albedoResponse * 0.42, 0, 0.42);
+        let impact =
+          hits > 0
+            ? THREE.MathUtils.clamp(albedoResponse * 0.42, 0.04, 0.42)
+            : 0;
         activeBursts.forEach((burst) => {
           if (!burst.pixelIndices.includes(pixel.index)) return;
           const incidence = getConfiguredBurstIncidence(

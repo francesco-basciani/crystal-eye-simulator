@@ -2461,18 +2461,20 @@ button {
   height: 14px;
   padding: 0;
   transform: translate(-50%, -50%);
-  border: 1px solid rgba(156, 246, 235, 0.22);
+  border: 1px solid rgba(117, 163, 255, 0.5);
   clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%);
   background: var(--impact-color);
-  color: rgba(226, 255, 251, calc(0.35 + var(--heat) * 0.65));
+  color: rgba(226, 240, 255, calc(0.7 + var(--heat) * 0.3));
   font-family: var(--font-geist-mono), monospace;
   font-size: 4.5px;
   font-weight: 650;
   line-height: 14px;
   text-align: center;
   letter-spacing: -0.06em;
-  box-shadow: 0 0 calc(var(--heat) * 9px) rgba(89, 242, 210, var(--heat));
-  opacity: calc(0.52 + var(--heat) * 0.48);
+  box-shadow:
+    0 0 3px rgba(36, 78, 225, 0.34),
+    0 0 calc(var(--heat) * 9px) rgba(89, 242, 210, var(--heat));
+  opacity: calc(0.82 + var(--heat) * 0.18);
   cursor: pointer;
   transition: 120ms ease;
   animation-delay: var(--delay);
@@ -2556,11 +2558,10 @@ button {
   border: 1px solid rgba(210, 238, 245, 0.2);
   background: linear-gradient(
     90deg,
-    #172b8f,
-    #075bd8 22%,
-    #00bce8 42%,
-    #28d66f 62%,
-    #f2e616 80%,
+    #1739b8 0 7%,
+    #00bce8 7% 30%,
+    #28d66f 49%,
+    #f2e616 76%,
     #ff2217
   );
 }
@@ -2932,11 +2933,10 @@ button {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(
     90deg,
-    #172b8f,
-    #075bd8 22%,
-    #00bce8 42%,
-    #28d66f 62%,
-    #f2e616 80%,
+    #1739b8 0 7%,
+    #00bce8 7% 30%,
+    #28d66f 49%,
+    #f2e616 76%,
     #ff2217
   );
 }
