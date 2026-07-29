@@ -97,6 +97,7 @@ type UnfoldedPixelLayout = {
   y: number;
   isSeam: boolean;
   isPentagon: boolean;
+  rotationDeg: number;
 };
 
 type PixelConfigurationEntry = UnfoldedPixelLayout & {
@@ -181,6 +182,7 @@ const UNFOLDED_PIXEL_LAYOUT: UnfoldedPixelLayout[] = (() => {
         y: center.y + localY,
         isSeam: false,
         isPentagon: position === 7,
+        rotationDeg: 0,
       });
     });
   });
@@ -217,6 +219,7 @@ const UNFOLDED_PIXEL_LAYOUT: UnfoldedPixelLayout[] = (() => {
         y: triplet.y + rotatedY,
         isSeam: true,
         isPentagon: false,
+        rotationDeg: 0,
       });
     });
   });
@@ -254,6 +257,7 @@ function normalizePixelConfiguration(value: unknown): PixelConfiguration | null 
         x?: unknown;
         y?: unknown;
         isPentagon?: unknown;
+        rotationDeg?: unknown;
       };
       const index =
         typeof pixel.index === "number" && Number.isInteger(pixel.index)
@@ -283,6 +287,11 @@ function normalizePixelConfiguration(value: unknown): PixelConfiguration | null 
         isPentagon:
           index < GRAY_CLUSTER_COUNT * GRAY_CLUSTER_SIZE &&
           pixel.isPentagon === true,
+        rotationDeg:
+          typeof pixel.rotationDeg === "number" &&
+          Number.isFinite(pixel.rotationDeg)
+            ? ((pixel.rotationDeg % 360) + 360) % 360
+            : 0,
       };
     })
     .filter((pixel): pixel is PixelConfigurationEntry => pixel !== null)
@@ -1348,7 +1357,17 @@ function GlobeScene({
         pixelMaterials[pixel.index],
       );
       crystal.position.copy(normal).multiplyScalar(0.173);
-      crystal.quaternion.setFromUnitVectors(upAxis, normal.clone());
+      crystal.quaternion
+        .setFromUnitVectors(upAxis, normal.clone())
+        .multiply(
+          new THREE.Quaternion().setFromAxisAngle(
+            upAxis,
+            THREE.MathUtils.degToRad(
+              settingsRef.current.pixelConfiguration.pixels[pixel.index]
+                .rotationDeg,
+            ),
+          ),
+        );
       crystal.userData.pixelIndex = pixel.index;
       crystal.userData.pixelId =
         settingsRef.current.pixelConfiguration.pixels[pixel.index].id;
@@ -1493,7 +1512,16 @@ function GlobeScene({
             configuredPixelNormals[index],
           );
           crystal.position.copy(normal).multiplyScalar(0.173);
-          crystal.quaternion.setFromUnitVectors(upAxis, normal);
+          crystal.quaternion
+            .setFromUnitVectors(upAxis, normal)
+            .multiply(
+              new THREE.Quaternion().setFromAxisAngle(
+                upAxis,
+                THREE.MathUtils.degToRad(
+                  settings.pixelConfiguration.pixels[index].rotationDeg,
+                ),
+              ),
+            );
           crystal.userData.pixelId =
             settings.pixelConfiguration.pixels[index].id;
           crystal.geometry = pentagonPixelIndices.has(index)
@@ -2114,6 +2142,7 @@ function SensorView({
   detector,
   detectorHits,
   pentagonPixelIndices,
+  pixelRotations,
   selectedPixel,
   burstDirections,
   burstPixelGroups,
@@ -2135,6 +2164,7 @@ function SensorView({
   detector: number[];
   detectorHits: number[];
   pentagonPixelIndices: Set<number>;
+  pixelRotations: number[];
   selectedPixel: number;
   burstDirections: number[];
   burstPixelGroups: number[][];
@@ -2306,7 +2336,8 @@ function SensorView({
         for (let side = 0; side < sideCount; side += 1) {
           const angle =
             (side / sideCount) * Math.PI * 2 +
-            (sideCount === 5 ? Math.PI / 2 : -Math.PI / 2);
+            (sideCount === 5 ? Math.PI / 2 : -Math.PI / 2) +
+            THREE.MathUtils.degToRad(pixelRotations[pixel.index] ?? 0);
           const px = x + Math.cos(angle) * cellRadius;
           const py = y + Math.sin(angle) * cellRadius;
           if (side === 0) context.moveTo(px, py);
@@ -2458,6 +2489,7 @@ function SensorView({
     mountX,
     mountZ,
     pentagonPixelIndices,
+    pixelRotations,
     phase,
     selectedPixel,
     sunDirection,
@@ -2611,6 +2643,8 @@ function DetectorMap({
                 "--impact-color": getImpactColor(value),
                 "--pixel-x": `${configuredPixel.x}%`,
                 "--pixel-y": `${configuredPixel.y}%`,
+                "--pixel-rotation": `${configuredPixel.rotationDeg}deg`,
+                "--pixel-label-rotation": `${-configuredPixel.rotationDeg}deg`,
                 "--delay": `${(pixel.index % 17) * 24}ms`,
               } as React.CSSProperties}
               title={`${configuredPixel.id} · ${
@@ -2625,7 +2659,7 @@ function DetectorMap({
               }, ${hitCount} photons detected`}
               onClick={() => onSelect(pixel.index)}
             >
-              {String(pixel.index + 1).padStart(3, "0")}
+              <span>{String(pixel.index + 1).padStart(3, "0")}</span>
             </button>
           );
         })}
@@ -2974,6 +3008,22 @@ function PixelConfigurationEditor({
     );
   }, []);
 
+  const rotatePixels = useCallback((indices: number[], deltaDegrees: number) => {
+    const rotating = new Set(indices);
+    setDraft((current) => ({
+      ...current,
+      pixels: current.pixels.map((pixel) =>
+        rotating.has(pixel.index)
+          ? {
+              ...pixel,
+              rotationDeg:
+                ((pixel.rotationDeg + deltaDegrees) % 360 + 360) % 360,
+            }
+          : pixel,
+      ),
+    }));
+  }, []);
+
   const movePixels = useCallback(
     (indices: number[], requestedDeltaX: number, requestedDeltaY: number) => {
       if (indices.length === 0) return;
@@ -3134,6 +3184,8 @@ function PixelConfigurationEditor({
                   style={{
                     "--editor-x": `${pixel.x}%`,
                     "--editor-y": `${pixel.y}%`,
+                    "--pixel-rotation": `${pixel.rotationDeg}deg`,
+                    "--pixel-label-rotation": `${-pixel.rotationDeg}deg`,
                   } as React.CSSProperties}
                   title={`Internal index ${pixel.index + 1} · ${pixel.id}`}
                   aria-label={`Pixel ${pixel.index + 1}, ID ${pixel.id}`}
@@ -3358,6 +3410,77 @@ function PixelConfigurationEditor({
                   }
                 />
               </label>
+            </div>
+
+            <div className="pixel-editor-rotation">
+              <div>
+                <span>PIXEL ROTATION</span>
+                <strong>
+                  {selectedIndices.length === 1
+                    ? `${selectedPixel.rotationDeg.toFixed(1)}°`
+                    : `${selectedIndices.length} PIXELS`}
+                </strong>
+              </div>
+              <input
+                type="number"
+                min={0}
+                max={359.9}
+                step={0.5}
+                value={selectedPixel.rotationDeg.toFixed(1)}
+                disabled={selectedIndices.length !== 1}
+                aria-label="Selected pixel rotation in degrees"
+                onChange={(event) =>
+                  updatePixel(primarySelectedIndex, {
+                    rotationDeg:
+                      ((Number(event.target.value) % 360) + 360) % 360,
+                  })
+                }
+              />
+              <div>
+                <button
+                  type="button"
+                  onClick={() => rotatePixels(selectedIndices, -5)}
+                >
+                  −5°
+                </button>
+                <button
+                  type="button"
+                  onClick={() => rotatePixels(selectedIndices, -1)}
+                >
+                  −1°
+                </button>
+                <button
+                  type="button"
+                  onClick={() => rotatePixels(selectedIndices, 1)}
+                >
+                  +1°
+                </button>
+                <button
+                  type="button"
+                  onClick={() => rotatePixels(selectedIndices, 5)}
+                >
+                  +5°
+                </button>
+              </div>
+              <button
+                type="button"
+                className="rotation-reset"
+                onClick={() =>
+                  setDraft((current) => {
+                    const rotating = new Set(selectedIndices);
+                    return {
+                      ...current,
+                      pixels: current.pixels.map((pixel) =>
+                        rotating.has(pixel.index)
+                          ? { ...pixel, rotationDeg: 0 }
+                          : pixel,
+                      ),
+                    };
+                  })
+                }
+              >
+                RESET ROTATION
+              </button>
             </div>
 
             <div className="pixel-editor-nudge">
@@ -4217,6 +4340,10 @@ export default function Home() {
     () => getPentagonPixelIndices(pixelConfiguration),
     [pixelConfiguration],
   );
+  const configuredPixelRotations = useMemo(
+    () => pixelConfiguration.pixels.map((pixel) => pixel.rotationDeg),
+    [pixelConfiguration],
+  );
   const mountedSunInFov =
     telemetry.sunSeparation <= effectiveMountFov / 2 && telemetry.sunNoise > 0.1;
   const mountedMoonInFov =
@@ -4349,6 +4476,7 @@ export default function Home() {
               detector={telemetry.detector}
               detectorHits={telemetry.detectorHits}
               pentagonPixelIndices={pentagonPixelIndices}
+              pixelRotations={configuredPixelRotations}
               selectedPixel={selectedPixel}
               burstDirections={telemetry.burstDirections}
               burstPixelGroups={telemetry.burstPixelGroups}
