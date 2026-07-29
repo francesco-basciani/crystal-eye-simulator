@@ -1735,6 +1735,7 @@ button {
     inset -18px -20px 34px rgba(0, 0, 0, 0.55),
     inset 10px 9px 24px rgba(72, 200, 210, 0.08),
     0 0 26px rgba(35, 169, 183, 0.06);
+  container-type: inline-size;
 }
 
 .detector-map.projection-unfolded {
@@ -1808,6 +1809,18 @@ button {
   background: #6b1d35;
   color: rgba(255, 224, 235, 0.82);
   box-shadow: inset 0 0 5px rgba(255, 90, 133, 0.16);
+}
+
+.detector-map.projection-unfolded .detector-pixel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 6.8%;
+  height: auto;
+  aspect-ratio: 1.14;
+  font-size: clamp(2.1px, 2cqw, 4.2px);
+  line-height: 1;
+  letter-spacing: -0.08em;
 }
 
 .detector-pixel:hover,

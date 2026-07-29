@@ -111,73 +111,65 @@ const PIXEL_LAYOUT: PixelLayout[] = PIXEL_RING_COUNTS.flatMap((count, ring) =>
 const UNFOLDED_PIXEL_LAYOUT: UnfoldedPixelLayout[] = (() => {
   const layout: UnfoldedPixelLayout[] = [];
   const clusterPattern: [number, number][] = [];
-  [3, 4, 4, 3, 2].forEach((count, row) => {
+  [2, 3, 4, 4, 3].forEach((count, row) => {
     for (let column = 0; column < count; column += 1) {
       clusterPattern.push([
-        (column - (count - 1) / 2) * 3.85,
-        (row - 2) * 4.05,
+        (column - (count - 1) / 2) * 6.15,
+        (row - 2) * 5.35,
       ]);
     }
   });
 
-  const outerClusterAngles = [-126, -54, 18, 90, 162].map(
-    (degrees) => (degrees * Math.PI) / 180,
-  );
   const clusterCenters = [
-    { x: 50, y: 50, angle: 0 },
-    ...outerClusterAngles.map((angle) => ({
-      x: 50 + Math.cos(angle) * 31.5,
-      y: 50 + Math.sin(angle) * 31.5,
-      angle,
-    })),
+    { x: 51, y: 50.5 },
+    { x: 30, y: 20.5 },
+    { x: 71.5, y: 20.5 },
+    { x: 82, y: 53.5 },
+    { x: 54, y: 79.5 },
+    { x: 21.5, y: 53.5 },
   ];
 
   clusterCenters.forEach((center, clusterIndex) => {
     clusterPattern.forEach(([localX, localY], position) => {
-      const rotation = clusterIndex === 0 ? 0 : center.angle + Math.PI / 2;
-      const rotatedX =
-        localX * Math.cos(rotation) - localY * Math.sin(rotation);
-      const rotatedY =
-        localX * Math.sin(rotation) + localY * Math.cos(rotation);
       layout.push({
         index: clusterIndex * 16 + position,
-        x: center.x + rotatedX,
-        y: center.y + rotatedY,
+        x: center.x + localX,
+        y: center.y + localY,
         isSeam: false,
       });
     });
   });
 
   const tripletPattern = [
-    [-2.05, -1.9],
-    [-2.05, 1.9],
-    [2.05, 0],
+    [-3.1, -2.75],
+    [-3.1, 2.75],
+    [3.05, 0],
   ] as const;
-  const innerTriplets = outerClusterAngles.map((angle) => ({
-    angle,
-    radius: 17.7,
-  }));
-  const outerTriplets = outerClusterAngles.map((angle, index) => {
-    const nextAngle =
-      index === outerClusterAngles.length - 1
-        ? outerClusterAngles[0] + Math.PI * 2
-        : outerClusterAngles[index + 1];
-    return {
-      angle: (angle + nextAngle) / 2,
-      radius: 44,
-    };
-  });
+  const triplets = [
+    { x: 51, y: 7.5, rotation: Math.PI / 2 },
+    { x: 51, y: 31.5, rotation: -Math.PI / 2 },
+    { x: 9.5, y: 35.5, rotation: -Math.PI / 2 },
+    { x: 32.5, y: 42, rotation: Math.PI / 2 },
+    { x: 70, y: 42, rotation: Math.PI / 2 },
+    { x: 92, y: 35.5, rotation: -Math.PI / 2 },
+    { x: 38, y: 62.5, rotation: -Math.PI / 2 },
+    { x: 65, y: 62.5, rotation: -Math.PI / 2 },
+    { x: 29, y: 81, rotation: Math.PI / 2 },
+    { x: 77, y: 81, rotation: Math.PI / 2 },
+  ];
 
-  [...innerTriplets, ...outerTriplets].forEach((triplet, tripletIndex) => {
+  triplets.forEach((triplet, tripletIndex) => {
     tripletPattern.forEach(([localX, localY], position) => {
       const rotatedX =
-        localX * Math.cos(triplet.angle) - localY * Math.sin(triplet.angle);
+        localX * Math.cos(triplet.rotation) -
+        localY * Math.sin(triplet.rotation);
       const rotatedY =
-        localX * Math.sin(triplet.angle) + localY * Math.cos(triplet.angle);
+        localX * Math.sin(triplet.rotation) +
+        localY * Math.cos(triplet.rotation);
       layout.push({
         index: 96 + tripletIndex * 3 + position,
-        x: 50 + Math.cos(triplet.angle) * triplet.radius + rotatedX,
-        y: 50 + Math.sin(triplet.angle) * triplet.radius + rotatedY,
+        x: triplet.x + rotatedX,
+        y: triplet.y + rotatedY,
         isSeam: true,
       });
     });
