@@ -271,9 +271,9 @@ function getConfiguredPixelNormals(
     ...planarCoordinates.map(({ x, z }) => Math.hypot(x, z)),
   );
 
-  return planarCoordinates.map(({ x, z }) => {
+  const targetNormals = planarCoordinates.map(({ x, z }) => {
     const planarRadius = Math.hypot(x, z);
-    if (planarRadius < 0.0001) return [0, 1, 0];
+    if (planarRadius < 0.0001) return [0, 1, 0] as [number, number, number];
     const radialFraction = THREE.MathUtils.clamp(
       planarRadius / maximumRadius,
       0,
@@ -291,6 +291,77 @@ function getConfiguredPixelNormals(
       horizontal * (z / planarRadius),
     );
   });
+
+  const size = targetNormals.length;
+  const rowPotentials = new Float64Array(size + 1);
+  const columnPotentials = new Float64Array(size + 1);
+  const columnMatches = new Int32Array(size + 1);
+  const previousColumns = new Int32Array(size + 1);
+
+  for (let row = 1; row <= size; row += 1) {
+    columnMatches[0] = row;
+    let currentColumn = 0;
+    const minimumReducedCosts = new Float64Array(size + 1);
+    minimumReducedCosts.fill(Number.POSITIVE_INFINITY);
+    const usedColumns = new Uint8Array(size + 1);
+
+    do {
+      usedColumns[currentColumn] = 1;
+      const currentRow = columnMatches[currentColumn];
+      let delta = Number.POSITIVE_INFINITY;
+      let nextColumn = 0;
+
+      for (let column = 1; column <= size; column += 1) {
+        if (usedColumns[column]) continue;
+        const target = targetNormals[currentRow - 1];
+        const physical = PIXEL_NORMALS[column - 1];
+        const angularCost =
+          1 -
+          (target[0] * physical[0] +
+            target[1] * physical[1] +
+            target[2] * physical[2]);
+        const reducedCost =
+          angularCost -
+          rowPotentials[currentRow] -
+          columnPotentials[column];
+
+        if (reducedCost < minimumReducedCosts[column]) {
+          minimumReducedCosts[column] = reducedCost;
+          previousColumns[column] = currentColumn;
+        }
+        if (minimumReducedCosts[column] < delta) {
+          delta = minimumReducedCosts[column];
+          nextColumn = column;
+        }
+      }
+
+      for (let column = 0; column <= size; column += 1) {
+        if (usedColumns[column]) {
+          rowPotentials[columnMatches[column]] += delta;
+          columnPotentials[column] -= delta;
+        } else {
+          minimumReducedCosts[column] -= delta;
+        }
+      }
+      currentColumn = nextColumn;
+    } while (columnMatches[currentColumn] !== 0);
+
+    do {
+      const previousColumn = previousColumns[currentColumn];
+      columnMatches[currentColumn] = columnMatches[previousColumn];
+      currentColumn = previousColumn;
+    } while (currentColumn !== 0);
+  }
+
+  const physicalSlotByPixel = new Int32Array(size);
+  for (let column = 1; column <= size; column += 1) {
+    physicalSlotByPixel[columnMatches[column] - 1] = column - 1;
+  }
+
+  return Array.from(
+    physicalSlotByPixel,
+    (physicalSlot) => PIXEL_NORMALS[physicalSlot],
+  );
 }
 
 function getConfiguredPixelDistance(
