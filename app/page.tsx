@@ -102,6 +102,7 @@ type UnfoldedPixelLayout = {
 
 type PixelConfigurationEntry = UnfoldedPixelLayout & {
   id: string;
+  secondaryId: string;
 };
 
 type PixelConfiguration = {
@@ -231,8 +232,16 @@ const DEFAULT_PIXEL_CONFIGURATION: PixelConfiguration = {
   pixels: UNFOLDED_PIXEL_LAYOUT.map((pixel) => ({
     ...pixel,
     id: PIXEL_LAYOUT[pixel.index].id,
+    secondaryId: "",
   })),
 };
+
+function getPixelIdNumber(id: string, fallbackIndex: number) {
+  const normalized = id.trim();
+  const prefixedNumber = normalized.match(/^PX[-_\s]*(\d+)$/i);
+  if (prefixedNumber) return prefixedNumber[1].padStart(3, "0");
+  return normalized || String(fallbackIndex + 1).padStart(3, "0");
+}
 
 function getPentagonPixelIndices(configuration: PixelConfiguration) {
   return new Set(
@@ -254,6 +263,7 @@ function normalizePixelConfiguration(value: unknown): PixelConfiguration | null 
       const pixel = entry as {
         index?: unknown;
         id?: unknown;
+        secondaryId?: unknown;
         x?: unknown;
         y?: unknown;
         isPentagon?: unknown;
@@ -277,9 +287,14 @@ function normalizePixelConfiguration(value: unknown): PixelConfiguration | null 
         typeof pixel.id === "string" && pixel.id.trim()
           ? pixel.id.trim().slice(0, 24)
           : PIXEL_LAYOUT[index].id;
+      const secondaryId =
+        typeof pixel.secondaryId === "string"
+          ? pixel.secondaryId.trim().slice(0, 12)
+          : "";
       return {
         index,
         id,
+        secondaryId,
         x: THREE.MathUtils.clamp(pixel.x, 0.8, 99.2),
         y: THREE.MathUtils.clamp(pixel.y, 0.8, 99.2),
         isSeam: DEFAULT_PIXEL_CONFIGURATION?.pixels?.[index]?.isSeam ??
@@ -3024,6 +3039,78 @@ function PixelConfigurationEditor({
     }));
   }, []);
 
+  const copySelectedClusterToAll = useCallback(() => {
+    if (primarySelectedIndex >= GRAY_CLUSTER_COUNT * GRAY_CLUSTER_SIZE) {
+      setMessage("Select a pixel from one of the six gray clusters first.");
+      return;
+    }
+    const sourceCluster = Math.floor(
+      primarySelectedIndex / GRAY_CLUSTER_SIZE,
+    );
+    setDraft((current) => {
+      const sourceStart = sourceCluster * GRAY_CLUSTER_SIZE;
+      const sourceMembers = current.pixels.slice(
+        sourceStart,
+        sourceStart + GRAY_CLUSTER_SIZE,
+      );
+      const sourceCenter = sourceMembers.reduce(
+        (center, pixel) => ({
+          x: center.x + pixel.x / GRAY_CLUSTER_SIZE,
+          y: center.y + pixel.y / GRAY_CLUSTER_SIZE,
+        }),
+        { x: 0, y: 0 },
+      );
+      const targetCenters = Array.from(
+        { length: GRAY_CLUSTER_COUNT },
+        (_, cluster) =>
+          current.pixels
+            .slice(
+              cluster * GRAY_CLUSTER_SIZE,
+              (cluster + 1) * GRAY_CLUSTER_SIZE,
+            )
+            .reduce(
+              (center, pixel) => ({
+                x: center.x + pixel.x / GRAY_CLUSTER_SIZE,
+                y: center.y + pixel.y / GRAY_CLUSTER_SIZE,
+              }),
+              { x: 0, y: 0 },
+            ),
+      );
+      return {
+        ...current,
+        pixels: current.pixels.map((pixel) => {
+          if (pixel.index >= GRAY_CLUSTER_COUNT * GRAY_CLUSTER_SIZE) {
+            return pixel;
+          }
+          const targetCluster = Math.floor(
+            pixel.index / GRAY_CLUSTER_SIZE,
+          );
+          const position = pixel.index % GRAY_CLUSTER_SIZE;
+          const template = sourceMembers[position];
+          const targetCenter = targetCenters[targetCluster];
+          return {
+            ...pixel,
+            x: THREE.MathUtils.clamp(
+              targetCenter.x + template.x - sourceCenter.x,
+              1.2,
+              98.8,
+            ),
+            y: THREE.MathUtils.clamp(
+              targetCenter.y + template.y - sourceCenter.y,
+              1.2,
+              98.8,
+            ),
+            rotationDeg: template.rotationDeg,
+            isPentagon: template.isPentagon,
+          };
+        }),
+      };
+    });
+    setMessage(
+      `Gray cluster ${sourceCluster + 1} copied to all six clusters: relative positions, rotations, and pentagon placement now match.`,
+    );
+  }, [primarySelectedIndex]);
+
   const movePixels = useCallback(
     (indices: number[], requestedDeltaX: number, requestedDeltaY: number) => {
       if (indices.length === 0) return;
@@ -3065,7 +3152,11 @@ function PixelConfigurationEditor({
     }
     onSave({
       version: 1,
-      pixels: draft.pixels.map((pixel) => ({ ...pixel, id: pixel.id.trim() })),
+      pixels: draft.pixels.map((pixel) => ({
+        ...pixel,
+        id: pixel.id.trim(),
+        secondaryId: pixel.secondaryId.trim(),
+      })),
     });
   };
 
@@ -3143,6 +3234,17 @@ function PixelConfigurationEditor({
               <span><Move size={13} /> DRAG TO POSITION</span>
               <span>SHIFT / CTRL / CMD + CLICK · MULTI-SELECT</span>
               <div>
+                <button
+                  type="button"
+                  disabled={
+                    primarySelectedIndex >=
+                    GRAY_CLUSTER_COUNT * GRAY_CLUSTER_SIZE
+                  }
+                  onClick={copySelectedClusterToAll}
+                  title="Use the selected gray cluster as the geometric template for all six clusters"
+                >
+                  COPY CLUSTER TO ALL
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -3298,8 +3400,10 @@ function PixelConfigurationEditor({
                     movePixels(keyboardSelection, delta[0], delta[1]);
                   }}
                 >
-                  <span>{String(pixel.index + 1).padStart(3, "0")}</span>
-                  <small>{pixel.id}</small>
+                  <span>{getPixelIdNumber(pixel.id, pixel.index)}</span>
+                  {pixel.secondaryId ? (
+                    <small>{pixel.secondaryId}</small>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -3374,6 +3478,28 @@ function PixelConfigurationEditor({
               disabled={selectedIndices.length !== 1}
               onChange={(event) =>
                 updatePixel(primarySelectedIndex, { id: event.target.value })
+              }
+              onFocus={(event) => event.currentTarget.select()}
+            />
+
+            <label htmlFor="pixel-config-secondary-id">SECONDARY NUMBER</label>
+            <input
+              id="pixel-config-secondary-id"
+              className="pixel-secondary-id-input"
+              value={
+                selectedIndices.length === 1
+                  ? selectedPixel.secondaryId
+                  : "Select one pixel to edit its secondary number"
+              }
+              maxLength={12}
+              inputMode="numeric"
+              spellCheck={false}
+              placeholder="Not assigned"
+              disabled={selectedIndices.length !== 1}
+              onChange={(event) =>
+                updatePixel(primarySelectedIndex, {
+                  secondaryId: event.target.value.replace(/[^\d]/g, ""),
+                })
               }
               onFocus={(event) => event.currentTarget.select()}
             />

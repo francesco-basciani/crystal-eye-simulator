@@ -814,6 +814,13 @@ button {
   border-color: rgba(98, 217, 255, 0.4);
 }
 
+.pixel-editor-toolbar button:disabled {
+  color: #3d555e;
+  border-color: rgba(98, 217, 255, 0.09);
+  background: transparent;
+  cursor: not-allowed;
+}
+
 .pixel-editor-toolbar b {
   margin-left: auto;
   color: var(--cyan);
@@ -937,7 +944,11 @@ button {
 .pixel-editor-node small {
   max-width: 78%;
   overflow: hidden;
+  color: rgba(229, 244, 248, 0.72);
+  font-family: var(--font-geist-sans), sans-serif;
   font-size: clamp(3px, 0.72cqw, 7px);
+  font-weight: 430;
+  letter-spacing: 0.08em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1197,6 +1208,14 @@ button {
   border-color: rgba(98, 217, 255, 0.1);
   background: rgba(1, 8, 12, 0.7);
   cursor: not-allowed;
+}
+
+.pixel-editor-inspector > input.pixel-secondary-id-input {
+  height: 29px;
+  color: #a8c3cc;
+  font-family: var(--font-geist-sans), sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.08em;
 }
 
 .pixel-editor-coordinates.is-disabled {
