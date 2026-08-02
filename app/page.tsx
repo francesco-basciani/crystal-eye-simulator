@@ -25,6 +25,13 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Body, GeoVector, Illumination } from "astronomy-engine";
+import {
+  PIXEL_BACKGROUND_BIN_SECONDS,
+  composeBackgroundRate,
+  loadPixelBackgroundProfile,
+  rateToExpectedCountsPerBin,
+  type PixelBackgroundProfile,
+} from "./lib/pixel-background";
 
 type Sample = {
   observed: number;
@@ -63,6 +70,8 @@ type Telemetry = Sample & {
   burstPixelGroups: number[][];
   detector: number[];
   detectorHits: number[];
+  detectorBackgroundRates: number[];
+  detectorBackgroundExpectedCounts: number[];
   simulatedDate: string;
   sunDirection: [number, number, number];
   moonDirection: [number, number, number];
@@ -618,7 +627,6 @@ function isPixelLitByEarthAlbedo(
 
 const DEFAULT_SIMULATION_EPOCH_MS = Date.UTC(2026, 6, 24, 12, 0, 0);
 const BURST_DURATION_TICKS = 15;
-const BASE_BACKGROUND_RATE = 360;
 const DIRECT_SUN_BACKGROUND_RATE = 260;
 const AU_KM = 149_597_870.7;
 const EFFECTIVE_FOV_DEG = 130;
@@ -656,6 +664,12 @@ function getImpactColor(value: number) {
   const fraction = (normalized - lower.value) / (upper.value - lower.value);
   return `#${new THREE.Color(lower.color)
     .lerp(new THREE.Color(upper.color), fraction)
+    .getHexString()}`;
+}
+
+function getBackgroundBlueColor(value: number) {
+  return `#${new THREE.Color("#102d91")
+    .lerp(new THREE.Color("#2389cf"), THREE.MathUtils.clamp(value, 0, 1))
     .getHexString()}`;
 }
 
@@ -846,18 +860,8 @@ const INITIAL_DETECTOR_HITS = PIXEL_LAYOUT.map((pixel) => {
 });
 
 const INITIAL_TELEMETRY: Telemetry = {
-  observed: Math.round(
-    BASE_BACKGROUND_RATE +
-      INITIAL_MOUNT_SUN_NOISE +
-      INITIAL_MOUNT_MOON_NOISE +
-      INITIAL_MOUNT_ALBEDO_NOISE,
-  ),
-  background: Math.round(
-    BASE_BACKGROUND_RATE +
-      INITIAL_MOUNT_SUN_NOISE +
-      INITIAL_MOUNT_MOON_NOISE +
-      INITIAL_MOUNT_ALBEDO_NOISE,
-  ),
+  observed: 0,
+  background: 0,
   source: 0,
   elapsed: 0,
   phase: 0.72,
@@ -871,6 +875,8 @@ const INITIAL_TELEMETRY: Telemetry = {
   burstPixelGroups: [],
   detector: INITIAL_DETECTOR_HITS.map((hits) => (hits > 0 ? 0.55 : 0)),
   detectorHits: INITIAL_DETECTOR_HITS,
+  detectorBackgroundRates: PIXEL_LAYOUT.map(() => 0),
+  detectorBackgroundExpectedCounts: PIXEL_LAYOUT.map(() => 0),
   simulatedDate: INITIAL_CELESTIAL.date.toISOString(),
   sunDirection: INITIAL_CELESTIAL.sunDirection,
   moonDirection: INITIAL_CELESTIAL.moonDirection,
@@ -1970,12 +1976,12 @@ function HistoryDialog({
               "bin",
               "mission_elapsed_s",
               "simulated_utc",
-              "background_c_s",
-              "source_c_s",
-              "observed_c_s",
-              "sun_c_s",
-              "moon_c_s",
-              "earth_albedo_c_s",
+              "background_counts_per_0p2_s",
+              "source_counts_per_0p2_s",
+              "observed_counts_per_0p2_s",
+              "sun_counts_per_0p2_s",
+              "moon_counts_per_0p2_s",
+              "earth_albedo_counts_per_0p2_s",
               "active_bursts",
               "hit_pixels",
             ],
@@ -2096,14 +2102,14 @@ function HistoryDialog({
                     <td>{sample.bin}</td>
                     <td>T+{formatTime(sample.elapsed).slice(3)}</td>
                     <td>{sample.simulatedDate.replace("T", " ").replace(".000Z", " Z")}</td>
-                    <td>{sample.background.toFixed(0)} c/s</td>
+                    <td>{sample.background.toFixed(2)} counts / 0.2 s</td>
                     <td className={sample.source > 0 ? "source-value" : ""}>
-                      {sample.source.toFixed(0)} c/s
+                      {sample.source.toFixed(2)} counts / 0.2 s
                     </td>
-                    <td>{sample.observed.toFixed(0)} c/s</td>
-                    <td>{sample.sun.toFixed(1)}</td>
-                    <td>{sample.moon.toFixed(1)}</td>
-                    <td>{sample.earthAlbedo.toFixed(1)}</td>
+                    <td>{sample.observed.toFixed(2)} counts / 0.2 s</td>
+                    <td>{sample.sun.toFixed(2)} counts</td>
+                    <td>{sample.moon.toFixed(2)} counts</td>
+                    <td>{sample.earthAlbedo.toFixed(2)} counts</td>
                     <td>{sample.activeBursts}</td>
                     <td>{sample.hitPixels}</td>
                   </tr>
@@ -2582,6 +2588,8 @@ function SensorView({
 function DetectorMap({
   values,
   hits,
+  backgroundRates,
+  backgroundExpectedCounts,
   grbActive,
   burstPixelGroups,
   pixelConfiguration,
@@ -2595,6 +2603,8 @@ function DetectorMap({
 }: {
   values: number[];
   hits: number[];
+  backgroundRates: number[];
+  backgroundExpectedCounts: number[];
   grbActive: boolean;
   burstPixelGroups: number[][];
   pixelConfiguration: PixelConfiguration;
@@ -2606,6 +2616,13 @@ function DetectorMap({
   mountZ: number;
   onSelect: (index: number) => void;
 }) {
+  const backgroundRateRange = useMemo(() => {
+    const validRates = backgroundRates.filter(Number.isFinite);
+    return {
+      minimum: validRates.length > 0 ? Math.min(...validRates) : 0,
+      maximum: validRates.length > 0 ? Math.max(...validRates) : 0,
+    };
+  }, [backgroundRates]);
   const pentagonPixelIndices = useMemo(
     () => getPentagonPixelIndices(pixelConfiguration),
     [pixelConfiguration],
@@ -2622,6 +2639,15 @@ function DetectorMap({
           const configuredPixel = pixelConfiguration.pixels[pixel.index];
           const value = values[pixel.index] ?? 0;
           const hitCount = hits[pixel.index] ?? 0;
+          const backgroundRate = backgroundRates[pixel.index] ?? 0;
+          const backgroundExpectedCount =
+            backgroundExpectedCounts[pixel.index] ?? 0;
+          const backgroundSpan =
+            backgroundRateRange.maximum - backgroundRateRange.minimum;
+          const normalizedBackgroundRate =
+            backgroundSpan > 0
+              ? (backgroundRate - backgroundRateRange.minimum) / backgroundSpan
+              : 0;
           const isActive = hitCount > 0;
           const isBurstHit =
             isActive &&
@@ -2654,24 +2680,32 @@ function DetectorMap({
                 pentagonPixelIndices.has(pixel.index) ? "is-pentagon" : ""
               }`}
               style={{
-                "--heat": Math.min(1, value).toFixed(4),
-                "--impact-color": getImpactColor(value),
+                "--heat": Math.min(
+                  1,
+                  isBurstHit || isEarthAlbedo
+                    ? value
+                    : 0.08 + normalizedBackgroundRate * 0.12,
+                ).toFixed(4),
+                "--impact-color":
+                  isBurstHit || isEarthAlbedo
+                    ? getImpactColor(value)
+                    : getBackgroundBlueColor(normalizedBackgroundRate),
                 "--pixel-x": `${configuredPixel.x}%`,
                 "--pixel-y": `${configuredPixel.y}%`,
                 "--pixel-rotation": `${configuredPixel.rotationDeg}deg`,
                 "--pixel-label-rotation": `${-configuredPixel.rotationDeg}deg`,
                 "--delay": `${(pixel.index % 17) * 24}ms`,
               } as React.CSSProperties}
-              title={`${configuredPixel.id} · ${
+              title={`${configuredPixel.id} · PROVISIONAL pixel_id ${pixel.index} · ${
                 pentagonPixelIndices.has(pixel.index)
                   ? "central pentagon"
                   : "hexagon"
-              } · ${hitCount} photons detected in the current bin`}
+              } · ${backgroundRate.toFixed(4)} c/s baseline · ${backgroundExpectedCount.toFixed(4)} expected baseline counts / ${PIXEL_BACKGROUND_BIN_SECONDS.toFixed(1)} s · ${hitCount.toFixed(4)} total expected counts`}
               aria-label={`${configuredPixel.id}, ${
                 pentagonPixelIndices.has(pixel.index)
                   ? "central pentagon"
                   : "hexagon"
-              }, ${hitCount} photons detected`}
+              }, provisional background ${backgroundRate.toFixed(4)} counts per second, ${hitCount.toFixed(4)} total expected counts`}
               onClick={() => onSelect(pixel.index)}
             >
               <span>{String(pixel.index + 1).padStart(3, "0")}</span>
@@ -3890,6 +3924,10 @@ export default function Home() {
     spreadPixels: 18,
     durationSeconds: 1.2,
   });
+  const [backgroundProfile, setBackgroundProfile] =
+    useState<PixelBackgroundProfile | null>(null);
+  const [backgroundProfileError, setBackgroundProfileError] =
+    useState<string | null>(null);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
   const [samples, setSamples] = useState<Sample[]>(() =>
     Array.from({ length: 80 }, () => ({
@@ -3915,6 +3953,7 @@ export default function Home() {
   const capturedRef = useRef(0);
   const selectedPixelRef = useRef(43);
   const pixelConfigurationRef = useRef(DEFAULT_PIXEL_CONFIGURATION);
+  const backgroundProfileRef = useRef<PixelBackgroundProfile | null>(null);
   const settingsRef = useRef({
     altitude,
     inclination,
@@ -3924,6 +3963,43 @@ export default function Home() {
     mountX,
     mountZ,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    loadPixelBackgroundProfile(`${PUBLIC_BASE_PATH}/data/pixbkg.txt`)
+      .then((profile) => {
+        if (cancelled) return;
+        backgroundProfileRef.current = profile;
+        setBackgroundProfile(profile);
+        setBackgroundProfileError(null);
+        const baseline = {
+          background: profile.totalExpectedCountsPerBin,
+          source: 0,
+          observed: profile.totalExpectedCountsPerBin,
+        };
+        setSamples(Array.from({ length: 80 }, () => baseline));
+        setEventLog((current) => [
+          ...current,
+          {
+            time: "T+00:00",
+            utc: new Date().toISOString(),
+            text: `PROVISIONAL pixel background loaded · ${profile.totalRateCountsPerSecond.toFixed(4)} c/s · deterministic ${profile.binSeconds.toFixed(1)} s bins`,
+            kind: "background",
+          },
+        ]);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        backgroundProfileRef.current = null;
+        setBackgroundProfile(null);
+        setBackgroundProfileError(
+          error instanceof Error ? error.message : "Unknown pixel background error.",
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let timer: number | undefined;
@@ -3970,7 +4046,8 @@ export default function Home() {
   useEffect(() => {
     const timer = window.setInterval(() => {
       const settings = settingsRef.current;
-      if (settings.paused) return;
+      const pixelBackground = backgroundProfileRef.current;
+      if (settings.paused || !pixelBackground) return;
       const dt = 0.2 * settings.speed;
       elapsedRef.current += dt;
       phaseRef.current = (phaseRef.current + dt / 910) % (Math.PI * 2);
@@ -4011,18 +4088,19 @@ export default function Home() {
       const mountedEarthAlbedoNoise =
         celestial.earthAlbedoNoise *
         getMountAlbedoTransmission(settings.mountX, settings.mountZ);
-      const backgroundMean =
-        BASE_BACKGROUND_RATE +
-        mountedSunNoise +
-        mountedMoonNoise +
-        mountedEarthAlbedoNoise;
+      const composedBackgroundRate = composeBackgroundRate(
+        pixelBackground,
+        mountedSunNoise,
+        mountedMoonNoise,
+        mountedEarthAlbedoNoise,
+      );
       const activeBursts = activeBurstsRef.current.filter(
         (burst) => burst.ticksRemaining > 0,
       );
       const burstDirections = activeBursts.map((burst) => burst.pixelIndex);
       const burstPixelGroups = activeBursts.map((burst) => burst.pixelIndices);
       const isGRB = activeBursts.length > 0;
-      const background = Math.round(backgroundMean);
+      const background = rateToExpectedCountsPerBin(composedBackgroundRate);
       const source = Math.round(
         activeBursts.reduce(
           (sum, burst) =>
@@ -4038,6 +4116,8 @@ export default function Home() {
       totalRef.current += observed;
       capturedRef.current += source;
       const detectorResponse = PIXEL_LAYOUT.map((pixel) => {
+        const baselineExpectedCounts =
+          pixelBackground.expectedCountsPerBin[pixel.index];
         const albedoResponse = getEarthAlbedoResponse(
           pixel.index,
           celestial.earthIllumination,
@@ -4046,7 +4126,7 @@ export default function Home() {
           settings.mountX,
           settings.mountZ,
         );
-        let hits =
+        let hits = baselineExpectedCounts + (
           albedoResponse >= 0.12
             ? Math.max(
                 1,
@@ -4054,11 +4134,15 @@ export default function Home() {
                   (albedoResponse * celestial.earthAlbedoNoise) / 18,
                 ),
               )
-            : 0;
-        let impact =
-          hits > 0
-            ? THREE.MathUtils.clamp(albedoResponse * 0.42, 0.04, 0.42)
-            : 0;
+            : 0
+        );
+        let impact = 0;
+        if (albedoResponse >= 0.12) {
+          impact = Math.max(
+            impact,
+            THREE.MathUtils.clamp(albedoResponse * 0.42, 0.04, 0.42),
+          );
+        }
         activeBursts.forEach((burst) => {
           if (!burst.pixelIndices.includes(pixel.index)) return;
           const incidence = getConfiguredBurstIncidence(
@@ -4102,9 +4186,9 @@ export default function Home() {
           bin: photonBinRef.current,
           elapsed: elapsedRef.current,
           simulatedDate: celestial.date.toISOString(),
-          sun: mountedSunNoise,
-          moon: mountedMoonNoise,
-          earthAlbedo: mountedEarthAlbedoNoise,
+          sun: rateToExpectedCountsPerBin(mountedSunNoise),
+          moon: rateToExpectedCountsPerBin(mountedMoonNoise),
+          earthAlbedo: rateToExpectedCountsPerBin(mountedEarthAlbedoNoise),
           activeBursts: activeBursts.length,
           hitPixels: detectorHits.filter((hits) => hits > 0).length,
         },
@@ -4123,6 +4207,10 @@ export default function Home() {
         burstPixelGroups,
         detector,
         detectorHits,
+        detectorBackgroundRates: [...pixelBackground.ratesCountsPerSecond],
+        detectorBackgroundExpectedCounts: [
+          ...pixelBackground.expectedCountsPerBin,
+        ],
         simulatedDate: celestial.date.toISOString(),
         sunDirection: celestial.sunDirection,
         moonDirection: celestial.moonDirection,
@@ -4406,6 +4494,8 @@ export default function Home() {
   }, []);
 
   const resetSimulation = useCallback(() => {
+    const pixelBackground = backgroundProfileRef.current;
+    if (!pixelBackground) return;
     const now = Date.now();
     phaseRef.current = 0.72;
     elapsedRef.current = 0;
@@ -4439,7 +4529,7 @@ export default function Home() {
         : 0;
     const mountedEarthAlbedoNoise =
       celestial.earthAlbedoNoise * getMountAlbedoTransmission(mountX, mountZ);
-    const detectorHits = PIXEL_LAYOUT.map((pixel) => {
+    const detectorResponse = PIXEL_LAYOUT.map((pixel) => {
       const response = getEarthAlbedoResponse(
         pixel.index,
         celestial.earthIllumination,
@@ -4448,22 +4538,37 @@ export default function Home() {
         mountX,
         mountZ,
       );
-      return response >= 0.12
+      const addedExpectedCounts = response >= 0.12
         ? Math.max(1, Math.round((response * celestial.earthAlbedoNoise) / 18))
         : 0;
+      return {
+        hits:
+          pixelBackground.expectedCountsPerBin[pixel.index] +
+          addedExpectedCounts,
+        impact:
+          response >= 0.12
+            ? THREE.MathUtils.clamp(response * 0.42, 0.04, 0.42)
+            : 0,
+      };
     });
-    const background = Math.round(
-      BASE_BACKGROUND_RATE +
-        mountedSunNoise +
-        mountedMoonNoise +
-        mountedEarthAlbedoNoise,
+    const detectorHits = detectorResponse.map((pixel) => pixel.hits);
+    const composedBackgroundRate = composeBackgroundRate(
+      pixelBackground,
+      mountedSunNoise,
+      mountedMoonNoise,
+      mountedEarthAlbedoNoise,
     );
+    const background = rateToExpectedCountsPerBin(composedBackgroundRate);
     setTelemetry({
       ...INITIAL_TELEMETRY,
       observed: background,
       background,
       detectorHits,
-      detector: detectorHits.map((hits) => (hits > 0 ? 0.55 : 0)),
+      detector: detectorResponse.map((pixel) => pixel.impact),
+      detectorBackgroundRates: [...pixelBackground.ratesCountsPerSecond],
+      detectorBackgroundExpectedCounts: [
+        ...pixelBackground.expectedCountsPerBin,
+      ],
       simulatedDate: celestial.date.toISOString(),
       sunDirection: celestial.sunDirection,
       moonDirection: celestial.moonDirection,
@@ -4720,13 +4825,29 @@ export default function Home() {
             </span>
           </button>
 
+          <div
+            className={`background-model-status ${
+              backgroundProfileError ? "error" : backgroundProfile ? "ready" : "loading"
+            }`}
+            role={backgroundProfileError ? "alert" : "status"}
+          >
+            <small>BACKGROUND PROFILE · PROVISIONAL</small>
+            <strong>
+              {backgroundProfileError
+                ? `UNAVAILABLE · ${backgroundProfileError}`
+                : backgroundProfile
+                  ? `${backgroundProfile.totalRateCountsPerSecond.toFixed(4)} c/s · 126 pixels · deterministic`
+                  : "VALIDATING pixbkg.txt…"}
+            </strong>
+          </div>
+
           <div className="chart-card">
             <div className="chart-header">
               <div>
                 <small>LIGHT CURVE</small>
-                <strong>Observed total = background + GRB excess</strong>
+                <strong>Observed counts = background + GRB excess</strong>
               </div>
-              <span>0.2 s bins</span>
+              <span>0.2 s bins · deterministic</span>
             </div>
             <SignalChart data={samples} />
           </div>
@@ -4764,14 +4885,14 @@ export default function Home() {
                 <em>+{telemetry.earthAlbedoNoise.toFixed(0)} c/s</em>
               </div>
             </div>
-            <p>Real astronomical geometry; parametric interference amplitudes require calibration.</p>
+            <p>PROVISIONAL pixel baseline plus separate additive Sun, Moon, and Earth terms; parametric interference amplitudes require calibration.</p>
           </div>
 
           <div className="detector-section">
             <div className="detector-section-header">
               <div>
                 <small>DETECTOR RESPONSE</small>
-                <strong>Configured pixel impact · 0–100</strong>
+                <strong>PROVISIONAL expected counts / 0.2 s · deterministic</strong>
               </div>
               <button
                 type="button"
@@ -4786,6 +4907,10 @@ export default function Home() {
             <DetectorMap
               values={telemetry.detector}
               hits={telemetry.detectorHits}
+              backgroundRates={telemetry.detectorBackgroundRates}
+              backgroundExpectedCounts={
+                telemetry.detectorBackgroundExpectedCounts
+              }
               grbActive={telemetry.grbActive}
               burstPixelGroups={telemetry.burstPixelGroups}
               pixelConfiguration={pixelConfiguration}
@@ -4970,6 +5095,10 @@ export default function Home() {
             <DetectorMap
               values={telemetry.detector}
               hits={telemetry.detectorHits}
+              backgroundRates={telemetry.detectorBackgroundRates}
+              backgroundExpectedCounts={
+                telemetry.detectorBackgroundExpectedCounts
+              }
               grbActive={telemetry.grbActive}
               burstPixelGroups={telemetry.burstPixelGroups}
               pixelConfiguration={pixelConfiguration}
