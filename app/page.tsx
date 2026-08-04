@@ -8,10 +8,8 @@ import {
   Download,
   Maximize2,
   Move,
-  Orbit,
   Pause,
   Play,
-  Radio,
   RotateCcw,
   Save,
   SlidersHorizontal,
@@ -24,7 +22,19 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { Body, GeoVector, Illumination } from "astronomy-engine";
+import { Body, Illumination } from "astronomy-engine";
+import { AppNav } from "./components/app-nav";
+import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
+import {
+  ECI_EPHEMERIS_INITIAL_SAMPLE,
+  ECI_EPHEMERIS_START_MS,
+  greenwichMeanSiderealTimeRadians,
+  loadEciEphemerisProfile,
+  sampleEciEphemeris,
+  slerpUnitDirection,
+  type EciEphemerisProfile,
+  type EciEphemerisSample,
+} from "./lib/eci-ephemeris";
 import {
   PIXEL_BACKGROUND_BIN_SECONDS,
   composeBackgroundRate,
@@ -32,22 +42,17 @@ import {
   rateToExpectedCountsPerBin,
   type PixelBackgroundProfile,
 } from "./lib/pixel-background";
+import {
+  createPhotonRunId,
+  openPhotonRepository,
+  type PhotonRepository,
+} from "./lib/photon-repository";
+import { createParametricOrbitOverride } from "./lib/orbital-overrides";
 
 type Sample = {
   observed: number;
   background: number;
   source: number;
-};
-
-type PhotonRecord = Sample & {
-  bin: number;
-  elapsed: number;
-  simulatedDate: string;
-  sun: number;
-  moon: number;
-  earthAlbedo: number;
-  activeBursts: number;
-  hitPixels: number;
 };
 
 type EventRecord = {
@@ -60,8 +65,6 @@ type EventRecord = {
 type Telemetry = Sample & {
   elapsed: number;
   phase: number;
-  latitude: number;
-  longitude: number;
   total: number;
   captured: number;
   significance: number;
@@ -73,6 +76,12 @@ type Telemetry = Sample & {
   detectorBackgroundRates: number[];
   detectorBackgroundExpectedCounts: number[];
   simulatedDate: string;
+  altitudeKm: number;
+  canonicalAltitudeKm: number;
+  canonicalSatelliteDirection: [number, number, number];
+  satelliteDirection: [number, number, number];
+  geocentricSunDirection: [number, number, number];
+  geocentricMoonDirection: [number, number, number];
   sunDirection: [number, number, number];
   moonDirection: [number, number, number];
   sunSeparation: number;
@@ -140,8 +149,18 @@ type TestBurstDraft = {
 };
 
 type CameraMode = "orbit" | "satellite";
+type OrbitScenarioMode = "canonical" | "parametric";
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const TIME_WARP_PRESETS = [1, 50, 200, 500] as const;
+const DEFAULT_ORBIT_ALTITUDE_KM = 550;
+const MIN_ORBIT_ALTITUDE_KM = 400;
+const MAX_ORBIT_ALTITUDE_KM = 700;
+const DEFAULT_ORBIT_INCLINATION_DEG = 20;
+const MIN_ORBIT_INCLINATION_DEG = 0;
+const MAX_ORBIT_INCLINATION_DEG = 60;
+const MIN_TIME_WARP = 1;
+const MAX_TIME_WARP = 500;
 const PIXEL_CONFIGURATION_STORAGE_KEY = "crystal-eye.pixel-configuration.v1";
 const PIXEL_RING_COUNTS = [1, 6, 12, 18, 24, 30, 35] as const;
 const GRAY_CLUSTER_COUNT = 6;
@@ -625,10 +644,10 @@ function isPixelLitByEarthAlbedo(
   ) >= 0.12;
 }
 
-const DEFAULT_SIMULATION_EPOCH_MS = Date.UTC(2026, 6, 24, 12, 0, 0);
 const BURST_DURATION_TICKS = 15;
 const DIRECT_SUN_BACKGROUND_RATE = 260;
-const AU_KM = 149_597_870.7;
+const EARTH_RADIUS_KM = 6371;
+const DISPLAY_INTERPOLATION_MS = 220;
 const EFFECTIVE_FOV_DEG = 130;
 const EFFECTIVE_HALF_ANGLE_DEG = EFFECTIVE_FOV_DEG / 2;
 const BASE_PIXEL_COLOR = "#1739b8";
@@ -737,38 +756,49 @@ function getMountedDirectionVisibility(
 }
 
 function getCelestialGeometry(
-  elapsedSeconds: number,
-  phase: number,
-  inclination: number,
-  altitude: number,
-  epochMs = DEFAULT_SIMULATION_EPOCH_MS,
+  sample: EciEphemerisSample,
+  scenarioMode: OrbitScenarioMode = "canonical",
+  altitudeOverrideKm = DEFAULT_ORBIT_ALTITUDE_KM,
+  inclinationOverrideDeg = DEFAULT_ORBIT_INCLINATION_DEG,
 ) {
-  const date = new Date(epochMs + elapsedSeconds * 1000);
-  const sun = GeoVector(Body.Sun, date, true);
-  const moon = GeoVector(Body.Moon, date, true);
+  const date = new Date(sample.timestampMs);
   const moonIllumination = Illumination(Body.Moon, date);
-  const inclinationRad = THREE.MathUtils.degToRad(inclination);
-  const satelliteDirection = normalizeVector(
-    Math.cos(phase) * Math.cos(inclinationRad),
-    Math.cos(phase) * Math.sin(inclinationRad),
-    Math.sin(phase),
-  );
-  const observerDistanceAu = (6371 + altitude) / AU_KM;
   const mapFromEquatorial = (x: number, y: number, z: number) => [x, z, y] as const;
-  const mappedSun = mapFromEquatorial(sun.x, sun.y, sun.z);
-  const mappedMoon = mapFromEquatorial(moon.x, moon.y, moon.z);
+  const mappedCanonicalSatellite = mapFromEquatorial(...sample.satelliteKm);
+  const canonicalSatelliteDirection = normalizeVector(...mappedCanonicalSatellite);
+  const canonicalSatelliteRadiusKm = Math.hypot(...sample.satelliteKm);
+  const canonicalAltitudeKm = canonicalSatelliteRadiusKm - EARTH_RADIUS_KM;
+  const selectedSatelliteEciKm =
+    scenarioMode === "canonical"
+      ? sample.satelliteKm
+      : createParametricOrbitOverride(
+          sample,
+          EARTH_RADIUS_KM + altitudeOverrideKm,
+          inclinationOverrideDeg,
+        ).satelliteEciKm;
+  const referenceFrames = deriveCelestialReferenceFrameDirections(
+    sample,
+    selectedSatelliteEciKm,
+  );
+  const satelliteRadiusKm = Math.hypot(...selectedSatelliteEciKm);
+  const altitudeKm = satelliteRadiusKm - EARTH_RADIUS_KM;
+  const satelliteDirection = normalizeVector(
+    ...mapFromEquatorial(...referenceFrames.satelliteGeocentric),
+  );
+  const geocentricSunDirection = normalizeVector(
+    ...mapFromEquatorial(...referenceFrames.sunGeocentric),
+  );
+  const geocentricMoonDirection = normalizeVector(
+    ...mapFromEquatorial(...referenceFrames.moonGeocentric),
+  );
   const sunDirection = normalizeVector(
-    mappedSun[0] - satelliteDirection[0] * observerDistanceAu,
-    mappedSun[1] - satelliteDirection[1] * observerDistanceAu,
-    mappedSun[2] - satelliteDirection[2] * observerDistanceAu,
+    ...mapFromEquatorial(...referenceFrames.sunTopocentric),
   );
   const moonDirection = normalizeVector(
-    mappedMoon[0] - satelliteDirection[0] * observerDistanceAu,
-    mappedMoon[1] - satelliteDirection[1] * observerDistanceAu,
-    mappedMoon[2] - satelliteDirection[2] * observerDistanceAu,
+    ...mapFromEquatorial(...referenceFrames.moonTopocentric),
   );
-  const sunSeparation = angleBetween(satelliteDirection, sunDirection);
-  const moonSeparation = angleBetween(satelliteDirection, moonDirection);
+  const sunSeparation = referenceFrames.sunBoresightSeparationDeg;
+  const moonSeparation = referenceFrames.moonBoresightSeparationDeg;
   const sunInFov = sunSeparation <= EFFECTIVE_HALF_ANGLE_DEG;
   const moonInFov = moonSeparation <= EFFECTIVE_HALF_ANGLE_DEG;
   const angularResponse = (separation: number) =>
@@ -802,13 +832,18 @@ function getCelestialGeometry(
   );
   const earthAlbedoAzimuth =
     earthAlbedoDirectional > 1e-4 ? Math.atan2(localSun.z, localSun.x) : 0;
-  const earthAngularScale = (6371 / (6371 + altitude)) ** 2;
+  const earthAngularScale = (EARTH_RADIUS_KM / satelliteRadiusKm) ** 2;
   const earthAlbedoNoise =
     85 * earthAngularScale * earthIllumination ** 1.35;
 
   return {
     date,
+    altitudeKm,
+    canonicalAltitudeKm,
+    canonicalSatelliteDirection,
     satelliteDirection,
+    geocentricSunDirection,
+    geocentricMoonDirection,
     sunDirection,
     moonDirection,
     sunSeparation,
@@ -817,7 +852,11 @@ function getCelestialGeometry(
     moonInFov,
     sunNoise,
     moonNoise,
-    moonDistanceKm: Math.hypot(moon.x, moon.y, moon.z) * AU_KM,
+    moonDistanceKm: Math.hypot(
+      sample.moonKm[0] - selectedSatelliteEciKm[0],
+      sample.moonKm[1] - selectedSatelliteEciKm[1],
+      sample.moonKm[2] - selectedSatelliteEciKm[2],
+    ),
     moonPhase: moonIllumination.phase_fraction,
     earthIllumination,
     earthAlbedoNoise,
@@ -826,7 +865,7 @@ function getCelestialGeometry(
   };
 }
 
-const INITIAL_CELESTIAL = getCelestialGeometry(0, 0.72, 20, 550);
+const INITIAL_CELESTIAL = getCelestialGeometry(ECI_EPHEMERIS_INITIAL_SAMPLE);
 const INITIAL_MOUNT_SUN_NOISE =
   INITIAL_CELESTIAL.sunSeparation <= getMountEffectiveFov(0, 0) / 2
     ? INITIAL_CELESTIAL.sunNoise *
@@ -864,9 +903,7 @@ const INITIAL_TELEMETRY: Telemetry = {
   background: 0,
   source: 0,
   elapsed: 0,
-  phase: 0.72,
-  latitude: 13.2,
-  longitude: 41.3,
+  phase: 0,
   total: 0,
   captured: 0,
   significance: 0,
@@ -878,6 +915,12 @@ const INITIAL_TELEMETRY: Telemetry = {
   detectorBackgroundRates: PIXEL_LAYOUT.map(() => 0),
   detectorBackgroundExpectedCounts: PIXEL_LAYOUT.map(() => 0),
   simulatedDate: INITIAL_CELESTIAL.date.toISOString(),
+  altitudeKm: INITIAL_CELESTIAL.altitudeKm,
+  canonicalAltitudeKm: INITIAL_CELESTIAL.canonicalAltitudeKm,
+  canonicalSatelliteDirection: INITIAL_CELESTIAL.canonicalSatelliteDirection,
+  satelliteDirection: INITIAL_CELESTIAL.satelliteDirection,
+  geocentricSunDirection: INITIAL_CELESTIAL.geocentricSunDirection,
+  geocentricMoonDirection: INITIAL_CELESTIAL.geocentricMoonDirection,
   sunDirection: INITIAL_CELESTIAL.sunDirection,
   moonDirection: INITIAL_CELESTIAL.moonDirection,
   sunSeparation: INITIAL_CELESTIAL.sunSeparation,
@@ -904,17 +947,17 @@ function formatTime(seconds: number) {
 
 function GlobeScene({
   altitude,
-  inclination,
-  speed,
+  scenarioMode,
   paused,
-  phase,
+  simulatedTimestampMs,
   grbActive,
   burstDirections,
   burstPixelGroups,
   pixelConfiguration,
   selectedPixel,
-  sunDirection,
-  moonDirection,
+  satelliteDirection,
+  geocentricSunDirection,
+  geocentricMoonDirection,
   sunNoise,
   moonNoise,
   earthIllumination,
@@ -931,17 +974,17 @@ function GlobeScene({
   onSystemZoomChange,
 }: {
   altitude: number;
-  inclination: number;
-  speed: number;
+  scenarioMode: OrbitScenarioMode;
   paused: boolean;
-  phase: number;
+  simulatedTimestampMs: number;
   grbActive: boolean;
   burstDirections: number[];
   burstPixelGroups: number[][];
   pixelConfiguration: PixelConfiguration;
   selectedPixel: number;
-  sunDirection: [number, number, number];
-  moonDirection: [number, number, number];
+  satelliteDirection: [number, number, number];
+  geocentricSunDirection: [number, number, number];
+  geocentricMoonDirection: [number, number, number];
   sunNoise: number;
   moonNoise: number;
   earthIllumination: number;
@@ -960,17 +1003,16 @@ function GlobeScene({
   const mountRef = useRef<HTMLDivElement>(null);
   const settingsRef = useRef({
     altitude,
-    inclination,
-    speed,
     paused,
-    phase,
+    simulatedTimestampMs,
     grbActive,
     burstDirections,
     burstPixelGroups,
     pixelConfiguration,
     selectedPixel,
-    sunDirection,
-    moonDirection,
+    satelliteDirection,
+    sunDirection: geocentricSunDirection,
+    moonDirection: geocentricMoonDirection,
     sunNoise,
     moonNoise,
     earthIllumination,
@@ -983,23 +1025,21 @@ function GlobeScene({
     mountZ,
     cameraMode,
     systemZoom,
-    phaseUpdatedAt: 0,
   });
 
   useEffect(() => {
     settingsRef.current = {
       altitude,
-      inclination,
-      speed,
       paused,
-      phase,
+      simulatedTimestampMs,
       grbActive,
       burstDirections,
       burstPixelGroups,
       pixelConfiguration,
       selectedPixel,
-      sunDirection,
-      moonDirection,
+      satelliteDirection,
+      sunDirection: geocentricSunDirection,
+      moonDirection: geocentricMoonDirection,
       sunNoise,
       moonNoise,
       earthIllumination,
@@ -1012,21 +1052,19 @@ function GlobeScene({
       mountZ,
       cameraMode,
       systemZoom,
-      phaseUpdatedAt: performance.now(),
     };
   }, [
     altitude,
-    inclination,
-    speed,
     paused,
-    phase,
+    simulatedTimestampMs,
     grbActive,
     burstDirections,
     burstPixelGroups,
     pixelConfiguration,
     selectedPixel,
-    sunDirection,
-    moonDirection,
+    satelliteDirection,
+    geocentricSunDirection,
+    geocentricMoonDirection,
     sunNoise,
     moonNoise,
     earthIllumination,
@@ -1181,7 +1219,6 @@ function GlobeScene({
     );
 
     const earthSystem = new THREE.Group();
-    earthSystem.rotation.z = THREE.MathUtils.degToRad(23.4);
     earthSystem.add(earth, nightLights, clouds);
     scene.add(earthSystem);
 
@@ -1281,20 +1318,6 @@ function GlobeScene({
 
     const orbitGroup = new THREE.Group();
     scene.add(orbitGroup);
-    const orbitPoints: THREE.Vector3[] = [];
-    for (let index = 0; index <= 256; index += 1) {
-      const angle = (index / 256) * Math.PI * 2;
-      orbitPoints.push(new THREE.Vector3(Math.cos(angle) * 3.1, 0, Math.sin(angle) * 3.1));
-    }
-    const orbitLine = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(orbitPoints),
-      new THREE.LineBasicMaterial({
-        color: 0x51c6e9,
-        transparent: true,
-        opacity: 0.42,
-      }),
-    );
-    orbitGroup.add(orbitLine);
 
     const satelliteGroup = new THREE.Group();
     orbitGroup.add(satelliteGroup);
@@ -1515,7 +1538,28 @@ function GlobeScene({
     const cameraTarget = new THREE.Vector3();
     const desiredCameraTarget = new THREE.Vector3();
     const radialWorld = new THREE.Vector3();
-    let renderedPhase = settingsRef.current.phase;
+    const renderedSatelliteDirection = new THREE.Vector3()
+      .fromArray(settingsRef.current.satelliteDirection)
+      .normalize();
+    const renderedSunDirection = new THREE.Vector3()
+      .fromArray(settingsRef.current.sunDirection)
+      .normalize();
+    const renderedMoonDirection = new THREE.Vector3()
+      .fromArray(settingsRef.current.moonDirection)
+      .normalize();
+    const startSatelliteDirection = renderedSatelliteDirection.clone();
+    const startSunDirection = renderedSunDirection.clone();
+    const startMoonDirection = renderedMoonDirection.clone();
+    const targetSatelliteDirection = renderedSatelliteDirection.clone();
+    const targetSunDirection = renderedSunDirection.clone();
+    const targetMoonDirection = renderedMoonDirection.clone();
+    let renderedTimestampMs = settingsRef.current.simulatedTimestampMs;
+    let startTimestampMs = renderedTimestampMs;
+    let targetTimestampMs = renderedTimestampMs;
+    let renderedAltitude = settingsRef.current.altitude;
+    let startAltitude = renderedAltitude;
+    let targetAltitude = renderedAltitude;
+    let displayTransitionStartedAt = performance.now();
     let animationFrame = 0;
     const animate = () => {
       animationFrame = requestAnimationFrame(animate);
@@ -1551,29 +1595,72 @@ function GlobeScene({
         });
         appliedPixelConfiguration = settings.pixelConfiguration;
       }
-      const orbitRadius = 3.1 + (settings.altitude - 550) / 1500;
-      const extrapolation =
-        !settings.paused && settings.phaseUpdatedAt > 0
-          ? ((performance.now() - settings.phaseUpdatedAt) / 1000) *
-            (settings.speed / 910)
-          : 0;
-      const predictedPhase = settings.phase + extrapolation;
-      const phaseError = Math.atan2(
-        Math.sin(predictedPhase - renderedPhase),
-        Math.cos(predictedPhase - renderedPhase),
+      const now = performance.now();
+      if (settings.simulatedTimestampMs !== targetTimestampMs) {
+        startSatelliteDirection.copy(renderedSatelliteDirection);
+        startSunDirection.copy(renderedSunDirection);
+        startMoonDirection.copy(renderedMoonDirection);
+        targetSatelliteDirection.fromArray(settings.satelliteDirection).normalize();
+        targetSunDirection.fromArray(settings.sunDirection).normalize();
+        targetMoonDirection.fromArray(settings.moonDirection).normalize();
+        startTimestampMs = renderedTimestampMs;
+        targetTimestampMs = settings.simulatedTimestampMs;
+        startAltitude = renderedAltitude;
+        targetAltitude = settings.altitude;
+        displayTransitionStartedAt = now;
+      }
+      const displayFraction = THREE.MathUtils.clamp(
+        (now - displayTransitionStartedAt) / DISPLAY_INTERPOLATION_MS,
+        0,
+        1,
       );
-      renderedPhase += phaseError * (1 - Math.exp(-delta * 18));
-      const angle = renderedPhase;
-      orbitGroup.rotation.z = THREE.MathUtils.degToRad(settings.inclination);
-      orbitLine.scale.setScalar(orbitRadius / 3.1);
-      satelliteGroup.position.set(Math.cos(angle) * orbitRadius, 0, Math.sin(angle) * orbitRadius);
+      renderedSatelliteDirection.fromArray(
+        slerpUnitDirection(
+          startSatelliteDirection.toArray() as [number, number, number],
+          targetSatelliteDirection.toArray() as [number, number, number],
+          displayFraction,
+        ),
+      );
+      renderedSunDirection.fromArray(
+        slerpUnitDirection(
+          startSunDirection.toArray() as [number, number, number],
+          targetSunDirection.toArray() as [number, number, number],
+          displayFraction,
+        ),
+      );
+      renderedMoonDirection.fromArray(
+        slerpUnitDirection(
+          startMoonDirection.toArray() as [number, number, number],
+          targetMoonDirection.toArray() as [number, number, number],
+          displayFraction,
+        ),
+      );
+      renderedTimestampMs = THREE.MathUtils.lerp(
+        startTimestampMs,
+        targetTimestampMs,
+        displayFraction,
+      );
+      renderedAltitude = THREE.MathUtils.lerp(
+        startAltitude,
+        targetAltitude,
+        displayFraction,
+      );
+      const orbitRadius = 3.1 + (renderedAltitude - 550) / 1500;
+      earthSystem.rotation.set(
+        0,
+        -greenwichMeanSiderealTimeRadians(renderedTimestampMs),
+        0,
+      );
+      satelliteGroup.position
+        .copy(renderedSatelliteDirection)
+        .multiplyScalar(orbitRadius);
       payloadMountGroup.position.set(settings.mountX * 0.15, 0, settings.mountZ * 0.15);
-      outwardLocal.set(Math.cos(angle), 0, Math.sin(angle)).normalize();
+      outwardLocal.copy(renderedSatelliteDirection);
       satelliteGroup.quaternion.setFromUnitVectors(upAxis, outwardLocal);
       satelliteGroup.getWorldPosition(satWorld);
       satelliteGroup.getWorldQuaternion(satelliteWorldQuaternion);
-      sunSceneDirection.fromArray(settings.sunDirection).normalize();
-      moonSceneDirection.fromArray(settings.moonDirection).normalize();
+      sunSceneDirection.copy(renderedSunDirection);
+      moonSceneDirection.copy(renderedMoonDirection);
       sunBody.position.copy(sunSceneDirection).multiplyScalar(12.5);
       sunLabel.sprite.position
         .copy(sunBody.position)
@@ -1586,12 +1673,6 @@ function GlobeScene({
       moonLabel.sprite.position
         .copy(moonBody.position)
         .addScaledVector(camera.up, 0.34);
-
-      if (!settings.paused) {
-        earthSystem.rotation.y += delta * 0.025;
-        clouds.rotation.y += delta * 0.004;
-        stars.rotation.y -= delta * 0.002;
-      }
 
       pulse.visible = settings.grbActive;
       const pulseScale = 1 + Math.sin(clock.elapsedTime * 9) * 0.22;
@@ -1705,7 +1786,6 @@ function GlobeScene({
           .addScaledVector(radialWorld, followDistance);
         desiredCameraTarget.copy(satWorld);
       } else {
-        if (!dragging) yaw += settings.paused ? 0 : delta * 0.018;
         desiredCameraPosition.set(
           Math.sin(yaw) * Math.cos(pitch) * distance,
           Math.sin(pitch) * distance,
@@ -1759,9 +1839,8 @@ function GlobeScene({
   return (
     <div className="globe-scene" ref={mountRef} aria-label="Three-dimensional orbital simulation">
       <div className="scene-hud scene-hud-top">
-        <span className="hud-tag"><CircleDot size={12} /> LEO ORBIT</span>
-        <span>{altitude} km</span>
-        <span>{inclination}° inc.</span>
+        <span className="hud-tag"><CircleDot size={12} /> {scenarioMode === "canonical" ? "CANONICAL ECI REPLAY" : "PARAMETRIC SATELLITE SCENARIO"}</span>
+        <span>{altitude.toFixed(1)} km</span>
       </div>
       <div className="camera-modes" aria-label="Camera mode">
         <button
@@ -1937,68 +2016,25 @@ function SignalChart({ data }: { data: Sample[] }) {
 }
 
 function HistoryDialog({
-  mode,
   events,
-  photons,
   onClose,
 }: {
-  mode: "events" | "photons";
   events: EventRecord[];
-  photons: PhotonRecord[];
   onClose: () => void;
 }) {
   const pageSize = 100;
   const [page, setPage] = useState(0);
-  const records = mode === "events" ? events : photons;
-  const pageCount = Math.max(1, Math.ceil(records.length / pageSize));
+  const pageCount = Math.max(1, Math.ceil(events.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
-  const pageStart = Math.max(0, records.length - (safePage + 1) * pageSize);
-  const pageEnd = records.length - safePage * pageSize;
-  const visibleEvents =
-    mode === "events" ? events.slice(pageStart, pageEnd).reverse() : [];
-  const visiblePhotons =
-    mode === "photons" ? photons.slice(pageStart, pageEnd).reverse() : [];
+  const pageStart = Math.max(0, events.length - (safePage + 1) * pageSize);
+  const pageEnd = events.length - safePage * pageSize;
+  const visibleEvents = events.slice(pageStart, pageEnd).reverse();
 
   const downloadCsv = () => {
-    const rows =
-      mode === "events"
-        ? [
-            ["mission_time", "simulated_utc", "type", "description"],
-            ...events.map((event) => [
-              event.time,
-              event.utc,
-              event.kind,
-              event.text,
-            ]),
-          ]
-        : [
-            [
-              "bin",
-              "mission_elapsed_s",
-              "simulated_utc",
-              "background_counts_per_0p2_s",
-              "source_counts_per_0p2_s",
-              "observed_counts_per_0p2_s",
-              "sun_counts_per_0p2_s",
-              "moon_counts_per_0p2_s",
-              "earth_albedo_counts_per_0p2_s",
-              "active_bursts",
-              "hit_pixels",
-            ],
-            ...photons.map((sample) => [
-              sample.bin,
-              sample.elapsed.toFixed(1),
-              sample.simulatedDate,
-              sample.background,
-              sample.source,
-              sample.observed,
-              sample.sun.toFixed(3),
-              sample.moon.toFixed(3),
-              sample.earthAlbedo.toFixed(3),
-              sample.activeBursts,
-              sample.hitPixels,
-            ]),
-          ];
+    const rows = [
+      ["mission_time", "simulated_utc", "type", "description"],
+      ...events.map((event) => [event.time, event.utc, event.kind, event.text]),
+    ];
     const csv = rows
       .map((row) =>
         row
@@ -2009,10 +2045,7 @@ function HistoryDialog({
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download =
-      mode === "events"
-        ? "crystal-eye-event-history.csv"
-        : "crystal-eye-photon-stream.csv";
+    anchor.download = "crystal-eye-event-history.csv";
     anchor.click();
     URL.revokeObjectURL(url);
   };
@@ -2034,9 +2067,7 @@ function HistoryDialog({
         <header>
           <div>
             <small>ACQUISITION ARCHIVE · CURRENT SIMULATION SESSION</small>
-            <strong id="history-dialog-title">
-              {mode === "events" ? "Event History" : "Photon Stream History"}
-            </strong>
+            <strong id="history-dialog-title">Event History</strong>
           </div>
           <div className="history-header-actions">
             <button type="button" onClick={downloadCsv}>
@@ -2050,14 +2081,13 @@ function HistoryDialog({
 
         <div className="history-summary">
           <span>
-            <strong>{records.length.toLocaleString("en-US")}</strong> stored records
+            <strong>{events.length.toLocaleString("en-US")}</strong> stored records
           </span>
           <span>Newest records first · 100 rows per page</span>
         </div>
 
         <div className="history-table-wrap">
-          {mode === "events" ? (
-            <table className="history-table event-history-table">
+          <table className="history-table event-history-table">
               <thead>
                 <tr>
                   <th>#</th>
@@ -2078,54 +2108,16 @@ function HistoryDialog({
                   </tr>
                 ))}
               </tbody>
-            </table>
-          ) : (
-            <table className="history-table photon-history-table">
-              <thead>
-                <tr>
-                  <th>BIN</th>
-                  <th>MISSION TIME</th>
-                  <th>SIMULATED UTC</th>
-                  <th>BACKGROUND</th>
-                  <th>SOURCE</th>
-                  <th>OBSERVED</th>
-                  <th>SUN</th>
-                  <th>MOON</th>
-                  <th>EARTH ALBEDO</th>
-                  <th>GRB</th>
-                  <th>HIT PIXELS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visiblePhotons.map((sample) => (
-                  <tr key={sample.bin}>
-                    <td>{sample.bin}</td>
-                    <td>T+{formatTime(sample.elapsed).slice(3)}</td>
-                    <td>{sample.simulatedDate.replace("T", " ").replace(".000Z", " Z")}</td>
-                    <td>{sample.background.toFixed(2)} counts / 0.2 s</td>
-                    <td className={sample.source > 0 ? "source-value" : ""}>
-                      {sample.source.toFixed(2)} counts / 0.2 s
-                    </td>
-                    <td>{sample.observed.toFixed(2)} counts / 0.2 s</td>
-                    <td>{sample.sun.toFixed(2)} counts</td>
-                    <td>{sample.moon.toFixed(2)} counts</td>
-                    <td>{sample.earthAlbedo.toFixed(2)} counts</td>
-                    <td>{sample.activeBursts}</td>
-                    <td>{sample.hitPixels}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {records.length === 0 && (
+          </table>
+          {events.length === 0 && (
             <div className="history-empty">Waiting for acquisition records…</div>
           )}
         </div>
 
         <footer>
           <span>
-            Rows {records.length === 0 ? 0 : pageStart + 1}–{pageEnd} of{" "}
-            {records.length.toLocaleString("en-US")}
+            Rows {events.length === 0 ? 0 : pageStart + 1}–{pageEnd} of{" "}
+            {events.length.toLocaleString("en-US")}
           </span>
           <div>
             <button
@@ -2153,10 +2145,11 @@ function HistoryDialog({
 type SensorViewMode = "sky" | "mask" | "events" | "geometry";
 
 function SensorView({
-  phase,
-  inclination,
+  satelliteDirection,
   sunDirection,
   moonDirection,
+  geocentricSunDirection,
+  geocentricMoonDirection,
   sunInFov,
   moonInFov,
   moonPhase,
@@ -2175,10 +2168,11 @@ function SensorView({
   mountZ,
   effectiveFov,
 }: {
-  phase: number;
-  inclination: number;
+  satelliteDirection: [number, number, number];
   sunDirection: [number, number, number];
   moonDirection: [number, number, number];
+  geocentricSunDirection: [number, number, number];
+  geocentricMoonDirection: [number, number, number];
   sunInFov: boolean;
   moonInFov: boolean;
   moonPhase: number;
@@ -2216,12 +2210,7 @@ function SensorView({
     const cx = width / 2;
     const cy = height / 2;
     const radius = Math.max(20, Math.min(width, height) * 0.43);
-    const inclinationRad = THREE.MathUtils.degToRad(inclination);
-    const boresight = normalizeVector(
-      Math.cos(phase) * Math.cos(inclinationRad),
-      Math.cos(phase) * Math.sin(inclinationRad),
-      Math.sin(phase),
-    );
+    const boresight = satelliteDirection;
     const right = normalizeVector(boresight[2], 0, -boresight[0]);
     const up = normalizeVector(
       boresight[1] * right[2] - boresight[2] * right[1],
@@ -2262,10 +2251,14 @@ function SensorView({
 
     if (mode !== "events") {
       for (let index = 0; index < 110; index += 1) {
-        const seedA = Math.abs(Math.sin(index * 91.713 + phase * 0.37));
-        const seedB = Math.abs(Math.sin(index * 47.117 + inclination * 0.021));
+        const seedA = Math.abs(
+          Math.sin(index * 91.713 + satelliteDirection[0] * 0.37),
+        );
+        const seedB = Math.abs(
+          Math.sin(index * 47.117 + satelliteDirection[1] * 0.021),
+        );
         const starRadius = Math.sqrt(seedA) * radius * 0.96;
-        const starAngle = seedB * Math.PI * 2 + phase * 0.11;
+        const starAngle = seedB * Math.PI * 2 + satelliteDirection[2] * 0.11;
         const x = cx + Math.cos(starAngle) * starRadius;
         const y = cy + Math.sin(starAngle) * starRadius;
         const size = 0.35 + Math.abs(Math.sin(index * 13.17)) * 1.05;
@@ -2502,7 +2495,6 @@ function SensorView({
     earthAlbedoNoise,
     earthIllumination,
     effectiveFov,
-    inclination,
     mode,
     moonDirection,
     moonPhase,
@@ -2511,7 +2503,7 @@ function SensorView({
     mountZ,
     pentagonPixelIndices,
     pixelRotations,
-    phase,
+    satelliteDirection,
     selectedPixel,
     sunDirection,
     sunInFov,
@@ -2551,9 +2543,9 @@ function SensorView({
       <div className={`sensor-canvas-wrap mode-${mode}`}>
         {mode === "geometry" ? (
           <SystemGeometryCanvas
-            phase={phase}
-            sunDirection={sunDirection}
-            moonDirection={moonDirection}
+            satelliteDirection={satelliteDirection}
+            sunDirection={geocentricSunDirection}
+            moonDirection={geocentricMoonDirection}
             moonPhase={moonPhase}
             earthIllumination={earthIllumination}
             effectiveFov={effectiveFov}
@@ -2696,7 +2688,7 @@ function DetectorMap({
                 "--pixel-label-rotation": `${-configuredPixel.rotationDeg}deg`,
                 "--delay": `${(pixel.index % 17) * 24}ms`,
               } as React.CSSProperties}
-              title={`${configuredPixel.id} · PROVISIONAL pixel_id ${pixel.index} · ${
+              title={`${configuredPixel.id} · configured pixel_id ${pixel.index} · ${
                 pentagonPixelIndices.has(pixel.index)
                   ? "central pentagon"
                   : "hexagon"
@@ -2705,7 +2697,7 @@ function DetectorMap({
                 pentagonPixelIndices.has(pixel.index)
                   ? "central pentagon"
                   : "hexagon"
-              }, provisional background ${backgroundRate.toFixed(4)} counts per second, ${hitCount.toFixed(4)} total expected counts`}
+              }, background ${backgroundRate.toFixed(4)} counts per second, ${hitCount.toFixed(4)} total expected counts`}
               onClick={() => onSelect(pixel.index)}
             >
               <span>{String(pixel.index + 1).padStart(3, "0")}</span>
@@ -2761,14 +2753,14 @@ function RangeControl({
 }
 
 function SystemGeometryCanvas({
-  phase,
+  satelliteDirection,
   sunDirection,
   moonDirection,
   moonPhase,
   earthIllumination,
   effectiveFov,
 }: {
-  phase: number;
+  satelliteDirection: [number, number, number];
   sunDirection: [number, number, number];
   moonDirection: [number, number, number];
   moonPhase: number;
@@ -2803,8 +2795,9 @@ function SystemGeometryCanvas({
       };
       const sun = projectDirection(sunDirection);
       const moon = projectDirection(moonDirection);
-      const satelliteX = cx + Math.cos(phase) * orbitX;
-      const satelliteY = cy + Math.sin(phase) * orbitY;
+      const satellite = projectDirection(satelliteDirection);
+      const satelliteX = cx + satellite[0] * orbitX;
+      const satelliteY = cy + satellite[1] * orbitY;
       const radialAngle = Math.atan2(satelliteY - cy, satelliteX - cx);
 
       context.clearRect(0, 0, width, height);
@@ -2921,7 +2914,7 @@ function SystemGeometryCanvas({
     observer.observe(canvas);
     draw();
     return () => observer.disconnect();
-  }, [earthIllumination, effectiveFov, moonDirection, phase, sunDirection]);
+  }, [earthIllumination, effectiveFov, moonDirection, satelliteDirection, sunDirection]);
 
   return (
     <div className="system-geometry-view" aria-label="Earth, satellite, Sun, and Moon geometry">
@@ -2936,10 +2929,12 @@ function SystemGeometryCanvas({
 }
 
 function ConfigurationHub({
+  onOpenOrbit,
   onOpenPayload,
   onOpenPixels,
   onClose,
 }: {
+  onOpenOrbit: () => void;
   onOpenPayload: () => void;
   onOpenPixels: () => void;
   onClose: () => void;
@@ -2962,6 +2957,15 @@ function ConfigurationHub({
           </button>
         </header>
         <div>
+          <button type="button" onClick={onOpenOrbit}>
+            <RotateCcw size={24} />
+            <span>
+              <small>ORBITAL CONFIGURATION</small>
+              <strong>Orbit and physical time</strong>
+              <em>Select canonical ECI replay or an explicit parametric satellite scenario, plus physical time warp.</em>
+            </span>
+            <ChevronRight size={18} />
+          </button>
           <button type="button" onClick={onOpenPayload}>
             <SlidersHorizontal size={24} />
             <span>
@@ -2984,6 +2988,151 @@ function ConfigurationHub({
         <footer>
           Configuration changes are applied to the simulator and retained by their
           respective controls.
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function OrbitalConfigurationPanel({
+  scenarioMode,
+  altitudeKm,
+  inclinationDeg,
+  speed,
+  canonicalAltitudeKm,
+  ephemerisProfile,
+  ephemerisError,
+  onScenarioModeChange,
+  onAltitudeChange,
+  onInclinationChange,
+  onSpeedChange,
+  onReset,
+  onClose,
+}: {
+  scenarioMode: OrbitScenarioMode;
+  altitudeKm: number;
+  inclinationDeg: number;
+  speed: number;
+  canonicalAltitudeKm: number;
+  ephemerisProfile: EciEphemerisProfile | null;
+  ephemerisError: string | null;
+  onScenarioModeChange: (mode: OrbitScenarioMode) => void;
+  onAltitudeChange: (value: number) => void;
+  onInclinationChange: (value: number) => void;
+  onSpeedChange: (value: number) => void;
+  onReset: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="configuration-hub-backdrop" role="presentation">
+      <section
+        className="configuration-hub orbital-configuration-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="orbital-configuration-title"
+      >
+        <header>
+          <div>
+            <small>ORBITAL CONFIGURATION</small>
+            <strong id="orbital-configuration-title">Orbit and physical time controls</strong>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Back to configuration">
+            <X size={17} />
+          </button>
+        </header>
+        <div className="orbital-configuration-body">
+          <div className="warp-presets" role="group" aria-label="Satellite trajectory mode">
+            <button
+              type="button"
+              className={scenarioMode === "canonical" ? "active" : ""}
+              aria-pressed={scenarioMode === "canonical"}
+              onClick={() => onScenarioModeChange("canonical")}
+            >
+              CANONICAL ECI REPLAY · RECOMMENDED
+            </button>
+            <button
+              type="button"
+              className={scenarioMode === "parametric" ? "active" : ""}
+              aria-pressed={scenarioMode === "parametric"}
+              onClick={() => onScenarioModeChange("parametric")}
+            >
+              PARAMETRIC SATELLITE SCENARIO
+            </button>
+          </div>
+          <div className="orbital-control-grid">
+            {scenarioMode === "parametric" && (
+              <>
+                <RangeControl
+                  label="Altitude override · reference 550 km"
+                  value={altitudeKm}
+                  min={MIN_ORBIT_ALTITUDE_KM}
+                  max={MAX_ORBIT_ALTITUDE_KM}
+                  step={1}
+                  suffix=" km"
+                  onChange={onAltitudeChange}
+                />
+                <RangeControl
+                  label="Parametric orbit-plane inclination · original/default 20°"
+                  value={inclinationDeg}
+                  min={MIN_ORBIT_INCLINATION_DEG}
+                  max={MAX_ORBIT_INCLINATION_DEG}
+                  step={1}
+                  suffix="°"
+                  onChange={onInclinationChange}
+                />
+              </>
+            )}
+            <RangeControl
+              label="Physical time warp"
+              value={speed}
+              min={MIN_TIME_WARP}
+              max={MAX_TIME_WARP}
+              step={1}
+              suffix="×"
+              onChange={onSpeedChange}
+            />
+            <div className="warp-presets" aria-label="Orbital configuration time warp presets">
+              {TIME_WARP_PRESETS.map((preset) => (
+                <button
+                  type="button"
+                  key={preset}
+                  className={speed === preset ? "active" : ""}
+                  aria-pressed={speed === preset}
+                  onClick={() => onSpeedChange(preset)}
+                >
+                  {preset}×
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="orbit-override-notice" role={ephemerisError ? "alert" : "status"}>
+            <strong>
+              {scenarioMode === "canonical"
+                ? "CANONICAL SATELLITE, SUN, AND MOON ECI REPLAY"
+                : "PARAMETRIC SATELLITE SCENARIO · NOT A VALIDATED PROPAGATOR"}
+            </strong>
+            <span>
+              {ephemerisError ??
+                (ephemerisProfile
+                  ? `${ephemerisProfile.records.length.toLocaleString("en-US")} timestamped ECI SAT/SUN/MOON records retained · canonical sample altitude ${canonicalAltitudeKm.toFixed(1)} km. `
+                  : "Loading the timestamped ECI SAT/SUN/MOON source. ")}
+              {scenarioMode === "canonical" ? (
+                " Satellite, Sun, and Moon positions use the source ECI rows without an orbit override."
+              ) : (
+                <>
+                  Altitude changes satellite radius; inclination uses
+                  <code> u = atan2(SAT_y, SAT_x)</code> with RAAN 0° by convention.
+                  Sun and Moon remain on their canonical ECI trajectories.
+                </>
+              )}
+            </span>
+          </div>
+        </div>
+        <footer className="orbital-configuration-footer">
+          <span>Reset returns to the first ECI timestamp and keeps the selected trajectory mode.</span>
+          <button type="button" onClick={onReset} disabled={!ephemerisProfile}>
+            <RotateCcw size={13} /> RESET ECI TIMELINE
+          </button>
         </footer>
       </section>
     </div>
@@ -3900,23 +4049,29 @@ function PayloadPlacementPanel({
 }
 
 export default function Home() {
-  const [altitude, setAltitude] = useState(550);
-  const [inclination, setInclination] = useState(20);
+  const [orbitScenarioMode, setOrbitScenarioMode] =
+    useState<OrbitScenarioMode>("canonical");
+  const [orbitAltitudeKm, setOrbitAltitudeKm] = useState(
+    DEFAULT_ORBIT_ALTITUDE_KM,
+  );
+  const [orbitInclinationDeg, setOrbitInclinationDeg] = useState(
+    DEFAULT_ORBIT_INCLINATION_DEG,
+  );
   const [speed, setSpeed] = useState(50);
   const [paused, setPaused] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [systemZoom, setSystemZoom] = useState(55);
   const [configurationView, setConfigurationView] = useState<
-    "hub" | "payload" | "pixels" | null
+    "hub" | "orbit" | "payload" | "pixels" | null
   >(null);
   const [pixelConfiguration, setPixelConfiguration] =
     useState<PixelConfiguration>(DEFAULT_PIXEL_CONFIGURATION);
   const [mountX, setMountX] = useState(0);
   const [mountZ, setMountZ] = useState(0);
-  const [epochMs, setEpochMs] = useState(() => Date.now());
+  const [epochMs, setEpochMs] = useState(ECI_EPHEMERIS_START_MS);
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [detectorExpanded, setDetectorExpanded] = useState(false);
-  const [historyView, setHistoryView] = useState<"events" | "photons" | null>(null);
+  const [historyView, setHistoryView] = useState<"events" | null>(null);
   const [testBurstDraft, setTestBurstDraft] = useState<TestBurstDraft>({
     raDeg: 0,
     decDeg: 0,
@@ -3928,6 +4083,9 @@ export default function Home() {
     useState<PixelBackgroundProfile | null>(null);
   const [backgroundProfileError, setBackgroundProfileError] =
     useState<string | null>(null);
+  const [ephemerisProfile, setEphemerisProfile] =
+    useState<EciEphemerisProfile | null>(null);
+  const [ephemerisError, setEphemerisError] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
   const [samples, setSamples] = useState<Sample[]>(() =>
     Array.from({ length: 80 }, () => ({
@@ -3936,7 +4094,11 @@ export default function Home() {
       observed: INITIAL_TELEMETRY.background,
     })),
   );
-  const [photonHistory, setPhotonHistory] = useState<PhotonRecord[]>([]);
+  const [photonRecordCount, setPhotonRecordCount] = useState(0);
+  const [persistenceStatus, setPersistenceStatus] = useState<
+    "initializing" | "persisting" | "not-persisting"
+  >("initializing");
+  const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const [eventLog, setEventLog] = useState<EventRecord[]>(() => {
     const utc = new Date().toISOString();
     return [
@@ -3944,9 +4106,15 @@ export default function Home() {
       { time: "T+00:00", utc, text: "Orbital background model initialized", kind: "background" },
     ];
   });
-  const phaseRef = useRef(INITIAL_TELEMETRY.phase);
+  const phaseRef = useRef(0);
+  const satelliteDirectionRef = useRef(
+    INITIAL_CELESTIAL.satelliteDirection,
+  );
   const elapsedRef = useRef(0);
   const photonBinRef = useRef(0);
+  const photonRepositoryRef = useRef<PhotonRepository | null>(null);
+  const photonRunIdRef = useRef("");
+  const persistenceFailedRef = useRef(false);
   const activeBurstsRef = useRef<BurstEvent[]>([]);
   const nextBurstIdRef = useRef(1);
   const totalRef = useRef(0);
@@ -3954,15 +4122,49 @@ export default function Home() {
   const selectedPixelRef = useRef(43);
   const pixelConfigurationRef = useRef(DEFAULT_PIXEL_CONFIGURATION);
   const backgroundProfileRef = useRef<PixelBackgroundProfile | null>(null);
+  const ephemerisProfileRef = useRef<EciEphemerisProfile | null>(null);
   const settingsRef = useRef({
-    altitude,
-    inclination,
     speed,
     paused,
     epochMs,
+    orbitScenarioMode,
+    orbitAltitudeKm,
+    orbitInclinationDeg,
     mountX,
     mountZ,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    photonRunIdRef.current = createPhotonRunId();
+    openPhotonRepository()
+      .then(async (repository) => {
+        if (cancelled) {
+          repository.close();
+          return;
+        }
+        photonRepositoryRef.current = repository;
+        const count = await repository.count();
+        if (cancelled) return;
+        setPhotonRecordCount(count);
+        setPersistenceStatus("persisting");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        persistenceFailedRef.current = true;
+        photonRepositoryRef.current?.close();
+        photonRepositoryRef.current = null;
+        setPersistenceError(
+          error instanceof Error ? error.message : "Unknown IndexedDB error.",
+        );
+        setPersistenceStatus("not-persisting");
+      });
+    return () => {
+      cancelled = true;
+      photonRepositoryRef.current?.close();
+      photonRepositoryRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -3983,7 +4185,7 @@ export default function Home() {
           {
             time: "T+00:00",
             utc: new Date().toISOString(),
-            text: `PROVISIONAL pixel background loaded · ${profile.totalRateCountsPerSecond.toFixed(4)} c/s · deterministic ${profile.binSeconds.toFixed(1)} s bins`,
+            text: `Pixel background loaded · ${profile.totalRateCountsPerSecond.toFixed(4)} c/s · deterministic ${profile.binSeconds.toFixed(1)} s bins · status documented in provenance`,
             kind: "background",
           },
         ]);
@@ -3994,6 +4196,39 @@ export default function Home() {
         setBackgroundProfile(null);
         setBackgroundProfileError(
           error instanceof Error ? error.message : "Unknown pixel background error.",
+        );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadEciEphemerisProfile(
+      `${PUBLIC_BASE_PATH}/data/eci-ephemeris-2033.tsv`,
+    )
+      .then((profile) => {
+        if (cancelled) return;
+        ephemerisProfileRef.current = profile;
+        setEphemerisProfile(profile);
+        setEphemerisError(null);
+        setEventLog((current) => [
+          ...current,
+          {
+            time: "T+00:00",
+            utc: new Date(profile.startMs).toISOString(),
+            text: `ECI replay loaded · ${profile.records.length.toLocaleString("en-US")} SAT/SUN/MOON records`,
+            kind: "system",
+          },
+        ]);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        ephemerisProfileRef.current = null;
+        setEphemerisProfile(null);
+        setEphemerisError(
+          error instanceof Error ? error.message : "Unknown ECI ephemeris error.",
         );
       });
     return () => {
@@ -4023,15 +4258,116 @@ export default function Home() {
 
   useEffect(() => {
     settingsRef.current = {
-      altitude,
-      inclination,
       speed,
       paused,
       epochMs,
+      orbitScenarioMode,
+      orbitAltitudeKm,
+      orbitInclinationDeg,
       mountX,
       mountZ,
     };
-  }, [altitude, inclination, speed, paused, epochMs, mountX, mountZ]);
+  }, [
+    speed,
+    paused,
+    epochMs,
+    orbitScenarioMode,
+    orbitAltitudeKm,
+    orbitInclinationDeg,
+    mountX,
+    mountZ,
+  ]);
+
+  useEffect(() => {
+    const ephemeris = ephemerisProfileRef.current;
+    if (!ephemeris) return;
+    const timestampMs = THREE.MathUtils.clamp(
+      settingsRef.current.epochMs + elapsedRef.current * 1000,
+      ephemeris.startMs,
+      ephemeris.endMs,
+    );
+    const celestial = getCelestialGeometry(
+      sampleEciEphemeris(ephemeris, timestampMs),
+      orbitScenarioMode,
+      orbitAltitudeKm,
+      orbitInclinationDeg,
+    );
+    const mountedEffectiveFov = getMountEffectiveFov(mountX, mountZ);
+    const mountedSunNoise =
+      celestial.sunSeparation <= mountedEffectiveFov / 2
+        ? celestial.sunNoise *
+          getMountedDirectionVisibility(
+            celestial.sunDirection,
+            celestial.satelliteDirection,
+            mountX,
+            mountZ,
+          )
+        : 0;
+    const mountedMoonNoise =
+      celestial.moonSeparation <= mountedEffectiveFov / 2
+        ? celestial.moonNoise *
+          getMountedDirectionVisibility(
+            celestial.moonDirection,
+            celestial.satelliteDirection,
+            mountX,
+            mountZ,
+          )
+        : 0;
+    const mountedEarthAlbedoNoise =
+      celestial.earthAlbedoNoise * getMountAlbedoTransmission(mountX, mountZ);
+    const pixelBackground = backgroundProfileRef.current;
+    const background = pixelBackground
+      ? rateToExpectedCountsPerBin(
+          composeBackgroundRate(
+            pixelBackground,
+            mountedSunNoise,
+            mountedMoonNoise,
+            mountedEarthAlbedoNoise,
+          ),
+        )
+      : null;
+
+    satelliteDirectionRef.current = celestial.satelliteDirection;
+    setTelemetry((current) => ({
+      ...current,
+      ...(background === null
+        ? {}
+        : {
+            background,
+            observed: background + current.source,
+            significance: current.source / Math.sqrt(Math.max(1, background)),
+          }),
+      simulatedDate: celestial.date.toISOString(),
+      altitudeKm: celestial.altitudeKm,
+      canonicalAltitudeKm: celestial.canonicalAltitudeKm,
+      canonicalSatelliteDirection: celestial.canonicalSatelliteDirection,
+      satelliteDirection: celestial.satelliteDirection,
+      geocentricSunDirection: celestial.geocentricSunDirection,
+      geocentricMoonDirection: celestial.geocentricMoonDirection,
+      sunDirection: celestial.sunDirection,
+      moonDirection: celestial.moonDirection,
+      sunSeparation: celestial.sunSeparation,
+      moonSeparation: celestial.moonSeparation,
+      sunNoise: mountedSunNoise,
+      sunExposure: mountedSunNoise / DIRECT_SUN_BACKGROUND_RATE,
+      moonNoise: mountedMoonNoise,
+      sunInFov: celestial.sunInFov,
+      moonInFov: celestial.moonInFov,
+      moonDistanceKm: celestial.moonDistanceKm,
+      moonPhase: celestial.moonPhase,
+      earthIllumination: celestial.earthIllumination,
+      earthAlbedoNoise: mountedEarthAlbedoNoise,
+      earthAlbedoAzimuth: celestial.earthAlbedoAzimuth,
+      earthAlbedoDirectional: celestial.earthAlbedoDirectional,
+    }));
+  }, [
+    ephemerisProfile,
+    mountX,
+    mountZ,
+    orbitScenarioMode,
+    orbitAltitudeKm,
+    orbitInclinationDeg,
+  ]);
 
   useEffect(() => {
     if (!detectorExpanded && !historyView) return;
@@ -4047,20 +4383,38 @@ export default function Home() {
     const timer = window.setInterval(() => {
       const settings = settingsRef.current;
       const pixelBackground = backgroundProfileRef.current;
-      if (settings.paused || !pixelBackground) return;
+      const ephemeris = ephemerisProfileRef.current;
+      if (settings.paused || !pixelBackground || !ephemeris) return;
       const dt = 0.2 * settings.speed;
-      elapsedRef.current += dt;
-      phaseRef.current = (phaseRef.current + dt / 910) % (Math.PI * 2);
-      const phase = phaseRef.current;
-      const latitude = settings.inclination * Math.sin(phase);
-      const longitude = ((phase * 180) / Math.PI * 1.07 + elapsedRef.current * 0.018 + 180) % 360 - 180;
+      const requestedTimestampMs =
+        settings.epochMs + (elapsedRef.current + dt) * 1000;
+      const timestampMs = Math.min(requestedTimestampMs, ephemeris.endMs);
+      elapsedRef.current = (timestampMs - settings.epochMs) / 1000;
       const celestial = getCelestialGeometry(
-        elapsedRef.current,
-        phase,
-        settings.inclination,
-        settings.altitude,
-        settings.epochMs,
+        sampleEciEphemeris(ephemeris, timestampMs),
+        settings.orbitScenarioMode,
+        settings.orbitAltitudeKm,
+        settings.orbitInclinationDeg,
       );
+      const phase =
+        ((timestampMs - ephemeris.startMs) /
+          (ephemeris.endMs - ephemeris.startMs)) *
+        Math.PI * 2;
+      phaseRef.current = phase;
+      satelliteDirectionRef.current = celestial.satelliteDirection;
+      if (requestedTimestampMs >= ephemeris.endMs) {
+        settingsRef.current.paused = true;
+        setPaused(true);
+        setEventLog((current) => [
+          ...current,
+          {
+            time: `T+${formatTime(elapsedRef.current).slice(3)}`,
+            utc: new Date(ephemeris.endMs).toISOString(),
+            text: "ECI replay reached the final available sample and stopped",
+            kind: "system",
+          },
+        ]);
+      }
       const mountedEffectiveFov = getMountEffectiveFov(
         settings.mountX,
         settings.mountZ,
@@ -4179,26 +4533,39 @@ export default function Home() {
       const next = { observed, background, source };
       photonBinRef.current += 1;
       setSamples((current) => [...current.slice(-119), next]);
-      setPhotonHistory((current) => [
-        ...current,
-        {
+      const repository = photonRepositoryRef.current;
+      if (repository && !persistenceFailedRef.current) {
+        const simulatedDate = celestial.date.toISOString();
+        void repository.append({
+          schemaVersion: 1,
+          runId: photonRunIdRef.current,
           ...next,
           bin: photonBinRef.current,
           elapsed: elapsedRef.current,
-          simulatedDate: celestial.date.toISOString(),
+          capturedAtMs: Date.now(),
+          simulatedAtMs: celestial.date.getTime(),
+          simulatedDate,
           sun: rateToExpectedCountsPerBin(mountedSunNoise),
           moon: rateToExpectedCountsPerBin(mountedMoonNoise),
           earthAlbedo: rateToExpectedCountsPerBin(mountedEarthAlbedoNoise),
           activeBursts: activeBursts.length,
           hitPixels: detectorHits.filter((hits) => hits > 0).length,
-        },
-      ]);
+        }).then(() => {
+          setPhotonRecordCount((current) => current + 1);
+        }).catch((error: unknown) => {
+          persistenceFailedRef.current = true;
+          photonRepositoryRef.current?.close();
+          photonRepositoryRef.current = null;
+          setPersistenceError(
+            error instanceof Error ? error.message : "Unknown IndexedDB write error.",
+          );
+          setPersistenceStatus("not-persisting");
+        });
+      }
       setTelemetry({
         ...next,
         elapsed: elapsedRef.current,
         phase,
-        latitude,
-        longitude,
         total: totalRef.current,
         captured: capturedRef.current,
         significance: source / Math.sqrt(Math.max(1, background)),
@@ -4212,6 +4579,12 @@ export default function Home() {
           ...pixelBackground.expectedCountsPerBin,
         ],
         simulatedDate: celestial.date.toISOString(),
+        altitudeKm: celestial.altitudeKm,
+        canonicalAltitudeKm: celestial.canonicalAltitudeKm,
+        canonicalSatelliteDirection: celestial.canonicalSatelliteDirection,
+        satelliteDirection: celestial.satelliteDirection,
+        geocentricSunDirection: celestial.geocentricSunDirection,
+        geocentricMoonDirection: celestial.geocentricMoonDirection,
         sunDirection: celestial.sunDirection,
         moonDirection: celestial.moonDirection,
         sunSeparation: celestial.sunSeparation,
@@ -4350,13 +4723,7 @@ export default function Home() {
       0;
     const footprintCount = 4 + Math.floor(Math.random() * 25);
     const intensity = 72 + Math.random() * 28;
-    const boresight = normalizeVector(
-      Math.cos(phaseRef.current) *
-        Math.cos(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
-      Math.cos(phaseRef.current) *
-        Math.sin(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
-      Math.sin(phaseRef.current),
-    );
+    const boresight = satelliteDirectionRef.current;
     const sourceDirection = new THREE.Vector3()
       .fromArray(configuredNormals[targetPixel])
       .applyQuaternion(
@@ -4391,13 +4758,7 @@ export default function Home() {
   }, [launchBurst]);
 
   const aimTestBurstAtBoresight = useCallback(() => {
-    const boresight = normalizeVector(
-      Math.cos(phaseRef.current) *
-        Math.cos(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
-      Math.cos(phaseRef.current) *
-        Math.sin(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
-      Math.sin(phaseRef.current),
-    );
+    const boresight = satelliteDirectionRef.current;
     const coordinates = sceneDirectionToEquatorial(boresight);
     setTestBurstDraft((current) => ({
       ...current,
@@ -4423,13 +4784,7 @@ export default function Home() {
       10,
     );
     const sourceDirection = equatorialToSceneDirection(raDeg, decDeg);
-    const boresight = normalizeVector(
-      Math.cos(phaseRef.current) *
-        Math.cos(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
-      Math.cos(phaseRef.current) *
-        Math.sin(THREE.MathUtils.degToRad(settingsRef.current.inclination)),
-      Math.sin(phaseRef.current),
-    );
+    const boresight = satelliteDirectionRef.current;
     const sourceVector = new THREE.Vector3().fromArray(sourceDirection);
     const localSource = sourceVector
       .clone()
@@ -4484,28 +4839,43 @@ export default function Home() {
   }, [launchBurst, testBurstDraft]);
 
   const setEphemerisUtc = useCallback((value: string) => {
+    const ephemeris = ephemerisProfileRef.current;
+    if (!ephemeris) return;
     const requestedTime = Date.parse(`${value}Z`);
-    if (!Number.isFinite(requestedTime)) return;
+    if (
+      !Number.isFinite(requestedTime) ||
+      requestedTime < ephemeris.startMs ||
+      requestedTime > ephemeris.endMs
+    ) {
+      setEphemerisError("Requested UTC is outside the available ECI replay interval.");
+      return;
+    }
+    setEphemerisError(null);
     setEpochMs(requestedTime - elapsedRef.current * 1000);
-  }, []);
-
-  const setEphemerisToNow = useCallback(() => {
-    setEpochMs(Date.now() - elapsedRef.current * 1000);
   }, []);
 
   const resetSimulation = useCallback(() => {
     const pixelBackground = backgroundProfileRef.current;
-    if (!pixelBackground) return;
-    const now = Date.now();
-    phaseRef.current = 0.72;
+    const ephemeris = ephemerisProfileRef.current;
+    if (!pixelBackground || !ephemeris) return;
+    phaseRef.current = 0;
     elapsedRef.current = 0;
     totalRef.current = 0;
     capturedRef.current = 0;
     activeBurstsRef.current = [];
     nextBurstIdRef.current = 1;
-    setEpochMs(now);
+    photonBinRef.current = 0;
+    photonRunIdRef.current = createPhotonRunId();
+    setEpochMs(ephemeris.startMs);
+    setEphemerisError(null);
     selectPixel(43);
-    const celestial = getCelestialGeometry(0, 0.72, inclination, altitude, now);
+    const celestial = getCelestialGeometry(
+      sampleEciEphemeris(ephemeris, ephemeris.startMs),
+      orbitScenarioMode,
+      orbitAltitudeKm,
+      orbitInclinationDeg,
+    );
+    satelliteDirectionRef.current = celestial.satelliteDirection;
     const mountedEffectiveFov = getMountEffectiveFov(mountX, mountZ);
     const mountedSunNoise =
       celestial.sunSeparation <= mountedEffectiveFov / 2
@@ -4570,6 +4940,12 @@ export default function Home() {
         ...pixelBackground.expectedCountsPerBin,
       ],
       simulatedDate: celestial.date.toISOString(),
+      altitudeKm: celestial.altitudeKm,
+      canonicalAltitudeKm: celestial.canonicalAltitudeKm,
+      canonicalSatelliteDirection: celestial.canonicalSatelliteDirection,
+      satelliteDirection: celestial.satelliteDirection,
+      geocentricSunDirection: celestial.geocentricSunDirection,
+      geocentricMoonDirection: celestial.geocentricMoonDirection,
       sunDirection: celestial.sunDirection,
       moonDirection: celestial.moonDirection,
       sunSeparation: celestial.sunSeparation,
@@ -4588,16 +4964,17 @@ export default function Home() {
     });
     setEventLog((current) => [
       ...current,
-      { time: "T+00:00", utc: new Date(now).toISOString(), text: "Simulation reset", kind: "system" },
-      { time: "T+00:00", utc: new Date(now).toISOString(), text: "Science acquisition started", kind: "background" },
+      { time: "T+00:00", utc: new Date(ephemeris.startMs).toISOString(), text: "Simulation reset to ECI replay start", kind: "system" },
+      { time: "T+00:00", utc: new Date(ephemeris.startMs).toISOString(), text: "Science acquisition started", kind: "background" },
     ]);
-  }, [altitude, inclination, mountX, mountZ, selectPixel]);
-
-  const orbitPeriod = useMemo(() => {
-    const earthRadius = 6371;
-    const gravitationalParameter = 398600.4418;
-    return (2 * Math.PI * Math.sqrt(((earthRadius + altitude) ** 3) / gravitationalParameter)) / 60;
-  }, [altitude]);
+  }, [
+    mountX,
+    mountZ,
+    orbitScenarioMode,
+    orbitAltitudeKm,
+    orbitInclinationDeg,
+    selectPixel,
+  ]);
 
   const effectiveMountFov = useMemo(() => {
     return getMountEffectiveFov(mountX, mountZ);
@@ -4614,6 +4991,23 @@ export default function Home() {
     telemetry.sunSeparation <= effectiveMountFov / 2 && telemetry.sunNoise > 0.1;
   const mountedMoonInFov =
     telemetry.moonSeparation <= effectiveMountFov / 2 && telemetry.moonNoise > 0.1;
+  const changeTimeWarp = useCallback((direction: -1 | 1) => {
+    setSpeed((current) => {
+      if (direction < 0) {
+        return [...TIME_WARP_PRESETS].reverse().find((preset) => preset < current) ??
+          TIME_WARP_PRESETS[0];
+      }
+      return TIME_WARP_PRESETS.find((preset) => preset > current) ??
+        TIME_WARP_PRESETS[TIME_WARP_PRESETS.length - 1];
+    });
+  }, []);
+  const setPhysicalTimeWarp = useCallback((value: number) => {
+    setSpeed(Math.round(THREE.MathUtils.clamp(value, MIN_TIME_WARP, MAX_TIME_WARP)));
+  }, []);
+  const selectedConfiguredPixel = pixelConfiguration.pixels[selectedPixel];
+  const selectedExpectedCounts = telemetry.detectorHits[selectedPixel] ?? 0;
+  const selectedBackgroundCounts =
+    telemetry.detectorBackgroundExpectedCounts[selectedPixel] ?? 0;
 
   return (
     <main className="app-shell">
@@ -4625,6 +5019,7 @@ export default function Home() {
             <h1>CRYSTAL <span>EYE</span></h1>
           </div>
         </div>
+        <AppNav current="/" />
         <div className="mission-status">
           <button
             type="button"
@@ -4634,32 +5029,96 @@ export default function Home() {
             <SlidersHorizontal size={14} />
             CONFIGURATION
           </button>
-          <span className="status-live"><i /> SCIENCE MODE</span>
           <div className="header-metric">
             <small>MISSION ELAPSED</small>
             <strong>{formatTime(telemetry.elapsed)}</strong>
           </div>
           <div className="header-metric celestial-time">
-            <small>EPHEMERIS DATE AND TIME · UTC</small>
-            <strong>
-              {new Date(telemetry.simulatedDate)
-                .toISOString()
-                .slice(0, 19)
-                .replace("T", " · ")}
-            </strong>
+            <label htmlFor="topbar-ephemeris-utc">SIMULATED DATE AND TIME · UTC</label>
+            <input
+              id="topbar-ephemeris-utc"
+              type="datetime-local"
+              step="1"
+              min="2033-01-01T00:00:00"
+              max="2033-03-01T23:50:39"
+              value={new Date(telemetry.simulatedDate).toISOString().slice(0, 19)}
+              disabled={!ephemerisProfile}
+              aria-invalid={Boolean(ephemerisError)}
+              onChange={(event) => setEphemerisUtc(event.target.value)}
+            />
           </div>
-          <div className="header-metric">
-            <small>LINK</small>
-            <strong className="link-ok"><Radio size={13} /> NOMINAL</strong>
+          <div className="time-warp-controls" aria-label="Simulation playback controls">
+            <button
+              type="button"
+              onClick={() => setPaused((value) => !value)}
+              aria-label={paused ? "Resume simulation" : "Pause simulation"}
+              aria-pressed={paused}
+            >
+              {paused ? <Play size={13} /> : <Pause size={13} />}
+            </button>
+            <button type="button" onClick={() => changeTimeWarp(-1)} aria-label="Slower time warp">−</button>
+            <div className="time-warp-presets" aria-label="Time warp presets">
+              {TIME_WARP_PRESETS.map((preset) => (
+                <button
+                  type="button"
+                  key={preset}
+                  className={speed === preset ? "active" : ""}
+                  aria-pressed={speed === preset}
+                  onClick={() => setPhysicalTimeWarp(preset)}
+                >
+                  {preset}×
+                </button>
+              ))}
+            </div>
+            <button type="button" onClick={() => changeTimeWarp(1)} aria-label="Faster time warp">+</button>
           </div>
         </div>
       </header>
 
       {configurationView === "hub" && (
         <ConfigurationHub
+          onOpenOrbit={() => setConfigurationView("orbit")}
           onOpenPayload={() => setConfigurationView("payload")}
           onOpenPixels={() => setConfigurationView("pixels")}
           onClose={() => setConfigurationView(null)}
+        />
+      )}
+
+      {configurationView === "orbit" && (
+        <OrbitalConfigurationPanel
+          scenarioMode={orbitScenarioMode}
+          altitudeKm={orbitAltitudeKm}
+          inclinationDeg={orbitInclinationDeg}
+          speed={speed}
+          canonicalAltitudeKm={telemetry.canonicalAltitudeKm}
+          ephemerisProfile={ephemerisProfile}
+          ephemerisError={ephemerisError}
+          onScenarioModeChange={setOrbitScenarioMode}
+          onAltitudeChange={(value) =>
+            setOrbitAltitudeKm(
+              Math.round(
+                THREE.MathUtils.clamp(
+                  value,
+                  MIN_ORBIT_ALTITUDE_KM,
+                  MAX_ORBIT_ALTITUDE_KM,
+                ),
+              ),
+            )
+          }
+          onInclinationChange={(value) =>
+            setOrbitInclinationDeg(
+              Math.round(
+                THREE.MathUtils.clamp(
+                  value,
+                  MIN_ORBIT_INCLINATION_DEG,
+                  MAX_ORBIT_INCLINATION_DEG,
+                ),
+              ),
+            )
+          }
+          onSpeedChange={setPhysicalTimeWarp}
+          onReset={resetSimulation}
+          onClose={() => setConfigurationView("hub")}
         />
       )}
 
@@ -4685,57 +5144,13 @@ export default function Home() {
 
       <section className="workspace">
         <aside className="control-panel left-panel">
-          <div className="panel-heading">
-            <span>MISSION CONTROL</span>
-            <Orbit size={17} />
-          </div>
-
-          <div className="control-section">
-            <div className="section-label">ORBITAL CONFIGURATION</div>
-            <RangeControl label="Altitude" value={altitude} min={400} max={700} step={10} suffix=" km" onChange={setAltitude} />
-            <RangeControl label="Inclination" value={inclination} min={0} max={60} step={1} suffix="°" onChange={setInclination} />
-            <RangeControl label="Physical time warp" value={speed} min={1} max={500} step={1} suffix="×" onChange={setSpeed} />
-            <div className="warp-presets" aria-label="Time warp presets">
-              {[1, 50, 200, 500].map((preset) => (
-                <button
-                  type="button"
-                  key={preset}
-                  className={speed === preset ? "active" : ""}
-                  onClick={() => setSpeed(preset)}
-                >
-                  {preset}×
-                </button>
-              ))}
-            </div>
-            <div className="ephemeris-control">
-              <label htmlFor="ephemeris-utc">SIMULATED DATE AND TIME · UTC</label>
-              <div>
-                <input
-                  id="ephemeris-utc"
-                  type="datetime-local"
-                  step="1"
-                  value={new Date(telemetry.simulatedDate).toISOString().slice(0, 19)}
-                  onChange={(event) => setEphemerisUtc(event.target.value)}
-                />
-                <button type="button" onClick={setEphemerisToNow}>
-                  NOW
-                </button>
-              </div>
-            </div>
-            <div className="mini-grid">
-              <div><small>PERIOD</small><strong>{orbitPeriod.toFixed(1)} min</strong></div>
-              <div><small>GEOMETRIC FOV</small><strong>&gt; 2π sr</strong></div>
-              <div><small>EFFECTIVE CONE</small><strong>{effectiveMountFov.toFixed(0)}°</strong></div>
-              <div><small>POINTING</small><strong>anti-Earth</strong></div>
-            </div>
-          </div>
-
           <div className="left-sensor-slot">
             <SensorView
-              phase={telemetry.phase}
-              inclination={inclination}
+              satelliteDirection={telemetry.satelliteDirection}
               sunDirection={telemetry.sunDirection}
               moonDirection={telemetry.moonDirection}
+              geocentricSunDirection={telemetry.geocentricSunDirection}
+              geocentricMoonDirection={telemetry.geocentricMoonDirection}
               sunInFov={mountedSunInFov}
               moonInFov={mountedMoonInFov}
               moonPhase={telemetry.moonPhase}
@@ -4754,91 +5169,6 @@ export default function Home() {
               mountZ={mountZ}
               effectiveFov={effectiveMountFov}
             />
-          </div>
-
-          <div className="button-row">
-            <button className="secondary-button" onClick={() => setPaused((value) => !value)}>
-              {paused ? <Play size={16} /> : <Pause size={16} />}
-              {paused ? "Resume" : "Pause"}
-            </button>
-            <button className="icon-button" aria-label="Reset simulation" onClick={resetSimulation}>
-              <RotateCcw size={16} />
-            </button>
-          </div>
-        </aside>
-
-        <section className="simulation-stage">
-          <GlobeScene
-            altitude={altitude}
-            inclination={inclination}
-            speed={speed}
-            paused={paused}
-            phase={telemetry.phase}
-            grbActive={telemetry.grbActive}
-            burstDirections={telemetry.burstDirections}
-            burstPixelGroups={telemetry.burstPixelGroups}
-            pixelConfiguration={pixelConfiguration}
-            selectedPixel={selectedPixel}
-            sunDirection={telemetry.sunDirection}
-            moonDirection={telemetry.moonDirection}
-            sunNoise={telemetry.sunNoise}
-            moonNoise={telemetry.moonNoise}
-            earthIllumination={telemetry.earthIllumination}
-            earthAlbedoNoise={telemetry.earthAlbedoNoise}
-            earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
-            earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
-            detectorIntensity={telemetry.detector}
-            detectorHits={telemetry.detectorHits}
-            mountX={mountX}
-            mountZ={mountZ}
-            cameraMode={cameraMode}
-            onCameraModeChange={setCameraMode}
-            systemZoom={systemZoom}
-            onSystemZoomChange={setSystemZoom}
-          />
-          <div className="stage-title">
-            <span className="eyebrow">ORBITAL PHOTON CAPTURE</span>
-            <h2>Earth · LEO <em>{altitude} km</em></h2>
-          </div>
-          <div className={`grb-alert ${telemetry.grbActive ? "visible" : ""}`}>
-            <Zap size={18} />
-            <div><small>TRANSIENT DETECTED</small><strong>GRB candidate · {telemetry.significance.toFixed(2)}σ</strong></div>
-          </div>
-          <div className="orbit-readout">
-            <span>ORB {((telemetry.phase / (Math.PI * 2)) * 100).toFixed(1)}%</span>
-            <div><i style={{ width: `${(telemetry.phase / (Math.PI * 2)) * 100}%` }} /></div>
-          </div>
-        </section>
-
-        <aside className="control-panel right-panel">
-          <button
-            type="button"
-            className="panel-heading history-launch"
-            onClick={() => setHistoryView("photons")}
-            aria-label="Open photon stream history table"
-          >
-            <span>PHOTON STREAM</span>
-            <span className="history-launch-icon">
-              <small>{photonHistory.length.toLocaleString("en-US")} ROWS</small>
-              <Activity size={17} />
-              <ChevronRight size={13} />
-            </span>
-          </button>
-
-          <div
-            className={`background-model-status ${
-              backgroundProfileError ? "error" : backgroundProfile ? "ready" : "loading"
-            }`}
-            role={backgroundProfileError ? "alert" : "status"}
-          >
-            <small>BACKGROUND PROFILE · PROVISIONAL</small>
-            <strong>
-              {backgroundProfileError
-                ? `UNAVAILABLE · ${backgroundProfileError}`
-                : backgroundProfile
-                  ? `${backgroundProfile.totalRateCountsPerSecond.toFixed(4)} c/s · 126 pixels · deterministic`
-                  : "VALIDATING pixbkg.txt…"}
-            </strong>
           </div>
 
           <div className="chart-card">
@@ -4865,9 +5195,7 @@ export default function Home() {
                 <Sun size={16} />
                 <span>
                   <small>SUN · DIRECT PHOTONS</small>
-                  <strong>
-                    {telemetry.sunSeparation.toFixed(1)}° · {(telemetry.sunExposure * 100).toFixed(0)}% exposure
-                  </strong>
+                  <strong>{telemetry.sunSeparation.toFixed(1)}° · {(telemetry.sunExposure * 100).toFixed(0)}% exposure</strong>
                 </span>
                 <em>{mountedSunInFov ? `+${telemetry.sunNoise.toFixed(0)} c/s` : "OUT"}</em>
               </div>
@@ -4885,14 +5213,113 @@ export default function Home() {
                 <em>+{telemetry.earthAlbedoNoise.toFixed(0)} c/s</em>
               </div>
             </div>
-            <p>PROVISIONAL pixel baseline plus separate additive Sun, Moon, and Earth terms; parametric interference amplitudes require calibration.</p>
+            <p>Pixel baseline plus separate additive Sun, Moon, and Earth terms; model status and calibration limits are recorded in provenance.</p>
+          </div>
+        </aside>
+
+        <section className="simulation-stage">
+          <GlobeScene
+            altitude={telemetry.altitudeKm}
+            scenarioMode={orbitScenarioMode}
+            paused={paused}
+            simulatedTimestampMs={Date.parse(telemetry.simulatedDate)}
+            grbActive={telemetry.grbActive}
+            burstDirections={telemetry.burstDirections}
+            burstPixelGroups={telemetry.burstPixelGroups}
+            pixelConfiguration={pixelConfiguration}
+            selectedPixel={selectedPixel}
+            satelliteDirection={telemetry.satelliteDirection}
+            geocentricSunDirection={telemetry.geocentricSunDirection}
+            geocentricMoonDirection={telemetry.geocentricMoonDirection}
+            sunNoise={telemetry.sunNoise}
+            moonNoise={telemetry.moonNoise}
+            earthIllumination={telemetry.earthIllumination}
+            earthAlbedoNoise={telemetry.earthAlbedoNoise}
+            earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
+            earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
+            detectorIntensity={telemetry.detector}
+            detectorHits={telemetry.detectorHits}
+            mountX={mountX}
+            mountZ={mountZ}
+            cameraMode={cameraMode}
+            onCameraModeChange={setCameraMode}
+            systemZoom={systemZoom}
+            onSystemZoomChange={setSystemZoom}
+          />
+          <div className="stage-title">
+            <span className="eyebrow">
+              {orbitScenarioMode === "canonical"
+                ? "CANONICAL ECI REPLAY"
+                : "PARAMETRIC SATELLITE SCENARIO · ECI CELESTIAL TIMELINE"}
+            </span>
+            <h2>
+              {orbitScenarioMode === "canonical" ? "Earth · source satellite replay" : "Earth · LEO override"}
+              <em>
+                {orbitScenarioMode === "canonical"
+                  ? ` ${telemetry.altitudeKm.toFixed(1)} km`
+                  : ` ${orbitAltitudeKm.toFixed(0)} km · ${orbitInclinationDeg.toFixed(0)}°`}
+              </em>
+            </h2>
+          </div>
+          <div className={`grb-alert ${telemetry.grbActive ? "visible" : ""}`}>
+            <Zap size={18} />
+            <div><small>TRANSIENT DETECTED</small><strong>GRB candidate · {telemetry.significance.toFixed(2)}σ</strong></div>
+          </div>
+          <div className="orbit-readout">
+            <span>ECI TIMELINE {((telemetry.phase / (Math.PI * 2)) * 100).toFixed(1)}%</span>
+            <div><i style={{ width: `${(telemetry.phase / (Math.PI * 2)) * 100}%` }} /></div>
+          </div>
+        </section>
+
+        <aside className="control-panel right-panel">
+          <a
+            className="panel-heading history-launch"
+            href={`${PUBLIC_BASE_PATH}/photon-history/`}
+            aria-label="Open photon stream history table"
+          >
+            <span>PHOTON STREAM</span>
+            <span className="history-launch-icon">
+              <small>{photonRecordCount.toLocaleString("en-US")} ROWS</small>
+              <Activity size={17} />
+              <ChevronRight size={13} />
+            </span>
+          </a>
+
+          <div
+            className={`persistence-status ${persistenceStatus}`}
+            role={persistenceStatus === "not-persisting" ? "alert" : "status"}
+          >
+            <small>PHOTON ARCHIVE · INDEXEDDB</small>
+            <strong>
+              {persistenceStatus === "persisting"
+                ? "PERSISTING"
+                : persistenceStatus === "initializing"
+                  ? "INITIALIZING…"
+                  : `NOT PERSISTING · ${persistenceError ?? "storage unavailable"}`}
+            </strong>
+          </div>
+
+          <div
+            className={`background-model-status ${
+              backgroundProfileError ? "error" : backgroundProfile ? "ready" : "loading"
+            }`}
+            role={backgroundProfileError ? "alert" : "status"}
+          >
+            <small>BACKGROUND PROFILE</small>
+            <strong>
+              {backgroundProfileError
+                ? `UNAVAILABLE · ${backgroundProfileError}`
+                : backgroundProfile
+                  ? `${backgroundProfile.totalRateCountsPerSecond.toFixed(4)} c/s · 126 pixels · deterministic`
+                  : "VALIDATING pixbkg.txt…"}
+            </strong>
           </div>
 
           <div className="detector-section">
             <div className="detector-section-header">
               <div>
                 <small>DETECTOR RESPONSE</small>
-                <strong>PROVISIONAL expected counts / 0.2 s · deterministic</strong>
+                <strong>Configured planar pixel map · actual expected response / 0.2 s</strong>
               </div>
               <button
                 type="button"
@@ -4903,6 +5330,11 @@ export default function Home() {
               >
                 <Maximize2 size={13} />
               </button>
+            </div>
+            <div className="detector-response-summary" aria-live="polite">
+              <span><small>SELECTED PIXEL</small><strong>{selectedConfiguredPixel.id}</strong></span>
+              <span><small>TOTAL RESPONSE</small><strong>{selectedExpectedCounts.toFixed(4)}</strong></span>
+              <span><small>BACKGROUND</small><strong>{selectedBackgroundCounts.toFixed(4)}</strong></span>
             </div>
             <DetectorMap
               values={telemetry.detector}
@@ -5062,9 +5494,7 @@ export default function Home() {
 
       {historyView && (
         <HistoryDialog
-          mode={historyView}
           events={eventLog}
-          photons={photonHistory}
           onClose={() => setHistoryView(null)}
         />
       )}
