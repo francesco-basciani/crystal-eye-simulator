@@ -43,8 +43,10 @@ The simulator uses:
 - [vinext](https://github.com/cloudflare/vinext) and Vite for the development
   and production build
 - [Three.js](https://threejs.org/) for the interactive 3D scene
-- [Astronomy Engine](https://github.com/cosinekitty/astronomy) for Sun and Moon
-  ephemerides
+- the timestamped physicist-provided ECI dataset for satellite, Sun, and Moon
+  positions during the 60-day 2033 replay
+- [Astronomy Engine](https://github.com/cosinekitty/astronomy) for Moon
+  illumination; it is not used to replace the ECI position data
 - TypeScript and ESLint for source quality
 
 ## Useful Commands
