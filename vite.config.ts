@@ -23,9 +23,20 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server: {
+      // vinext can only report opaque cross-origin "Script error." events in
+      // its overlay. Keep the real error in the browser console without
+      // obscuring the application with a non-actionable full-screen panel.
+      hmr: { overlay: false },
+      watch: {
+        // A concurrent production build rewrites these trees; they are not
+        // development inputs and must not trigger RSC/HMR reload storms.
+        ignored: ["**/.next/**", "**/out/**"],
+        ...(isCodexSeatbeltSandbox
+          ? { useFsEvents: false, usePolling: true }
+          : {}),
+      },
+    },
     plugins: [
       vinext(),
       sites(),

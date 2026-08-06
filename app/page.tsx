@@ -5096,17 +5096,6 @@ export default function Home() {
             />
           </div>
 
-          <div className="chart-card">
-            <div className="chart-header">
-              <div>
-                <small>LIGHT CURVE</small>
-                <strong>Observed counts = background + GRB excess</strong>
-              </div>
-              <span>0.2 s bins · deterministic</span>
-            </div>
-            <SignalChart data={samples} />
-          </div>
-
           <div className="celestial-card">
             <div className="chart-header">
               <div>
@@ -5209,6 +5198,17 @@ export default function Home() {
               <ChevronRight size={13} />
             </span>
           </a>
+
+          <div className="chart-card photon-stream-chart">
+            <div className="chart-header">
+              <div>
+                <small>LIGHT CURVE</small>
+                <strong>Observed counts = background + GRB excess</strong>
+              </div>
+              <span>0.2 s bins · deterministic</span>
+            </div>
+            <SignalChart data={samples} />
+          </div>
 
           <div
             className={`persistence-status ${persistenceStatus}`}

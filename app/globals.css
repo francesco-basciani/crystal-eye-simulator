@@ -933,6 +933,7 @@ button {
   min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  container-type: size;
 }
 
 .pixel-editor-toolbar {
@@ -991,8 +992,8 @@ button {
 }
 
 .pixel-editor-canvas {
-  width: min(100%, calc((100vh - 142px) * 1.18));
-  height: min(100%, calc((100vw - 330px) / 1.18));
+  width: min(100cqw, calc((100cqh - 34px) * 1.18));
+  height: min(84.7458cqw, calc(100cqh - 34px));
   min-height: 300px;
   aspect-ratio: 1.18;
   position: relative;
@@ -3266,14 +3267,30 @@ button {
 
 .right-panel {
   display: grid;
-  grid-template-rows: auto auto auto minmax(220px, 1fr) auto;
-  overflow: hidden;
+  grid-template-rows: auto auto auto auto auto auto;
+  align-content: start;
+  container-type: inline-size;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.right-panel > .photon-stream-chart {
+  min-width: 0;
+  padding: 9px 10px 7px;
+}
+
+.right-panel > .photon-stream-chart .chart-header {
+  margin-bottom: 5px;
+}
+
+.right-panel > .photon-stream-chart .signal-canvas {
+  height: 64px;
 }
 
 .right-panel .detector-section {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  min-height: calc(84.7458cqw + 70px);
   padding: 0;
   overflow: hidden;
 }
@@ -3355,9 +3372,22 @@ button {
 }
 
 .right-panel .detector-module {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
+  width: 100%;
+  height: auto;
   min-height: 0;
+  aspect-ratio: 1.18;
   overflow: hidden;
+}
+
+.right-panel .detector-map.projection-unfolded {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1.18;
+}
+
+.right-panel .detector-map.projection-unfolded .detector-pixel {
+  width: 5.2%;
 }
 
 .analysis-grid {
@@ -4326,6 +4356,58 @@ button {
 
   .signal-canvas {
     height: 54px;
+  }
+
+  .right-panel > .photon-stream-chart {
+    padding: 4px 8px 3px;
+  }
+
+  .right-panel > .photon-stream-chart .chart-header {
+    margin-bottom: 2px;
+  }
+
+  .right-panel > .photon-stream-chart .chart-header strong {
+    display: none;
+  }
+
+  .right-panel > .photon-stream-chart .signal-canvas {
+    height: 38px;
+  }
+
+  .right-panel .persistence-status,
+  .right-panel .background-model-status {
+    gap: 1px;
+    padding: 3px 8px;
+  }
+
+  .right-panel .burst-inline-panel {
+    gap: 2px;
+    padding: 3px 7px;
+  }
+
+  .right-panel .burst-inline-header strong,
+  .right-panel .burst-inline-scale {
+    display: none;
+  }
+
+  .right-panel .burst-inline-header button {
+    height: 17px;
+  }
+
+  .right-panel .burst-inline-fields {
+    gap: 3px;
+  }
+
+  .right-panel .burst-inline-fields label > span {
+    margin-bottom: 1px;
+  }
+
+  .right-panel .burst-inline-fields input {
+    height: 20px;
+  }
+
+  .right-panel .burst-inline-actions button {
+    min-height: 22px;
   }
 
   .celestial-rows {
