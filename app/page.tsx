@@ -53,8 +53,10 @@ import {
   PIXEL_CONFIGURATION_STORAGE_KEY_V1,
   PIXEL_CONFIGURATION_STORAGE_KEY_V2,
   PIXEL_CONFIGURATION_STORAGE_KEY_V3,
+  PIXEL_CONFIGURATION_STORAGE_KEY_V4,
   getPixelByPhysicalId,
   hasCanonicalPixelIdBijection,
+  migrateStoredPixelConfigurationToAuthoritativeIds,
   migrateStoredPixelConfigurationToPhotoGeometry,
   normalizePixelConfiguration,
   swapPhysicalPixelIds,
@@ -4135,25 +4137,42 @@ export default function Home() {
           return null;
         }
       };
-      const storedV3 = readStoredConfiguration(
-        PIXEL_CONFIGURATION_STORAGE_KEY_V3,
+      const storedV4 = readStoredConfiguration(
+        PIXEL_CONFIGURATION_STORAGE_KEY_V4,
       );
+      const readV3StoredConfiguration = (key: string) => {
+        const stored = window.localStorage.getItem(key);
+        if (!stored) return null;
+        try {
+          return migrateStoredPixelConfigurationToAuthoritativeIds(
+            JSON.parse(stored),
+          );
+        } catch {
+          return null;
+        }
+      };
       const readLegacyStoredConfiguration = (key: string) => {
         const stored = window.localStorage.getItem(key);
         if (!stored) return null;
         try {
-          return migrateStoredPixelConfigurationToPhotoGeometry(JSON.parse(stored));
+          const photoAligned = migrateStoredPixelConfigurationToPhotoGeometry(
+            JSON.parse(stored),
+          );
+          return photoAligned
+            ? migrateStoredPixelConfigurationToAuthoritativeIds(photoAligned)
+            : null;
         } catch {
           return null;
         }
       };
       const configuration =
-        storedV3 ??
+        storedV4 ??
+        readV3StoredConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V3) ??
         readLegacyStoredConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V2) ??
         readLegacyStoredConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V1);
       if (configuration) {
         window.localStorage.setItem(
-          PIXEL_CONFIGURATION_STORAGE_KEY_V3,
+          PIXEL_CONFIGURATION_STORAGE_KEY_V4,
           JSON.stringify(configuration),
         );
         timer = window.setTimeout(() => {
@@ -4542,7 +4561,7 @@ export default function Home() {
       pixelConfigurationRef.current = configuration;
       setPixelConfiguration(configuration);
       window.localStorage.setItem(
-        PIXEL_CONFIGURATION_STORAGE_KEY_V3,
+        PIXEL_CONFIGURATION_STORAGE_KEY_V4,
         JSON.stringify(configuration),
       );
       setConfigurationView("hub");

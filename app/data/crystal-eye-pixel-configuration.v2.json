@@ -1,0 +1,1139 @@
+{
+  "version": 2,
+  "pixels": [
+    {
+      "pixelId": 117,
+      "legacyAnnotation": "",
+      "x": 47.034,
+      "y": 39.6831,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 30.1
+    },
+    {
+      "pixelId": 118,
+      "legacyAnnotation": "",
+      "x": 53.6075,
+      "y": 40.4834,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 35.9
+    },
+    {
+      "pixelId": 116,
+      "legacyAnnotation": "",
+      "x": 40.4666,
+      "y": 40.4011,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 24.9
+    },
+    {
+      "pixelId": 124,
+      "legacyAnnotation": "",
+      "x": 43.9268,
+      "y": 45.3106,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 24.1
+    },
+    {
+      "pixelId": 120,
+      "legacyAnnotation": "",
+      "x": 50.1256,
+      "y": 45.2868,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 36.0
+    },
+    {
+      "pixelId": 115,
+      "legacyAnnotation": "",
+      "x": 37.7136,
+      "y": 46.5923,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 18.4
+    },
+    {
+      "pixelId": 125,
+      "legacyAnnotation": "",
+      "x": 47.061,
+      "y": 49.7687,
+      "isSeam": false,
+      "isPentagon": true,
+      "rotationDeg": 180
+    },
+    {
+      "pixelId": 121,
+      "legacyAnnotation": "",
+      "x": 52.1358,
+      "y": 51.4855,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 47.2
+    },
+    {
+      "pixelId": 119,
+      "legacyAnnotation": "",
+      "x": 56.3685,
+      "y": 46.643,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 42.2
+    },
+    {
+      "pixelId": 123,
+      "legacyAnnotation": "",
+      "x": 41.9647,
+      "y": 51.4512,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 12.4
+    },
+    {
+      "pixelId": 114,
+      "legacyAnnotation": "",
+      "x": 36.3027,
+      "y": 53.3362,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 11.5
+    },
+    {
+      "pixelId": 112,
+      "legacyAnnotation": "",
+      "x": 47.0857,
+      "y": 61.4572,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 59.7
+    },
+    {
+      "pixelId": 110,
+      "legacyAnnotation": "",
+      "x": 57.7909,
+      "y": 53.3527,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 47.7
+    },
+    {
+      "pixelId": 113,
+      "legacyAnnotation": "",
+      "x": 41.2383,
+      "y": 58.0096,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 6.0
+    },
+    {
+      "pixelId": 122,
+      "legacyAnnotation": "",
+      "x": 47.0714,
+      "y": 55.2881,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 0.3
+    },
+    {
+      "pixelId": 111,
+      "legacyAnnotation": "",
+      "x": 52.8873,
+      "y": 58.0008,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 54.1
+    },
+    {
+      "pixelId": 65,
+      "legacyAnnotation": "",
+      "x": 30.118,
+      "y": 14.4053,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 0.1
+    },
+    {
+      "pixelId": 69,
+      "legacyAnnotation": "",
+      "x": 35.8064,
+      "y": 17.736,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 5.4
+    },
+    {
+      "pixelId": 58,
+      "legacyAnnotation": "",
+      "x": 24.3849,
+      "y": 17.6168,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 54.5
+    },
+    {
+      "pixelId": 64,
+      "legacyAnnotation": "",
+      "x": 30.0762,
+      "y": 20.3021,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 0.6
+    },
+    {
+      "pixelId": 72,
+      "legacyAnnotation": "",
+      "x": 40.6259,
+      "y": 22.2238,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 11.4
+    },
+    {
+      "pixelId": 57,
+      "legacyAnnotation": "",
+      "x": 19.406,
+      "y": 22.0122,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 49.3
+    },
+    {
+      "pixelId": 59,
+      "legacyAnnotation": "",
+      "x": 25.0075,
+      "y": 23.9116,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 49.6
+    },
+    {
+      "pixelId": 63,
+      "legacyAnnotation": "",
+      "x": 30.0402,
+      "y": 25.6488,
+      "isSeam": false,
+      "isPentagon": true,
+      "rotationDeg": 0
+    },
+    {
+      "pixelId": 68,
+      "legacyAnnotation": "",
+      "x": 35.0937,
+      "y": 24.0356,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 12.3
+    },
+    {
+      "pixelId": 60,
+      "legacyAnnotation": "",
+      "x": 20.6313,
+      "y": 28.5431,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 43.7
+    },
+    {
+      "pixelId": 62,
+      "legacyAnnotation": "",
+      "x": 26.852,
+      "y": 29.9434,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 36.5
+    },
+    {
+      "pixelId": 67,
+      "legacyAnnotation": "",
+      "x": 33.1216,
+      "y": 29.9955,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 24.3
+    },
+    {
+      "pixelId": 71,
+      "legacyAnnotation": "",
+      "x": 39.2826,
+      "y": 28.7163,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 17.8
+    },
+    {
+      "pixelId": 61,
+      "legacyAnnotation": "",
+      "x": 23.3105,
+      "y": 34.7695,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 36.4
+    },
+    {
+      "pixelId": 70,
+      "legacyAnnotation": "",
+      "x": 36.5246,
+      "y": 34.7977,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 24.7
+    },
+    {
+      "pixelId": 66,
+      "legacyAnnotation": "",
+      "x": 29.9265,
+      "y": 35.5367,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 30.4
+    },
+    {
+      "pixelId": 85,
+      "legacyAnnotation": "",
+      "x": 58.152,
+      "y": 17.7894,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 53.5
+    },
+    {
+      "pixelId": 90,
+      "legacyAnnotation": "",
+      "x": 53.3777,
+      "y": 22.2608,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 47.8
+    },
+    {
+      "pixelId": 89,
+      "legacyAnnotation": "",
+      "x": 58.9039,
+      "y": 24.0704,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 47.7
+    },
+    {
+      "pixelId": 83,
+      "legacyAnnotation": "",
+      "x": 68.8654,
+      "y": 23.99,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 11.3
+    },
+    {
+      "pixelId": 79,
+      "legacyAnnotation": "",
+      "x": 63.7828,
+      "y": 14.4186,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 59.1
+    },
+    {
+      "pixelId": 91,
+      "legacyAnnotation": "",
+      "x": 60.8749,
+      "y": 30.0295,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 36.7
+    },
+    {
+      "pixelId": 84,
+      "legacyAnnotation": "",
+      "x": 63.8404,
+      "y": 20.3654,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 59.2
+    },
+    {
+      "pixelId": 88,
+      "legacyAnnotation": "",
+      "x": 63.9205,
+      "y": 25.6888,
+      "isSeam": false,
+      "isPentagon": true,
+      "rotationDeg": 0
+    },
+    {
+      "pixelId": 80,
+      "legacyAnnotation": "",
+      "x": 69.4685,
+      "y": 17.6545,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 4.4
+    },
+    {
+      "pixelId": 93,
+      "legacyAnnotation": "",
+      "x": 54.7446,
+      "y": 28.7779,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 42.1
+    },
+    {
+      "pixelId": 87,
+      "legacyAnnotation": "123",
+      "x": 67.0649,
+      "y": 30.0025,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 23.6
+    },
+    {
+      "pixelId": 82,
+      "legacyAnnotation": "",
+      "x": 73.1642,
+      "y": 28.639,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 16.3
+    },
+    {
+      "pixelId": 81,
+      "legacyAnnotation": "",
+      "x": 74.3886,
+      "y": 22.0491,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 11.0
+    },
+    {
+      "pixelId": 94,
+      "legacyAnnotation": "",
+      "x": 57.4835,
+      "y": 34.8762,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 36.2
+    },
+    {
+      "pixelId": 92,
+      "legacyAnnotation": "",
+      "x": 64.0504,
+      "y": 35.5815,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 29.5
+    },
+    {
+      "pixelId": 86,
+      "legacyAnnotation": "",
+      "x": 70.5772,
+      "y": 34.7925,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 22.9
+    },
+    {
+      "pixelId": 4,
+      "legacyAnnotation": "",
+      "x": 74.857,
+      "y": 47.3772,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 58.9
+    },
+    {
+      "pixelId": 6,
+      "legacyAnnotation": "",
+      "x": 80.7865,
+      "y": 50.6862,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 4.5
+    },
+    {
+      "pixelId": 1,
+      "legacyAnnotation": "",
+      "x": 69.1216,
+      "y": 50.7758,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 53.4
+    },
+    {
+      "pixelId": 7,
+      "legacyAnnotation": "",
+      "x": 75.017,
+      "y": 53.4505,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 59.1
+    },
+    {
+      "pixelId": 3,
+      "legacyAnnotation": "",
+      "x": 82.2643,
+      "y": 68.6422,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 22.1
+    },
+    {
+      "pixelId": 9,
+      "legacyAnnotation": "",
+      "x": 64.272,
+      "y": 55.4616,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 47.5
+    },
+    {
+      "pixelId": 12,
+      "legacyAnnotation": "",
+      "x": 75.1468,
+      "y": 59.053,
+      "isSeam": false,
+      "isPentagon": true,
+      "rotationDeg": 0
+    },
+    {
+      "pixelId": 104,
+      "legacyAnnotation": "",
+      "x": 80.267,
+      "y": 57.275,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 10.8
+    },
+    {
+      "pixelId": 105,
+      "legacyAnnotation": "",
+      "x": 85.9958,
+      "y": 55.3008,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 10.1
+    },
+    {
+      "pixelId": 0,
+      "legacyAnnotation": "",
+      "x": 65.7362,
+      "y": 62.3138,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 40.6
+    },
+    {
+      "pixelId": 8,
+      "legacyAnnotation": "",
+      "x": 69.9551,
+      "y": 57.2966,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 47.7
+    },
+    {
+      "pixelId": 2,
+      "legacyAnnotation": "",
+      "x": 68.6316,
+      "y": 68.7465,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 35.0
+    },
+    {
+      "pixelId": 15,
+      "legacyAnnotation": "",
+      "x": 84.8585,
+      "y": 62.1695,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 16.3
+    },
+    {
+      "pixelId": 13,
+      "legacyAnnotation": "",
+      "x": 72.0655,
+      "y": 63.6182,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 34.7
+    },
+    {
+      "pixelId": 11,
+      "legacyAnnotation": "",
+      "x": 78.4752,
+      "y": 63.5888,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 22.7
+    },
+    {
+      "pixelId": 14,
+      "legacyAnnotation": "",
+      "x": 75.4309,
+      "y": 69.4714,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 29.3
+    },
+    {
+      "pixelId": 16,
+      "legacyAnnotation": "",
+      "x": 47.0961,
+      "y": 68.6355,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 59.9
+    },
+    {
+      "pixelId": 24,
+      "legacyAnnotation": "",
+      "x": 52.9823,
+      "y": 72.1397,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 5.5
+    },
+    {
+      "pixelId": 19,
+      "legacyAnnotation": "",
+      "x": 41.1877,
+      "y": 72.2048,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 53.8
+    },
+    {
+      "pixelId": 17,
+      "legacyAnnotation": "",
+      "x": 47.0873,
+      "y": 75.0104,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 59.4
+    },
+    {
+      "pixelId": 31,
+      "legacyAnnotation": "",
+      "x": 58.0518,
+      "y": 76.9348,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 11.2
+    },
+    {
+      "pixelId": 25,
+      "legacyAnnotation": "",
+      "x": 36.0804,
+      "y": 77.0773,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 48.3
+    },
+    {
+      "pixelId": 18,
+      "legacyAnnotation": "",
+      "x": 47.1025,
+      "y": 80.7939,
+      "isSeam": false,
+      "isPentagon": true,
+      "rotationDeg": 0
+    },
+    {
+      "pixelId": 23,
+      "legacyAnnotation": "",
+      "x": 52.3125,
+      "y": 78.9417,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 11.7
+    },
+    {
+      "pixelId": 30,
+      "legacyAnnotation": "",
+      "x": 56.7418,
+      "y": 84.0919,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 17.9
+    },
+    {
+      "pixelId": 20,
+      "legacyAnnotation": "",
+      "x": 41.81,
+      "y": 78.9675,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 48.2
+    },
+    {
+      "pixelId": 21,
+      "legacyAnnotation": "",
+      "x": 43.8354,
+      "y": 85.5461,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 36.0
+    },
+    {
+      "pixelId": 22,
+      "legacyAnnotation": "",
+      "x": 50.3541,
+      "y": 85.4943,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 24.1
+    },
+    {
+      "pixelId": 29,
+      "legacyAnnotation": "",
+      "x": 53.9895,
+      "y": 90.8225,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 24.1
+    },
+    {
+      "pixelId": 26,
+      "legacyAnnotation": "",
+      "x": 37.3974,
+      "y": 84.2061,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 42.3
+    },
+    {
+      "pixelId": 27,
+      "legacyAnnotation": "",
+      "x": 40.1933,
+      "y": 90.9359,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 36.1
+    },
+    {
+      "pixelId": 28,
+      "legacyAnnotation": "",
+      "x": 47.0545,
+      "y": 91.6657,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 29.5
+    },
+    {
+      "pixelId": 50,
+      "legacyAnnotation": "",
+      "x": 13.0128,
+      "y": 50.8564,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 55.0
+    },
+    {
+      "pixelId": 53,
+      "legacyAnnotation": "",
+      "x": 19.0195,
+      "y": 47.4695,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 0.5
+    },
+    {
+      "pixelId": 48,
+      "legacyAnnotation": "",
+      "x": 13.5319,
+      "y": 57.4791,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 48.9
+    },
+    {
+      "pixelId": 51,
+      "legacyAnnotation": "",
+      "x": 18.8858,
+      "y": 53.6139,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 1.0
+    },
+    {
+      "pixelId": 52,
+      "legacyAnnotation": "",
+      "x": 24.8236,
+      "y": 50.8699,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 6.2
+    },
+    {
+      "pixelId": 49,
+      "legacyAnnotation": "",
+      "x": 7.709,
+      "y": 55.5388,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 49.1
+    },
+    {
+      "pixelId": 47,
+      "legacyAnnotation": "",
+      "x": 18.7438,
+      "y": 59.2232,
+      "isSeam": false,
+      "isPentagon": true,
+      "rotationDeg": 0
+    },
+    {
+      "pixelId": 46,
+      "legacyAnnotation": "",
+      "x": 23.9877,
+      "y": 57.4663,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 12.1
+    },
+    {
+      "pixelId": 45,
+      "legacyAnnotation": "",
+      "x": 29.745,
+      "y": 55.5241,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 12.0
+    },
+    {
+      "pixelId": 41,
+      "legacyAnnotation": "",
+      "x": 8.8968,
+      "y": 62.4501,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 44.0
+    },
+    {
+      "pixelId": 42,
+      "legacyAnnotation": "",
+      "x": 15.3541,
+      "y": 63.8243,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 37.6
+    },
+    {
+      "pixelId": 43,
+      "legacyAnnotation": "",
+      "x": 21.86,
+      "y": 63.7963,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 24.5
+    },
+    {
+      "pixelId": 44,
+      "legacyAnnotation": "",
+      "x": 28.2517,
+      "y": 62.3877,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 18.4
+    },
+    {
+      "pixelId": 38,
+      "legacyAnnotation": "",
+      "x": 11.54,
+      "y": 68.973,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 36.9
+    },
+    {
+      "pixelId": 39,
+      "legacyAnnotation": "",
+      "x": 18.4553,
+      "y": 69.7347,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 30.5
+    },
+    {
+      "pixelId": 40,
+      "legacyAnnotation": "",
+      "x": 25.3285,
+      "y": 68.8919,
+      "isSeam": false,
+      "isPentagon": false,
+      "rotationDeg": 24.7
+    },
+    {
+      "pixelId": 74,
+      "legacyAnnotation": "",
+      "x": 49.9665,
+      "y": 12.573,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 30.0
+    },
+    {
+      "pixelId": 73,
+      "legacyAnnotation": "",
+      "x": 44.0121,
+      "y": 12.552,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 30.3
+    },
+    {
+      "pixelId": 75,
+      "legacyAnnotation": "",
+      "x": 46.9883,
+      "y": 17.846,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 30.0
+    },
+    {
+      "pixelId": 5,
+      "legacyAnnotation": "",
+      "x": 44.0293,
+      "y": 33.7205,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 30.4
+    },
+    {
+      "pixelId": 98,
+      "legacyAnnotation": "",
+      "x": 50.0599,
+      "y": 33.7783,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 29.9
+    },
+    {
+      "pixelId": 106,
+      "legacyAnnotation": "",
+      "x": 47.0216,
+      "y": 28.4253,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 30.2
+    },
+    {
+      "pixelId": 54,
+      "legacyAnnotation": "",
+      "x": 10.7681,
+      "y": 40.8993,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 19.4
+    },
+    {
+      "pixelId": 56,
+      "legacyAnnotation": "",
+      "x": 16.9381,
+      "y": 39.6512,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 18.8
+    },
+    {
+      "pixelId": 55,
+      "legacyAnnotation": "",
+      "x": 12.8525,
+      "y": 34.9308,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 18.7
+    },
+    {
+      "pixelId": 103,
+      "legacyAnnotation": "",
+      "x": 33.1056,
+      "y": 41.7483,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 18.6
+    },
+    {
+      "pixelId": 101,
+      "legacyAnnotation": "",
+      "x": 27.0798,
+      "y": 43.0812,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 17.8
+    },
+    {
+      "pixelId": 102,
+      "legacyAnnotation": "",
+      "x": 31.1466,
+      "y": 47.7345,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 18.0
+    },
+    {
+      "pixelId": 107,
+      "legacyAnnotation": "",
+      "x": 66.8953,
+      "y": 43.0557,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 41.0
+    },
+    {
+      "pixelId": 108,
+      "legacyAnnotation": "",
+      "x": 60.9169,
+      "y": 41.8179,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 41.5
+    },
+    {
+      "pixelId": 109,
+      "legacyAnnotation": "",
+      "x": 62.8828,
+      "y": 47.7513,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 41.4
+    },
+    {
+      "pixelId": 78,
+      "legacyAnnotation": "",
+      "x": 76.8915,
+      "y": 39.6119,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 40.9
+    },
+    {
+      "pixelId": 77,
+      "legacyAnnotation": "",
+      "x": 82.9495,
+      "y": 40.8201,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 40.4
+    },
+    {
+      "pixelId": 76,
+      "legacyAnnotation": "",
+      "x": 80.8809,
+      "y": 34.9169,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 41.1
+    },
+    {
+      "pixelId": 99,
+      "legacyAnnotation": "",
+      "x": 34.5106,
+      "y": 67.5968,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 6.4
+    },
+    {
+      "pixelId": 10,
+      "legacyAnnotation": "",
+      "x": 40.236,
+      "y": 64.9274,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 5.9
+    },
+    {
+      "pixelId": 100,
+      "legacyAnnotation": "",
+      "x": 35.2358,
+      "y": 61.1458,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 6.3
+    },
+    {
+      "pixelId": 96,
+      "legacyAnnotation": "",
+      "x": 53.8686,
+      "y": 64.8753,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 53.9
+    },
+    {
+      "pixelId": 95,
+      "legacyAnnotation": "",
+      "x": 59.5742,
+      "y": 67.4997,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 53.4
+    },
+    {
+      "pixelId": 97,
+      "legacyAnnotation": "",
+      "x": 58.8621,
+      "y": 61.0874,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 53.8
+    },
+    {
+      "pixelId": 37,
+      "legacyAnnotation": "",
+      "x": 27.9411,
+      "y": 76.8868,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 5.4
+    },
+    {
+      "pixelId": 35,
+      "legacyAnnotation": "",
+      "x": 22.0274,
+      "y": 79.6738,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 6.6
+    },
+    {
+      "pixelId": 36,
+      "legacyAnnotation": "",
+      "x": 27.125,
+      "y": 83.5854,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 6.4
+    },
+    {
+      "pixelId": 33,
+      "legacyAnnotation": "",
+      "x": 71.928,
+      "y": 79.3709,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 53.2
+    },
+    {
+      "pixelId": 34,
+      "legacyAnnotation": "",
+      "x": 66.1094,
+      "y": 76.6693,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 53.2
+    },
+    {
+      "pixelId": 32,
+      "legacyAnnotation": "",
+      "x": 66.9193,
+      "y": 83.317,
+      "isSeam": true,
+      "isPentagon": false,
+      "rotationDeg": 53.1
+    }
+  ]
+}

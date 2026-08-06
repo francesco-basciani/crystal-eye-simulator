@@ -1,4 +1,4 @@
-import manualPixelConfiguration from "../data/crystal-eye-pixel-configuration.v1.json" with {
+import manualPixelConfiguration from "../data/crystal-eye-pixel-configuration.v2.json" with {
   type: "json",
 };
 
@@ -9,6 +9,8 @@ export const PIXEL_CONFIGURATION_STORAGE_KEY_V2 =
   "crystal-eye.pixel-configuration.v2";
 export const PIXEL_CONFIGURATION_STORAGE_KEY_V3 =
   "crystal-eye.pixel-configuration.v3";
+export const PIXEL_CONFIGURATION_STORAGE_KEY_V4 =
+  "crystal-eye.pixel-configuration.v4";
 
 export type PixelConfigurationEntry = {
   /** Canonical physical identity and pixbkg pixel_id. */
@@ -199,6 +201,20 @@ export function migrateStoredPixelConfigurationToPhotoGeometry(
       ...geometry,
       pixelId: stored.pixels[geometrySlot].pixelId,
       legacyAnnotation: stored.pixels[geometrySlot].legacyAnnotation,
+    })),
+  };
+}
+
+export function migrateStoredPixelConfigurationToAuthoritativeIds(
+  value: unknown,
+): PixelConfiguration | null {
+  const stored = normalizePixelConfiguration(value);
+  if (!stored) return null;
+  return {
+    version: 2,
+    pixels: stored.pixels.map((pixel, geometrySlot) => ({
+      ...pixel,
+      pixelId: DEFAULT_PIXEL_CONFIGURATION.pixels[geometrySlot].pixelId,
     })),
   };
 }
