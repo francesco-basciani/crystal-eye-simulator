@@ -5,238 +5,238 @@
       "index": 0,
       "id": "PX-001",
       "secondaryId": "",
-      "x": 50.00459784836065,
-      "y": 41.05484594980616,
+      "x": 47.034,
+      "y": 39.6831,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 30.1
     },
     {
       "index": 1,
       "id": "PX-002",
       "secondaryId": "",
-      "x": 55.6559106045082,
-      "y": 40.45339170113705,
+      "x": 53.6075,
+      "y": 40.4834,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 35.9
     },
     {
       "index": 2,
       "id": "PX-003",
       "secondaryId": "",
-      "x": 44.658289574795084,
-      "y": 40.95744189497505,
+      "x": 40.4666,
+      "y": 40.4011,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 24.9
     },
     {
       "index": 3,
       "id": "PX-004",
       "secondaryId": "",
-      "x": 47.07573962602459,
-      "y": 46.289841590769974,
+      "x": 43.9268,
+      "y": 45.3106,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 325
+      "rotationDeg": 24.1
     },
     {
       "index": 4,
       "id": "PX-005",
       "secondaryId": "",
-      "x": 52.985601306352464,
-      "y": 46.26109050101092,
+      "x": 50.1256,
+      "y": 45.2868,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 36.0
     },
     {
       "index": 5,
       "id": "PX-006",
       "secondaryId": "",
-      "x": 41.48003009733606,
-      "y": 46.269416260132445,
+      "x": 37.7136,
+      "y": 46.5923,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 18.4
     },
     {
       "index": 6,
       "id": "PX-007",
       "secondaryId": "",
-      "x": 49.50110783811475,
-      "y": 50.93543989167331,
+      "x": 47.061,
+      "y": 49.7687,
       "isSeam": false,
       "isPentagon": true,
-      "rotationDeg": 112
+      "rotationDeg": 180
     },
     {
       "index": 7,
       "id": "PX-008",
       "secondaryId": "",
-      "x": 54.691355020491805,
-      "y": 52.340533471833204,
+      "x": 52.1358,
+      "y": 51.4855,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 340
+      "rotationDeg": 47.2
     },
     {
       "index": 8,
       "id": "PX-009",
       "secondaryId": "",
-      "x": 58.69972143954919,
-      "y": 45.78713991578713,
+      "x": 56.3685,
+      "y": 46.643,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 325
+      "rotationDeg": 42.2
     },
     {
       "index": 9,
       "id": "PX-010",
       "secondaryId": "",
-      "x": 44.35448578381148,
-      "y": 52.05763851533083,
+      "x": 41.9647,
+      "y": 51.4512,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 12.4
     },
     {
       "index": 10,
       "id": "PX-011",
       "secondaryId": "",
-      "x": 38.79530364784233,
-      "y": 52.1772335639515,
+      "x": 36.3027,
+      "y": 53.3362,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 11.5
     },
     {
       "index": 11,
       "id": "PX-012",
       "secondaryId": "",
-      "x": 49.13255315061476,
-      "y": 62.68302109031553,
+      "x": 47.0857,
+      "y": 61.4572,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 59.7
     },
     {
       "index": 12,
       "id": "PX-013",
       "secondaryId": "",
-      "x": 60.30654438132836,
-      "y": 52.91250936278714,
+      "x": 57.7909,
+      "y": 53.3527,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 45
+      "rotationDeg": 47.7
     },
     {
       "index": 13,
       "id": "PX-014",
       "secondaryId": "",
-      "x": 42.420200435450816,
-      "y": 57.322776427816216,
+      "x": 41.2383,
+      "y": 58.0096,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 15
+      "rotationDeg": 6.0
     },
     {
       "index": 14,
       "id": "PX-015",
       "secondaryId": "",
-      "x": 49.48552766393442,
-      "y": 57.00744189497505,
+      "x": 47.0714,
+      "y": 55.2881,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 0.3
     },
     {
       "index": 15,
       "id": "PX-016",
       "secondaryId": "",
-      "x": 54.9343237704918,
-      "y": 58.897130455751146,
+      "x": 52.8873,
+      "y": 58.0008,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 54.1
     },
     {
       "index": 16,
       "id": "PX-017",
       "secondaryId": "",
-      "x": 34.75110783811475,
-      "y": 14.569898536476792,
+      "x": 30.118,
+      "y": 14.4053,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 0.1
     },
     {
       "index": 17,
       "id": "PX-018",
       "secondaryId": "",
-      "x": 39.89492827868851,
-      "y": 17.159815251061943,
+      "x": 35.8064,
+      "y": 17.736,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 5.4
     },
     {
       "index": 18,
       "id": "PX-019",
       "secondaryId": "",
-      "x": 29.777414190573776,
-      "y": 17.497851087904145,
+      "x": 24.3849,
+      "y": 17.6168,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 54.5
     },
     {
       "index": 19,
       "id": "PX-020",
       "secondaryId": "",
-      "x": 34.73232581967211,
-      "y": 20.398928790042852,
+      "x": 30.0762,
+      "y": 20.3021,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 0.6
     },
     {
       "index": 20,
       "id": "PX-021",
       "secondaryId": "",
-      "x": 44.74815253586064,
-      "y": 20.51578805809575,
+      "x": 40.6259,
+      "y": 22.2238,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 11.4
     },
     {
       "index": 21,
       "id": "PX-022",
       "secondaryId": "",
-      "x": 24.98142289959016,
-      "y": 21.127886702157262,
+      "x": 19.406,
+      "y": 22.0122,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 350
+      "rotationDeg": 49.3
     },
     {
       "index": 22,
       "id": "PX-023",
       "secondaryId": "",
-      "x": 29.709804047131147,
-      "y": 24.476924931832087,
+      "x": 25.0075,
+      "y": 23.9116,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 345
+      "rotationDeg": 49.6
     },
     {
       "index": 23,
       "id": "PX-024",
       "secondaryId": "",
-      "x": 34.73315509733606,
-      "y": 26.276650405297616,
+      "x": 30.0402,
+      "y": 25.6488,
       "isSeam": false,
       "isPentagon": true,
       "rotationDeg": 0
@@ -245,158 +245,158 @@
       "index": 24,
       "id": "PX-025",
       "secondaryId": "",
-      "x": 39.661251280737694,
-      "y": 23.65102669214074,
+      "x": 35.0937,
+      "y": 24.0356,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 305
+      "rotationDeg": 12.3
     },
     {
       "index": 25,
       "id": "PX-026",
       "secondaryId": "",
-      "x": 25.99680776127049,
-      "y": 29.462435310048036,
+      "x": 20.6313,
+      "y": 28.5431,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 340
+      "rotationDeg": 43.7
     },
     {
       "index": 26,
       "id": "PX-027",
       "secondaryId": "",
-      "x": 31.684141265368847,
-      "y": 30.861500435903615,
+      "x": 26.852,
+      "y": 29.9434,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 335
+      "rotationDeg": 36.5
     },
     {
       "index": 27,
       "id": "PX-028",
       "secondaryId": "",
-      "x": 37.93660028176229,
-      "y": 30.60969653688486,
+      "x": 33.1216,
+      "y": 29.9955,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 25
+      "rotationDeg": 24.3
     },
     {
       "index": 28,
       "id": "PX-029",
       "secondaryId": "",
-      "x": 44.09620581454916,
-      "y": 29.077541689080146,
+      "x": 39.2826,
+      "y": 28.7163,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 15
+      "rotationDeg": 17.8
     },
     {
       "index": 29,
       "id": "PX-030",
       "secondaryId": "",
-      "x": 28.48426933913935,
-      "y": 35.95505926434308,
+      "x": 23.3105,
+      "y": 34.7695,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 335
+      "rotationDeg": 36.4
     },
     {
       "index": 30,
       "id": "PX-031",
       "secondaryId": "",
-      "x": 41.78678919057376,
-      "y": 35.01601157463226,
+      "x": 36.5246,
+      "y": 34.7977,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 24.7
     },
     {
       "index": 31,
       "id": "PX-032",
       "secondaryId": "",
-      "x": 34.82883901127049,
-      "y": 35.81872345161469,
+      "x": 29.9265,
+      "y": 35.5367,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 30.4
     },
     {
       "index": 32,
       "id": "PX-033",
       "secondaryId": "",
-      "x": 58.87859399178748,
-      "y": 16.30694155866159,
+      "x": 58.152,
+      "y": 17.7894,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 53.5
     },
     {
       "index": 33,
       "id": "PX-034",
       "secondaryId": "",
-      "x": 53.909954312473644,
-      "y": 19.503732076941628,
+      "x": 53.3777,
+      "y": 22.2608,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 47.8
     },
     {
       "index": 34,
       "id": "PX-035",
       "secondaryId": "",
-      "x": 58.70026736489393,
-      "y": 22.081297583356726,
+      "x": 58.9039,
+      "y": 24.0704,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 47.7
     },
     {
       "index": 35,
       "id": "PX-036",
       "secondaryId": "",
-      "x": 68.76393129506138,
-      "y": 22.46419609346933,
+      "x": 68.8654,
+      "y": 23.99,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 11.3
     },
     {
       "index": 36,
       "id": "PX-037",
       "secondaryId": "",
-      "x": 64.0728776590116,
-      "y": 12.945964384829603,
+      "x": 63.7828,
+      "y": 14.4186,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 59.1
     },
     {
       "index": 37,
       "id": "PX-038",
       "secondaryId": "",
-      "x": 61.088043100188045,
-      "y": 28.82447786609899,
+      "x": 60.8749,
+      "y": 30.0295,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 36.7
     },
     {
       "index": 38,
       "id": "PX-039",
       "secondaryId": "",
-      "x": 64.18789019943239,
-      "y": 18.637294420460787,
+      "x": 63.8404,
+      "y": 20.3654,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 59.2
     },
     {
       "index": 39,
       "id": "PX-040",
       "secondaryId": "",
-      "x": 64.06764705882352,
-      "y": 24.37913423690639,
+      "x": 63.9205,
+      "y": 25.6888,
       "isSeam": false,
       "isPentagon": true,
       "rotationDeg": 0
@@ -405,148 +405,148 @@
       "index": 40,
       "id": "PX-041",
       "secondaryId": "",
-      "x": 69.55220588235294,
-      "y": 16.351108814464357,
+      "x": 69.4685,
+      "y": 17.6545,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 4.4
     },
     {
       "index": 41,
       "id": "PX-042",
       "secondaryId": "",
-      "x": 55.48869485294117,
-      "y": 28.06361792585844,
+      "x": 54.7446,
+      "y": 28.7779,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 42.1
     },
     {
       "index": 42,
       "id": "PX-043",
       "secondaryId": "123",
-      "x": 67.28805147058824,
-      "y": 28.59885577319364,
+      "x": 67.0649,
+      "y": 30.0025,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 23.6
     },
     {
       "index": 43,
       "id": "PX-044",
       "secondaryId": "",
-      "x": 73.60900735294118,
-      "y": 25.749676796598777,
+      "x": 73.1642,
+      "y": 28.639,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 16.3
     },
     {
       "index": 44,
       "id": "PX-045",
       "secondaryId": "",
-      "x": 74.39457720588234,
-      "y": 19.82681178282467,
+      "x": 74.3886,
+      "y": 22.0491,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 11.0
     },
     {
       "index": 45,
       "id": "PX-046",
       "secondaryId": "",
-      "x": 58.58069852941176,
-      "y": 34.45752152881716,
+      "x": 57.4835,
+      "y": 34.8762,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 36.2
     },
     {
       "index": 46,
       "id": "PX-047",
       "secondaryId": "",
-      "x": 64.34742647058825,
-      "y": 33.638124986442804,
+      "x": 64.0504,
+      "y": 35.5815,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 29.5
     },
     {
       "index": 47,
       "id": "PX-048",
       "secondaryId": "",
-      "x": 72.04384191176469,
-      "y": 31.95974490791956,
+      "x": 70.5772,
+      "y": 34.7925,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 22.9
     },
     {
       "index": 48,
       "id": "PX-049",
       "secondaryId": "",
-      "x": 76.57573529411765,
-      "y": 46.248949046658424,
+      "x": 74.857,
+      "y": 47.3772,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 58.9
     },
     {
       "index": 49,
       "id": "PX-050",
       "secondaryId": "",
-      "x": 82.37049632352942,
-      "y": 49.696813518144936,
+      "x": 80.7865,
+      "y": 50.6862,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 10
+      "rotationDeg": 4.5
     },
     {
       "index": 50,
       "id": "PX-051",
       "secondaryId": "",
-      "x": 70.83897058823528,
-      "y": 49.95744452397995,
+      "x": 69.1216,
+      "y": 50.7758,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 345
+      "rotationDeg": 53.4
     },
     {
       "index": 51,
       "id": "PX-052",
       "secondaryId": "",
-      "x": 76.65533088235294,
-      "y": 52.212276306370796,
+      "x": 75.017,
+      "y": 53.4505,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 59.1
     },
     {
       "index": 52,
       "id": "PX-053",
       "secondaryId": "",
-      "x": 83.40689338235295,
-      "y": 67.74773106874038,
+      "x": 82.2643,
+      "y": 68.6422,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 22.1
     },
     {
       "index": 53,
       "id": "PX-054",
       "secondaryId": "",
-      "x": 65.83795955882353,
-      "y": 54.54119216502896,
+      "x": 64.272,
+      "y": 55.4616,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 45
+      "rotationDeg": 47.5
     },
     {
       "index": 54,
       "id": "PX-055",
       "secondaryId": "",
-      "x": 76.94659926470588,
-      "y": 58.29273768464893,
+      "x": 75.1468,
+      "y": 59.053,
       "isSeam": false,
       "isPentagon": true,
       "rotationDeg": 0
@@ -555,158 +555,158 @@
       "index": 55,
       "id": "PX-056",
       "secondaryId": "",
-      "x": 81.871875,
-      "y": 56.02651786295308,
+      "x": 80.267,
+      "y": 57.275,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 15
+      "rotationDeg": 10.8
     },
     {
       "index": 56,
       "id": "PX-057",
       "secondaryId": "",
-      "x": 87.2842830882353,
-      "y": 53.953352421856366,
+      "x": 85.9958,
+      "y": 55.3008,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 15
+      "rotationDeg": 10.1
     },
     {
       "index": 57,
       "id": "PX-058",
       "secondaryId": "",
-      "x": 67.6624080882353,
-      "y": 60.79572785839787,
+      "x": 65.7362,
+      "y": 62.3138,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 45
+      "rotationDeg": 40.6
     },
     {
       "index": 58,
       "id": "PX-059",
       "secondaryId": "",
-      "x": 71.4640625,
-      "y": 56.14886553437019,
+      "x": 69.9551,
+      "y": 57.2966,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 45
+      "rotationDeg": 47.7
     },
     {
       "index": 59,
       "id": "PX-060",
       "secondaryId": "",
-      "x": 70.35900735294118,
-      "y": 67.46803431595845,
+      "x": 68.6316,
+      "y": 68.7465,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 35.0
     },
     {
       "index": 60,
       "id": "PX-061",
       "secondaryId": "",
-      "x": 85.81047794117647,
-      "y": 61.538119563566944,
+      "x": 84.8585,
+      "y": 62.1695,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 25
+      "rotationDeg": 16.3
     },
     {
       "index": 61,
       "id": "PX-062",
       "secondaryId": "",
-      "x": 73.23097426470588,
-      "y": 62.524331359406524,
+      "x": 72.0655,
+      "y": 63.6182,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 34.7
     },
     {
       "index": 62,
       "id": "PX-063",
       "secondaryId": "",
-      "x": 79.98253676470588,
-      "y": 62.84428103511855,
+      "x": 78.4752,
+      "y": 63.5888,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 325
+      "rotationDeg": 22.7
     },
     {
       "index": 63,
       "id": "PX-064",
       "secondaryId": "",
-      "x": 76.53970588235295,
-      "y": 67.91738140170496,
+      "x": 75.4309,
+      "y": 69.4714,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 29.3
     },
     {
       "index": 64,
       "id": "PX-065",
       "secondaryId": "",
-      "x": 49.011397058823526,
-      "y": 68.87375111168954,
+      "x": 47.0961,
+      "y": 68.6355,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 59.9
     },
     {
       "index": 65,
       "id": "PX-066",
       "secondaryId": "",
-      "x": 54.19724264705883,
-      "y": 71.5206568187241,
+      "x": 52.9823,
+      "y": 72.1397,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 5.5
     },
     {
       "index": 66,
       "id": "PX-067",
       "secondaryId": "",
-      "x": 43.99797794117647,
-      "y": 71.7324819418234,
+      "x": 41.1877,
+      "y": 72.2048,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 5
+      "rotationDeg": 53.8
     },
     {
       "index": 67,
       "id": "PX-068",
       "secondaryId": "",
-      "x": 49.32123161764706,
-      "y": 75.31483373462615,
+      "x": 47.0873,
+      "y": 75.0104,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 59.4
     },
     {
       "index": 68,
       "id": "PX-069",
       "secondaryId": "",
-      "x": 59.257077205882354,
-      "y": 74.26388039305004,
+      "x": 58.0518,
+      "y": 76.9348,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 11.2
     },
     {
       "index": 69,
       "id": "PX-070",
       "secondaryId": "",
-      "x": 39.29430147058824,
-      "y": 75.11777401791718,
+      "x": 36.0804,
+      "y": 77.0773,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 48.3
     },
     {
       "index": 70,
       "id": "PX-071",
       "secondaryId": "",
-      "x": 49.54080882352941,
-      "y": 81.07914145029392,
+      "x": 47.1025,
+      "y": 80.7939,
       "isSeam": false,
       "isPentagon": true,
       "rotationDeg": 0
@@ -715,551 +715,551 @@
       "index": 71,
       "id": "PX-072",
       "secondaryId": "",
-      "x": 54.52444852941177,
-      "y": 78.20935554543286,
+      "x": 52.3125,
+      "y": 78.9417,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 11.7
     },
     {
       "index": 72,
       "id": "PX-073",
       "secondaryId": "",
-      "x": 59.0453125,
-      "y": 82.12901021669812,
+      "x": 56.7418,
+      "y": 84.0919,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 17.9
     },
     {
       "index": 73,
       "id": "PX-074",
       "secondaryId": "",
-      "x": 44.446875,
-      "y": 77.98897746252793,
+      "x": 41.81,
+      "y": 78.9675,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 48.2
     },
     {
       "index": 74,
       "id": "PX-075",
       "secondaryId": "",
-      "x": 44.808731617647055,
-      "y": 84.12604607275328,
+      "x": 43.8354,
+      "y": 85.5461,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 345
+      "rotationDeg": 36.0
     },
     {
       "index": 75,
       "id": "PX-076",
       "secondaryId": "",
-      "x": 53.2735294117647,
-      "y": 85.17211882605584,
+      "x": 50.3541,
+      "y": 85.4943,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 24.1
     },
     {
       "index": 76,
       "id": "PX-077",
       "secondaryId": "",
-      "x": 55.96764705882353,
-      "y": 90.24847291815796,
+      "x": 53.9895,
+      "y": 90.8225,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 24.1
     },
     {
       "index": 77,
       "id": "PX-078",
       "secondaryId": "",
-      "x": 39.72775735294118,
-      "y": 81.09282228151234,
+      "x": 37.3974,
+      "y": 84.2061,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 42.3
     },
     {
       "index": 78,
       "id": "PX-079",
       "secondaryId": "",
-      "x": 41.52803308823529,
-      "y": 88.56771436628271,
+      "x": 40.1933,
+      "y": 90.9359,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 345
+      "rotationDeg": 36.1
     },
     {
       "index": 79,
       "id": "PX-080",
       "secondaryId": "",
-      "x": 48.78832720588236,
-      "y": 88.83831587167307,
+      "x": 47.0545,
+      "y": 91.6657,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 29.5
     },
     {
       "index": 80,
       "id": "PX-081",
       "secondaryId": "",
-      "x": 19.080330882352943,
-      "y": 44.20289798485933,
+      "x": 13.0128,
+      "y": 50.8564,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 55.0
     },
     {
       "index": 81,
       "id": "PX-082",
       "secondaryId": "",
-      "x": 24.493658088235293,
-      "y": 42.094483850675694,
+      "x": 19.0195,
+      "y": 47.4695,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 5
+      "rotationDeg": 0.5
     },
     {
       "index": 82,
       "id": "PX-083",
       "secondaryId": "",
-      "x": 17.430882352941175,
-      "y": 49.96015596190972,
+      "x": 13.5319,
+      "y": 57.4791,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 48.9
     },
     {
       "index": 83,
       "id": "PX-084",
       "secondaryId": "",
-      "x": 23.902573529411768,
-      "y": 48.16898006550834,
+      "x": 18.8858,
+      "y": 53.6139,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 10
+      "rotationDeg": 1.0
     },
     {
       "index": 84,
       "id": "PX-085",
       "secondaryId": "",
-      "x": 29.583363970588234,
-      "y": 47.17713607080106,
+      "x": 24.8236,
+      "y": 50.8699,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 6.2
     },
     {
       "index": 85,
       "id": "PX-086",
       "secondaryId": "",
-      "x": 13.027757352941176,
-      "y": 46.30330144682328,
+      "x": 7.709,
+      "y": 55.5388,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 49.1
     },
     {
       "index": 86,
       "id": "PX-087",
       "secondaryId": "",
-      "x": 21.946139705882356,
-      "y": 54.06397908939068,
+      "x": 18.7438,
+      "y": 59.2232,
       "isSeam": false,
       "isPentagon": true,
-      "rotationDeg": 10
+      "rotationDeg": 0
     },
     {
       "index": 87,
       "id": "PX-088",
       "secondaryId": "",
-      "x": 27.263878676470586,
-      "y": 53.49837313724214,
+      "x": 23.9877,
+      "y": 57.4663,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 12.1
     },
     {
       "index": 88,
       "id": "PX-089",
       "secondaryId": "",
-      "x": 32.89779411764706,
-      "y": 52.691991496930655,
+      "x": 29.745,
+      "y": 55.5241,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 12.0
     },
     {
       "index": 89,
       "id": "PX-090",
       "secondaryId": "",
-      "x": 13.54016544117647,
-      "y": 55.037718270753345,
+      "x": 8.8968,
+      "y": 62.4501,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 44.0
     },
     {
       "index": 90,
       "id": "PX-091",
       "secondaryId": "",
-      "x": 18.55229779411765,
-      "y": 58.45033404915295,
+      "x": 15.3541,
+      "y": 63.8243,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 345
+      "rotationDeg": 37.6
     },
     {
       "index": 91,
       "id": "PX-092",
       "secondaryId": "",
-      "x": 24.766176470588235,
-      "y": 59.07179562265461,
+      "x": 21.86,
+      "y": 63.7963,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 24.5
     },
     {
       "index": 92,
       "id": "PX-093",
       "secondaryId": "",
-      "x": 31.390900735294117,
-      "y": 58.80553241795189,
+      "x": 28.2517,
+      "y": 62.3877,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 18.4
     },
     {
       "index": 93,
       "id": "PX-094",
       "secondaryId": "",
-      "x": 16.041176470588233,
-      "y": 64.28785058892431,
+      "x": 11.54,
+      "y": 68.973,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 35
+      "rotationDeg": 36.9
     },
     {
       "index": 94,
       "id": "PX-095",
       "secondaryId": "",
-      "x": 21.608455882352942,
-      "y": 64.28080085030693,
+      "x": 18.4553,
+      "y": 69.7347,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 35
+      "rotationDeg": 30.5
     },
     {
       "index": 95,
       "id": "PX-096",
       "secondaryId": "",
-      "x": 27.61829044117647,
-      "y": 64.47168608056225,
+      "x": 25.3285,
+      "y": 68.8919,
       "isSeam": false,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 24.7
     },
     {
       "index": 96,
       "id": "PX-097",
       "secondaryId": "",
-      "x": 52.44074704676952,
-      "y": 9.219716741008861,
+      "x": 49.9665,
+      "y": 12.573,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 30.0
     },
     {
       "index": 97,
       "id": "PX-098",
       "secondaryId": "",
-      "x": 46.3800240703351,
-      "y": 8.986925659411414,
+      "x": 44.0121,
+      "y": 12.552,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 30.3
     },
     {
       "index": 98,
       "id": "PX-099",
       "secondaryId": "",
-      "x": 49.23138504249035,
-      "y": 14.24471442237259,
+      "x": 46.9883,
+      "y": 17.846,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 30.0
     },
     {
       "index": 99,
       "id": "PX-100",
       "secondaryId": "",
-      "x": 47.353883837090166,
-      "y": 34.75627608465805,
+      "x": 44.0293,
+      "y": 33.7205,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 30.4
     },
     {
       "index": 100,
       "id": "PX-101",
       "secondaryId": "",
-      "x": 52.7734375,
-      "y": 34.852731353527105,
+      "x": 50.0599,
+      "y": 33.7783,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 29.9
     },
     {
       "index": 101,
       "id": "PX-102",
       "secondaryId": "",
-      "x": 49.924180327868854,
-      "y": 28.741220715623896,
+      "x": 47.0216,
+      "y": 28.4253,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 30.2
     },
     {
       "index": 102,
       "id": "PX-103",
       "secondaryId": "",
-      "x": 11.718290441176471,
-      "y": 34.09304787314809,
+      "x": 10.7681,
+      "y": 40.8993,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 315
+      "rotationDeg": 19.4
     },
     {
       "index": 103,
       "id": "PX-104",
       "secondaryId": "",
-      "x": 17.723345588235297,
-      "y": 33.61908852302553,
+      "x": 16.9381,
+      "y": 39.6512,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 18.8
     },
     {
       "index": 104,
       "id": "PX-105",
       "secondaryId": "",
-      "x": 14.3828125,
-      "y": 28.310718856423943,
+      "x": 12.8525,
+      "y": 34.9308,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 25
+      "rotationDeg": 18.7
     },
     {
       "index": 105,
       "id": "PX-106",
       "secondaryId": "",
-      "x": 37.82428278688524,
-      "y": 41.30767190369313,
+      "x": 33.1056,
+      "y": 41.7483,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 90
+      "rotationDeg": 18.6
     },
     {
       "index": 106,
       "id": "PX-107",
       "secondaryId": "",
-      "x": 32.144179047131146,
-      "y": 41.393925172970256,
+      "x": 27.0798,
+      "y": 43.0812,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 35
+      "rotationDeg": 17.8
     },
     {
       "index": 107,
       "id": "PX-108",
       "secondaryId": "",
-      "x": 35.520539830942624,
-      "y": 46.46807794327688,
+      "x": 31.1466,
+      "y": 47.7345,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 18.0
     },
     {
       "index": 108,
       "id": "PX-109",
       "secondaryId": "",
-      "x": 67.06072297643442,
-      "y": 39.23666598653336,
+      "x": 66.8953,
+      "y": 43.0557,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 41.0
     },
     {
       "index": 109,
       "id": "PX-110",
       "secondaryId": "",
-      "x": 61.419441598360656,
-      "y": 39.80380441839328,
+      "x": 60.9169,
+      "y": 41.8179,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 41.5
     },
     {
       "index": 110,
       "id": "PX-111",
       "secondaryId": "",
-      "x": 64.31272412909836,
-      "y": 44.91088182374654,
+      "x": 62.8828,
+      "y": 47.7513,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 330
+      "rotationDeg": 41.4
     },
     {
       "index": 111,
       "id": "PX-112",
       "secondaryId": "",
-      "x": 78.71369485294117,
-      "y": 38.031140322335744,
+      "x": 76.8915,
+      "y": 39.6119,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 40.9
     },
     {
       "index": 112,
       "id": "PX-113",
       "secondaryId": "",
-      "x": 84.19898897058823,
-      "y": 38.031140322335744,
+      "x": 82.9495,
+      "y": 40.8201,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 40.4
     },
     {
       "index": 113,
       "id": "PX-114",
       "secondaryId": "",
-      "x": 81.46369485294117,
-      "y": 31.863244831999307,
+      "x": 80.8809,
+      "y": 34.9169,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 41.1
     },
     {
       "index": 114,
       "id": "PX-115",
       "secondaryId": "",
-      "x": 35.015464907786885,
-      "y": 64.26261059895012,
+      "x": 34.5106,
+      "y": 67.5968,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 6.4
     },
     {
       "index": 115,
       "id": "PX-116",
       "secondaryId": "",
-      "x": 40.67995965676229,
-      "y": 63.39404945187438,
+      "x": 40.236,
+      "y": 64.9274,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 5.9
     },
     {
       "index": 116,
       "id": "PX-117",
       "secondaryId": "",
-      "x": 37.16712026127049,
-      "y": 58.43165494982471,
+      "x": 35.2358,
+      "y": 61.1458,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 20
+      "rotationDeg": 6.3
     },
     {
       "index": 117,
       "id": "PX-118",
       "secondaryId": "",
-      "x": 55.676930147058826,
-      "y": 64.91075247825427,
+      "x": 53.8686,
+      "y": 64.8753,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 53.9
     },
     {
       "index": 118,
       "id": "PX-119",
       "secondaryId": "",
-      "x": 61.1530330882353,
-      "y": 67.41069824949567,
+      "x": 59.5742,
+      "y": 67.4997,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 53.4
     },
     {
       "index": 119,
       "id": "PX-120",
       "secondaryId": "",
-      "x": 60.62637867647059,
-      "y": 61.071982169584174,
+      "x": 58.8621,
+      "y": 61.0874,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 53.8
     },
     {
       "index": 120,
       "id": "PX-121",
       "secondaryId": "",
-      "x": 30.520220588235293,
-      "y": 74.17394199691981,
+      "x": 27.9411,
+      "y": 76.8868,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 5.4
     },
     {
       "index": 121,
       "id": "PX-122",
       "secondaryId": "",
-      "x": 25.034007352941178,
-      "y": 74.21461356586626,
+      "x": 22.0274,
+      "y": 79.6738,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 6.6
     },
     {
       "index": 122,
       "id": "PX-123",
       "secondaryId": "",
-      "x": 27.770220588235293,
-      "y": 79.77189323442008,
+      "x": 27.125,
+      "y": 83.5854,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 30
+      "rotationDeg": 6.4
     },
     {
       "index": 123,
       "id": "PX-124",
       "secondaryId": "",
-      "x": 72.51378676470588,
-      "y": 77.73677143662829,
+      "x": 71.928,
+      "y": 79.3709,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 53.2
     },
     {
       "index": 124,
       "id": "PX-125",
       "secondaryId": "",
-      "x": 67.29181985294119,
-      "y": 75.00960716687275,
+      "x": 66.1094,
+      "y": 76.6693,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 53.2
     },
     {
       "index": 125,
       "id": "PX-126",
       "secondaryId": "",
-      "x": 67.89659926470588,
-      "y": 80.939438406976,
+      "x": 66.9193,
+      "y": 83.317,
       "isSeam": true,
       "isPentagon": false,
-      "rotationDeg": 0
+      "rotationDeg": 53.1
     }
   ]
 }

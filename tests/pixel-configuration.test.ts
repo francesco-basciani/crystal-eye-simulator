@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import {
   DEFAULT_PIXEL_CONFIGURATION,
+  PIXEL_CONFIGURATION_STORAGE_KEY_V3,
   hasCanonicalPixelIdBijection,
+  migrateStoredPixelConfigurationToPhotoGeometry,
   normalizePixelConfiguration,
   swapPhysicalPixelIds,
 } from "../app/lib/pixel-configuration.ts";
@@ -25,17 +27,35 @@ test("the supplied manual geometry is the bundled default with pixel IDs 0..125"
     configuration?.pixels.map((pixel) => pixel.pixelId).sort((a, b) => a - b),
     Array.from({ length: 126 }, (_, pixelId) => pixelId),
   );
-  assert.equal(configuration?.pixels.filter((pixel) => pixel.isPentagon).length, 6);
-  assert.equal(configuration?.pixels.filter((pixel) => pixel.isSeam).length, 30);
-  assert.deepEqual(configuration?.pixels[0], {
+  assert.deepEqual(
+    configuration?.pixels
+      .map((pixel, geometrySlot) => ({ pixel, geometrySlot }))
+      .filter(({ pixel }) => pixel.isPentagon)
+      .map(({ geometrySlot }) => geometrySlot),
+    [6, 23, 39, 54, 70, 86],
+  );
+  assert.deepEqual(
+    configuration?.pixels
+      .map((pixel, geometrySlot) => ({ pixel, geometrySlot }))
+      .filter(({ pixel }) => pixel.isSeam)
+      .map(({ geometrySlot }) => geometrySlot),
+    Array.from({ length: 30 }, (_, index) => index + 96),
+  );
+  assert.deepEqual(
+    configuration?.pixels[0] && {
+      ...configuration.pixels[0],
+      rotationDeg: Number(configuration.pixels[0].rotationDeg.toFixed(1)),
+    },
+    {
     pixelId: 0,
     legacyAnnotation: "",
-    x: 50.00459784836065,
-    y: 41.05484594980616,
+    x: 47.034,
+    y: 39.6831,
     isSeam: false,
     isPentagon: false,
-    rotationDeg: 30,
-  });
+    rotationDeg: 30.1,
+    },
+  );
 });
 
 test("legacy v1 user geometry migrates while PX identity becomes physical pixelId", async () => {
@@ -79,6 +99,50 @@ test("editing an occupied pixelId swaps identities atomically", () => {
   assert.equal(hasCanonicalPixelIdBijection(swapped.pixels), true);
   assert.equal(swapped.pixels[0].x, DEFAULT_PIXEL_CONFIGURATION.pixels[0].x);
   assert.equal(swapped.pixels[125].x, DEFAULT_PIXEL_CONFIGURATION.pixels[125].x);
+});
+
+test("stored v2 identity and annotations migrate onto the photo-aligned v3 geometry", () => {
+  const storedV2 = swapPhysicalPixelIds(
+    {
+      version: 2,
+      pixels: DEFAULT_PIXEL_CONFIGURATION.pixels.map((pixel) => ({
+        ...pixel,
+        x: 12.5,
+        y: 87.5,
+        rotationDeg: 47.5,
+      })),
+    },
+    0,
+    125,
+  );
+  storedV2.pixels[0].legacyAnnotation = "saved-note";
+  storedV2.pixels[6].isPentagon = false;
+  storedV2.pixels[7].isPentagon = true;
+
+  const migrated = migrateStoredPixelConfigurationToPhotoGeometry(storedV2);
+  assert.ok(migrated);
+  assert.equal(PIXEL_CONFIGURATION_STORAGE_KEY_V3, "crystal-eye.pixel-configuration.v3");
+  assert.equal(migrated.pixels[0].pixelId, 125);
+  assert.equal(migrated.pixels[125].pixelId, 0);
+  assert.equal(migrated.pixels[0].legacyAnnotation, "saved-note");
+  assert.deepEqual(
+    migrated.pixels.map(({ x, y, rotationDeg, isSeam, isPentagon }) => ({
+      x,
+      y,
+      rotationDeg,
+      isSeam,
+      isPentagon,
+    })),
+    DEFAULT_PIXEL_CONFIGURATION.pixels.map(
+      ({ x, y, rotationDeg, isSeam, isPentagon }) => ({
+        x,
+        y,
+        rotationDeg,
+        isSeam,
+        isPentagon,
+      }),
+    ),
+  );
 });
 
 test("a geometry slot resolves background, selection, and export identity by physical pixelId", async () => {
