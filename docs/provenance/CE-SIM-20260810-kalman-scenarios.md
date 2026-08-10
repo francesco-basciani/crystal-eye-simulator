@@ -322,3 +322,73 @@ as a visual pass.
 
 No commit, push, deployment, publication, dataset change, dependency addition,
 or edit to `Materiale/`, `Appunti/` or `Paper/` was performed.
+
+## 2026-08-10 revision — mode-specific signal provenance
+
+Task objective: implement the author-approved data contract at baseline commit
+`005b9c8a592a4d5e3d3bd6c1789c5660eca6d926`.
+
+Author-approved decisions implemented:
+
+- Reference Mode retains the supplied Rito `pixbkg` per-pixel reference and the
+  existing separate environmental terms.
+- Simulation Mode contributes exactly zero Rito rate/counts to both aggregate
+  and per-pixel expected observations. Its background mean is the sum of only
+  the existing Sun, Moon and Earth provisional models; active GRBs remain a
+  separate synthetic source term. Observations are seeded Poisson samples of
+  that composed expectation.
+- No environmental or GRB amplitude coefficient was changed. Directional
+  non-negative weights allocate each already-defined aggregate component total
+  over configured physical pixel IDs. A floating-point correction on the
+  largest-weight pixel makes each pixel sum equal its aggregate component; no
+  per-pixel minimum or independently rounded amplitude remains.
+- Sun and Moon weights use local incidence squared times mount visibility.
+  Earth retains the existing thresholded directional albedo response as its
+  weight. GRB weights retain the configured footprint and incidence exponent.
+- The live estimator now uses acquisition time (`frameIndex × 0.2 s`) for its
+  state-transition interval. Accelerated orbital time remains separately stored
+  on each sample and in persisted photon records.
+- The positive-clipped curve previously labeled transient/residual was removed.
+  The source area is explicitly labeled injected source truth, normalized
+  innovation remains signed, and the source-window aggregate is labeled signed
+  excess. The injected-source HUD is explicitly not a detection significance.
+
+Inputs and versions:
+
+- Rito `public/data/pixbkg.txt`, unchanged and checksum-validated under its
+  existing provenance record; used only as the Reference Mode baseline.
+- Existing ECI replay and current coefficients: Sun `260 counts/s` maximum,
+  Moon `22 counts/s` coefficient, Earth `85 counts/s` coefficient and GRB
+  `135 counts/0.2 s` maximum before transmission/time response. All remain
+  **PROVISIONAL** and physically uncalibrated.
+- Default observation and automatic-event random streams remain seed-derived
+  and deterministic.
+
+Files changed by this revision:
+
+- `app/lib/signal-composition.ts` (new pure mode contract and reconciliation);
+- `app/page.tsx`;
+- `app/components/adaptive-background-panel.tsx`;
+- `app/lib/kalman-scenarios.ts`;
+- `tests/signal-composition.test.ts` (new);
+- `tests/dashboard-layout.test.ts`;
+- `tests/kalman-scenarios.test.ts`;
+- this provenance record.
+
+Independent read-only review: `simulator_engineer` confirmed the original Rito
+leak into Simulation Mode, missing Sun/Moon pixel allocation, unreconciled
+Earth/GRB totals, `pixbkg` availability dependency, and time-warp/filter `dt`
+mismatch. No reviewer code was used without coordinator inspection.
+
+Limits and open gates:
+
+- Directional allocation changes bookkeeping consistency, not physical
+  validity. Effective area, spectral response, dead time, correlations and
+  environmental calibration remain absent.
+- The Rito dataset's physical domain and possible overlap with environmental
+  terms remain unresolved; Reference Mode therefore remains provisional.
+- `±4` is an internal robust-filter gate, not a calibrated trigger or discovery
+  significance. Injected source truth is known only because the simulator
+  generated it.
+- Quantitative, reproducibility, domain-expert and browser visual audits remain
+  required before scientific-result or release claims.

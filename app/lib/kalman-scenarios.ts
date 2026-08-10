@@ -61,7 +61,7 @@ export type KalmanAnalysisPoint = KalmanReferenceFrame &
     backgroundStdCountsPerSecond: number;
     lowerBackgroundRateCountsPerSecond: number;
     upperBackgroundRateCountsPerSecond: number;
-    sourceResidualRateCountsPerSecond: number;
+    signedResidualRateCountsPerSecond: number;
     normalizedInnovation: number;
     gated: boolean;
   }>;
@@ -455,10 +455,8 @@ export function runAggregateBackgroundKalman(
         ),
         upperBackgroundRateCountsPerSecond:
           backgroundRate + filter.confidenceZ * backgroundStd,
-        sourceResidualRateCountsPerSecond: Math.max(
-          0,
+        signedResidualRateCountsPerSecond:
           observedRate - predictedBackgroundRate,
-        ),
         normalizedInnovation,
         gated,
       }),

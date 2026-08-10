@@ -142,8 +142,34 @@ test("the aggregate filter gates a large innovation instead of absorbing it", ()
   assert.equal(run.label, KALMAN_DEMONSTRATOR_LABEL);
   assert.equal(run.points[15].gated, true);
   assert.equal(run.points[15].estimatedBackgroundRateCountsPerSecond, 500);
-  assert.ok(run.points[15].sourceResidualRateCountsPerSecond >= 1_000);
+  assert.ok(run.points[15].signedResidualRateCountsPerSecond >= 1_000);
   assert.ok(run.metrics.gatedBinCount >= 1);
+});
+
+test("the reported residual is signed rather than positive-clipped", () => {
+  const frames: KalmanReferenceFrame[] = [
+    {
+      frameIndex: 0,
+      simulationTimeSeconds: 0,
+      exposureSeconds: 0.2,
+      expectedBackgroundRateCountsPerSecond: 500,
+      expectedSourceRateCountsPerSecond: 0,
+      observedCounts: 100,
+    },
+    {
+      frameIndex: 1,
+      simulationTimeSeconds: 0.2,
+      exposureSeconds: 0.2,
+      expectedBackgroundRateCountsPerSecond: 500,
+      expectedSourceRateCountsPerSecond: 0,
+      observedCounts: 80,
+    },
+  ];
+  const run = runAggregateBackgroundKalman(frames, {
+    scenarioId: "test-signed-residual-v1",
+    seed: 1,
+  });
+  assert.ok(run.points[1].signedResidualRateCountsPerSecond < 0);
 });
 
 test("scenario analysis exposes finite provisional metrics and covariance bands", () => {

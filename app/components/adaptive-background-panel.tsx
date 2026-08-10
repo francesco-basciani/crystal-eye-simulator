@@ -11,6 +11,7 @@ import {
 
 export type AdaptiveAnalysisSample = Readonly<{
   frameIndex: number;
+  acquisitionTimeSeconds: number;
   simulationTimeSeconds: number;
   exposureSeconds: number;
   expectedBackgroundCounts: number;
@@ -122,7 +123,7 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
       className="kalman-plot adaptive-analysis-plot"
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       role="img"
-      aria-label="Observed samples, reference background, adaptive estimate and uncertainty, transient interval, residual, and normalized innovation"
+      aria-label="Observed samples, configured background reference, adaptive estimate and uncertainty, injected source interval, and normalized innovation"
     >
       <title>Adaptive background and transient analysis</title>
       {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
@@ -140,7 +141,6 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
       <path className="kalman-source-area" d={sourceArea} />
       <path className="kalman-truth-line" d={linePath(points, x, (point) => yRate(point.expectedBackgroundRateCountsPerSecond))} />
       <path className="kalman-estimate-line" d={linePath(points, x, (point) => yRate(point.estimatedBackgroundRateCountsPerSecond))} />
-      <path className="kalman-residual-line" d={linePath(points, x, (point) => yRate(point.predictedBackgroundRateCountsPerSecond + point.sourceResidualRateCountsPerSecond))} />
       {points.map((point, index) => (
         <circle
           className={point.gated ? "kalman-observation gated" : "kalman-observation"}
@@ -163,7 +163,7 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
       <text className="kalman-axis-title" x={8} y={18}>RATE · COUNTS/S</text>
       <text className="kalman-axis-title" x={8} y={248}>NORMALIZED INNOVATION · ±4 GATE</text>
       <text className="kalman-time-label" x={LEFT} y={338}>{(points[0]?.simulationTimeSeconds ?? 0).toFixed(1)} s</text>
-      <text className="kalman-time-label" x={WIDTH - RIGHT} y={338} textAnchor="end">{(points.at(-1)?.simulationTimeSeconds ?? 0).toFixed(1)} s simulation time</text>
+      <text className="kalman-time-label" x={WIDTH - RIGHT} y={338} textAnchor="end">{(points.at(-1)?.simulationTimeSeconds ?? 0).toFixed(1)} s acquisition time</text>
     </svg>
   );
 }
@@ -184,7 +184,8 @@ export function AdaptiveBackgroundPanel({
   const run = useMemo(() => {
     const frames: KalmanReferenceFrame[] = samples.map((sample) => ({
       frameIndex: sample.frameIndex,
-      simulationTimeSeconds: sample.simulationTimeSeconds,
+      // The estimator evolves on acquisition time, not accelerated orbit time.
+      simulationTimeSeconds: sample.acquisitionTimeSeconds,
       exposureSeconds: sample.exposureSeconds,
       expectedBackgroundRateCountsPerSecond:
         sample.expectedBackgroundCounts / sample.exposureSeconds,
@@ -230,12 +231,12 @@ export function AdaptiveBackgroundPanel({
       </header>
       <div className="adaptive-analysis-warning">{KALMAN_DEMONSTRATOR_LABEL}</div>
       <div className="adaptive-analysis-legend">
-        <span>samples</span><span>reference</span><span>estimate ±95%</span><span>transient / residual</span>
+        <span>samples</span><span>{mode === "simulation" ? "environment reference" : "Rito + environment reference"}</span><span>estimate ±95%</span><span>injected source truth</span>
       </div>
       <AnalysisPlot points={run.points} />
       <footer>
         <span>GATED <b>{run.metrics.gatedBinCount}</b> / {run.metrics.totalBinCount}</span>
-        <span>RESIDUAL <b>{run.metrics.sourceIntervalResidualCounts.toFixed(1)}</b> counts</span>
+        <span>SOURCE-WINDOW SIGNED EXCESS <b>{run.metrics.sourceIntervalResidualCounts.toFixed(1)}</b> counts</span>
         <span>EXPOSURE <b>{(run.points[0]?.exposureSeconds ?? 0).toFixed(1)} s</b></span>
       </footer>
     </section>
