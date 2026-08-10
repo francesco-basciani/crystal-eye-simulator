@@ -162,6 +162,15 @@ flight measurements. Scheduler ranges and event amplitude remain
 `PROVISIONAL` engineering choices already within the approved demonstrator;
 they do not imply an astrophysical population or event rate.
 
+Following author feedback, the large central title is the unambiguous
+`Simulation Mode` or `Reference Replay`; seeded-observation detail stays in the
+eyebrow and orbit detail in the suffix. The inline plot was enlarged without changing the dashboard
+grid: 680×342 SVG view box, 82-unit left gutter, five rate ticks with compact
+`k` formatting, visible `-4/0/+4` innovation labels, 14-unit label text and a
+minimum 4% rate span rounded to 1/2/5×10^n tick steps. The panel now has a 340 px
+minimum height and scrolls within the existing right column. A larger dashboard
+quadrant architecture remains a separate author decision and is not implemented.
+
 ## Files produced or modified
 
 - `app/lib/kalman-scenarios.ts`: pure scenario, seeded observation and Kalman
@@ -182,15 +191,15 @@ Final implementation hashes before handoff:
 - `app/lib/kalman-scenarios.ts`:
   `e9ac3d5346e16e687f972de7691589f34580bd8707fc2cb78e6a9611628b7e92`;
 - `app/components/adaptive-background-panel.tsx`:
-  `adf1ff6863cd3c83acdf48a952b9bcce0299233b2aa7067afbd6a5728c398253`;
+  `fc1f091ea9bb6ec7a8d300ce7b83446a835527467d38f42b077885dbe620a9e9`;
 - `app/page.tsx`:
-  `eedb0b794feddf6ceb98a634b015eaff5867e30fc148b04375734c6ef94ea135`;
+  `6b7369687286dd41f37cd7cbba9ca4cd588f38a7ab712d3865435846e0304adf`;
 - `app/globals.css`:
-  `038c11fa1a3835fa9f227de711034107d143fd2d624a3fbf0209f65d4df33c08`;
+  `f160ad1eccc5e67c05798803a88f80127bfcd3150b6ad90e381d4b66e750d9d8`;
 - `tests/kalman-scenarios.test.ts`:
   `4bf2866c7ac8d00676646dc2ede543165af97ce22377bcc4ef81af17ad55c78d`;
 - `tests/dashboard-layout.test.ts`:
-  `60ae71ec55bc5b54a5c35b69d2b5a16ae58ac61a88ccc25af754ecf30d73ca15`.
+  `cbab49d32bf20f5707bf96848e2806b557706f64e70ad58eeb534917029e5732`.
 
 ## Agents and tools
 

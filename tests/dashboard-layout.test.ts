@@ -86,6 +86,8 @@ test("Reference and Simulation modes keep analysis inline and simulation explici
   assert.match(pageSource, /STOP SIMULATION/);
   assert.match(pageSource, /REFERENCE REPLAY/);
   assert.match(pageSource, /SIMULATION MODE/);
+  assert.match(pageSource, /\? "Simulation Mode" : "Reference Replay"/);
+  assert.match(pageSource, /SIMULATION MODE · SEEDED SYNTHETIC OBSERVATIONS/);
   assert.match(pageSource, /settings\.simulatorMode === "simulation"[\s\S]*?samplePoisson/);
   assert.match(pageSource, /nextAutomaticBurstBinRef/);
   assert.match(pageSource, /origin: "automatic"/);

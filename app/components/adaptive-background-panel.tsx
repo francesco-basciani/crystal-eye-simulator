@@ -17,13 +17,27 @@ export type AdaptiveAnalysisSample = Readonly<{
   observedCounts: number;
 }>;
 
-const WIDTH = 920;
-const LEFT = 48;
-const RIGHT = 12;
-const UPPER_TOP = 12;
-const UPPER_BOTTOM = 132;
-const LOWER_TOP = 163;
-const LOWER_BOTTOM = 210;
+const WIDTH = 680;
+const HEIGHT = 342;
+const LEFT = 82;
+const RIGHT = 18;
+const UPPER_TOP = 28;
+const UPPER_BOTTOM = 214;
+const LOWER_TOP = 258;
+const LOWER_BOTTOM = 314;
+
+function niceStep(rawStep: number) {
+  const magnitude = 10 ** Math.floor(Math.log10(Math.max(Number.EPSILON, rawStep)));
+  const normalized = rawStep / magnitude;
+  const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return multiplier * magnitude;
+}
+
+function formatRateTick(value: number) {
+  return Math.abs(value) >= 1000
+    ? `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}k`
+    : value.toFixed(0);
+}
 
 function linePath(
   points: readonly KalmanAnalysisPoint[],
@@ -61,9 +75,15 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
       ),
     ),
   );
-  const padding = Math.max(1, (maximumRate - minimumRate) * 0.08);
-  const yMinimum = Math.max(0, minimumRate - padding);
-  const yMaximum = maximumRate + padding;
+  const center = (maximumRate + minimumRate) / 2;
+  const minimumSpan = Math.max(10, center * 0.04);
+  const dataSpan = Math.max(minimumSpan, maximumRate - minimumRate);
+  const padding = dataSpan * 0.08;
+  const provisionalMinimum = Math.max(0, center - dataSpan / 2 - padding);
+  const provisionalMaximum = center + dataSpan / 2 + padding;
+  const tickStep = niceStep((provisionalMaximum - provisionalMinimum) / 4);
+  const yMinimum = Math.max(0, Math.floor(provisionalMinimum / tickStep) * tickStep);
+  const yMaximum = Math.ceil(provisionalMaximum / tickStep) * tickStep;
   const rateSpan = Math.max(1, yMaximum - yMinimum);
   const x = (_point: KalmanAnalysisPoint, index: number) =>
     LEFT + (index / Math.max(1, points.length - 1)) * plotWidth;
@@ -97,18 +117,18 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
   return (
     <svg
       className="kalman-plot adaptive-analysis-plot"
-      viewBox={`0 0 ${WIDTH} 226`}
+      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       role="img"
       aria-label="Observed samples, reference background, adaptive estimate and uncertainty, transient interval, residual, and normalized innovation"
     >
       <title>Adaptive background and transient analysis</title>
-      {[0, 0.5, 1].map((fraction) => {
+      {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
         const y = UPPER_TOP + fraction * (UPPER_BOTTOM - UPPER_TOP);
         return (
           <g key={fraction}>
             <line className="kalman-grid" x1={LEFT} x2={WIDTH - RIGHT} y1={y} y2={y} />
-            <text className="kalman-axis-label" x={LEFT - 7} y={y + 3} textAnchor="end">
-              {(yMaximum - fraction * rateSpan).toFixed(0)}
+            <text className="kalman-axis-label" x={LEFT - 12} y={y + 5} textAnchor="end">
+              {formatRateTick(yMaximum - fraction * rateSpan)}
             </text>
           </g>
         );
@@ -124,26 +144,23 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
           key={point.frameIndex}
           cx={x(point, index)}
           cy={yRate(point.observedRateCountsPerSecond)}
-          r={point.gated ? 2.8 : 1.2}
+          r={point.gated ? 5 : 2.4}
         />
       ))}
       {[-4, 0, 4].map((innovation) => (
-        <line
-          key={innovation}
-          className={innovation === 0 ? "kalman-zero" : "kalman-gate"}
-          x1={LEFT}
-          x2={WIDTH - RIGHT}
-          y1={yInnovation(innovation)}
-          y2={yInnovation(innovation)}
-        />
+        <g key={innovation}>
+          <line className={innovation === 0 ? "kalman-zero" : "kalman-gate"} x1={LEFT} x2={WIDTH - RIGHT} y1={yInnovation(innovation)} y2={yInnovation(innovation)} />
+          <text className="kalman-axis-label" x={LEFT - 12} y={yInnovation(innovation) + 5} textAnchor="end">{innovation > 0 ? `+${innovation}` : innovation}</text>
+        </g>
       ))}
       <path className="kalman-innovation-line" d={linePath(points, x, (point) => yInnovation(point.normalizedInnovation))} />
       {points.map((point, index) =>
-        point.gated ? <circle className="kalman-gated-point" key={`gate-${point.frameIndex}`} cx={x(point, index)} cy={yInnovation(point.normalizedInnovation)} r={3} /> : null,
+        point.gated ? <circle className="kalman-gated-point" key={`gate-${point.frameIndex}`} cx={x(point, index)} cy={yInnovation(point.normalizedInnovation)} r={5} /> : null,
       )}
-      <text className="kalman-axis-title" x={5} y={158}>NORMALIZED INNOVATION · ±4 GATE</text>
-      <text className="kalman-time-label" x={LEFT} y={224}>{(points[0]?.simulationTimeSeconds ?? 0).toFixed(1)} s</text>
-      <text className="kalman-time-label" x={WIDTH - RIGHT} y={224} textAnchor="end">{(points.at(-1)?.simulationTimeSeconds ?? 0).toFixed(1)} s simulation time</text>
+      <text className="kalman-axis-title" x={8} y={18}>RATE · COUNTS/S</text>
+      <text className="kalman-axis-title" x={8} y={248}>NORMALIZED INNOVATION · ±4 GATE</text>
+      <text className="kalman-time-label" x={LEFT} y={338}>{(points[0]?.simulationTimeSeconds ?? 0).toFixed(1)} s</text>
+      <text className="kalman-time-label" x={WIDTH - RIGHT} y={338} textAnchor="end">{(points.at(-1)?.simulationTimeSeconds ?? 0).toFixed(1)} s simulation time</text>
     </svg>
   );
 }

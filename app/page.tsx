@@ -5274,11 +5274,11 @@ export default function Home() {
                 : "REFERENCE MODE · RITO BACKGROUND REFERENCE"}
             </span>
             <h2>
-              {orbitScenarioMode === "canonical" ? "Earth · source reference replay" : "Earth · LEO reference override"}
+              {simulatorMode === "simulation" ? "Simulation Mode" : "Reference Replay"}
               <em>
                 {orbitScenarioMode === "canonical"
-                  ? ` ${telemetry.altitudeKm.toFixed(1)} km`
-                  : ` ${orbitAltitudeKm.toFixed(0)} km · ${orbitInclinationDeg.toFixed(0)}°`}
+                  ? ` CANONICAL ECI · ${telemetry.altitudeKm.toFixed(1)} km`
+                  : ` LEO OVERRIDE · ${orbitAltitudeKm.toFixed(0)} km · ${orbitInclinationDeg.toFixed(0)}°`}
               </em>
             </h2>
           </div>

@@ -83,7 +83,7 @@ button {
 }
 
 .adaptive-analysis-panel {
-  min-height: 276px;
+  min-height: 340px;
   display: grid;
   grid-template-rows: auto auto auto minmax(142px, 1fr) auto;
   overflow: hidden;
@@ -172,8 +172,18 @@ button {
 .adaptive-analysis-legend span:nth-child(4) { color: var(--yellow); }
 
 .adaptive-analysis-plot {
-  min-height: 142px;
+  min-height: 215px;
   padding: 0 5px;
+}
+
+.adaptive-analysis-plot .kalman-axis-label,
+.adaptive-analysis-plot .kalman-axis-title,
+.adaptive-analysis-plot .kalman-time-label {
+  font-size: 14px;
+}
+
+.adaptive-analysis-plot .kalman-axis-title {
+  font-size: 13px;
 }
 
 .adaptive-analysis-panel > footer {
