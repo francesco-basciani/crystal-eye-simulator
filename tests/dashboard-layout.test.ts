@@ -11,12 +11,12 @@ const viteConfig = readFileSync(
   new URL("../vite.config.ts", import.meta.url),
   "utf8",
 );
-const kalmanDialogSource = readFileSync(
-  new URL("../app/components/kalman-scenario-dialog.tsx", import.meta.url),
+const adaptiveAnalysisSource = readFileSync(
+  new URL("../app/components/adaptive-background-panel.tsx", import.meta.url),
   "utf8",
 );
 
-test("the photon light curve belongs to the right-hand Photon Stream panel", () => {
+test("adaptive analysis belongs to the right-hand Photon Stream panel", () => {
   const leftPanelStart = pageSource.indexOf(
     '<aside className="control-panel left-panel">',
   );
@@ -35,10 +35,7 @@ test("the photon light curve belongs to the right-hand Photon Stream panel", () 
     pageSource.slice(leftPanelStart, simulationStageStart),
     /<SignalChart data=\{samples\}/,
   );
-  assert.match(
-    pageSource.slice(rightPanelStart, rightPanelEnd),
-    /PHOTON STREAM[\s\S]*photon-stream-chart[\s\S]*<SignalChart data=\{samples\}/,
-  );
+  assert.match(pageSource.slice(rightPanelStart, rightPanelEnd), /PHOTON STREAM[\s\S]*<AdaptiveBackgroundPanel/);
 });
 
 test("the right-hand planar map preserves the configurator aspect and geometry", () => {
@@ -78,26 +75,26 @@ test("the vinext development overlay does not mask opaque script errors", () => 
   );
 });
 
-test("the Kalman analysis is launched from the live Photon Stream and keeps its warning visible", () => {
+test("Reference and Simulation modes keep analysis inline and simulation explicit", () => {
   const rightPanelStart = pageSource.indexOf(
     '<aside className="control-panel right-panel">',
   );
   const rightPanelEnd = pageSource.indexOf("</aside>", rightPanelStart);
   const rightPanel = pageSource.slice(rightPanelStart, rightPanelEnd);
-  assert.match(rightPanel, /KALMAN SCENARIOS · ASI BRIGHT GRB PRIMARY/);
-  assert.match(
-    rightPanel,
-    /Synthetic engineering demonstrator — physical calibration pending\./,
-  );
-  assert.match(pageSource, /liveSamples=\{kalmanLiveSamples\}/);
-  assert.match(
-    kalmanDialogSource,
-    /\[mode, setMode\] = useState<AnalysisMode>\([\s\S]*?"bright-grb-presentation-v1"/,
-  );
-  assert.match(kalmanDialogSource, /ASI · BRIGHT GRB/);
-  assert.match(kalmanDialogSource, /WEAK GRB · LIMITATIONS/);
-  assert.match(kalmanDialogSource, /CURRENT SIMULATOR \+ GRB/);
-  assert.match(kalmanDialogSource, /normalizedInnovation/);
-  assert.match(kalmanDialogSource, /sourceResidualRateCountsPerSecond/);
-  assert.match(styles, /\.kalman-dialog-backdrop\s*\{[\s\S]*?position:\s*fixed;/);
+  assert.match(rightPanel, /<AdaptiveBackgroundPanel/);
+  assert.match(pageSource, /START SIMULATION/);
+  assert.match(pageSource, /STOP SIMULATION/);
+  assert.match(pageSource, /REFERENCE REPLAY/);
+  assert.match(pageSource, /SIMULATION MODE/);
+  assert.match(pageSource, /settings\.simulatorMode === "simulation"[\s\S]*?samplePoisson/);
+  assert.match(pageSource, /nextAutomaticBurstBinRef/);
+  assert.match(pageSource, /origin: "automatic"/);
+  assert.match(pageSource, /disabled=\{simulatorMode !== "simulation"\}/);
+  assert.match(adaptiveAnalysisSource, /Adaptive Background Analysis/);
+  assert.match(adaptiveAnalysisSource, /normalizedInnovation/);
+  assert.match(adaptiveAnalysisSource, /sourceResidualRateCountsPerSecond/);
+  assert.match(adaptiveAnalysisSource, /KALMAN_DEMONSTRATOR_LABEL/);
+  assert.doesNotMatch(pageSource, /KALMAN SCENARIOS|ASI/);
+  assert.doesNotMatch(adaptiveAnalysisSource, /KALMAN SCENARIOS|ASI/);
+  assert.match(styles, /\.adaptive-analysis-panel\s*\{/);
 });

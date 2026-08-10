@@ -25,9 +25,10 @@ import * as THREE from "three";
 import { Body, Illumination } from "astronomy-engine";
 import { AppNav } from "./components/app-nav";
 import {
-  KalmanScenarioDialog,
-  type KalmanLiveSample,
-} from "./components/kalman-scenario-dialog";
+  AdaptiveBackgroundPanel,
+  type AdaptiveAnalysisSample,
+} from "./components/adaptive-background-panel";
+import { createSeededRandom, samplePoisson } from "./lib/kalman-scenarios";
 import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
 import {
   ECI_EPHEMERIS_INITIAL_SAMPLE,
@@ -143,6 +144,7 @@ type BurstEvent = {
   decDeg: number;
   ageTicks: number;
   ticksRemaining: number;
+  origin: "manual" | "automatic";
 };
 
 type TestBurstDraft = {
@@ -155,6 +157,9 @@ type TestBurstDraft = {
 
 type CameraMode = "orbit" | "satellite";
 type OrbitScenarioMode = "canonical" | "parametric";
+type SimulatorMode = "reference" | "simulation";
+
+const DEFAULT_SIMULATION_SEED = 0x4345_1000;
 
 function createBaselineSamples(background: number, count = 80): SignalSample[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -820,6 +825,7 @@ function formatTime(seconds: number) {
 function GlobeScene({
   altitude,
   scenarioMode,
+  simulatorMode,
   paused,
   simulatedTimestampMs,
   grbActive,
@@ -847,6 +853,7 @@ function GlobeScene({
 }: {
   altitude: number;
   scenarioMode: OrbitScenarioMode;
+  simulatorMode: SimulatorMode;
   paused: boolean;
   simulatedTimestampMs: number;
   grbActive: boolean;
@@ -1716,7 +1723,14 @@ function GlobeScene({
   return (
     <div className="globe-scene" ref={mountRef} aria-label="Three-dimensional orbital simulation">
       <div className="scene-hud scene-hud-top">
-        <span className="hud-tag"><CircleDot size={12} /> {scenarioMode === "canonical" ? "CANONICAL ECI REPLAY" : "PARAMETRIC SATELLITE SCENARIO"}</span>
+        <span className="hud-tag">
+          <CircleDot size={12} />
+          {simulatorMode === "simulation"
+            ? "SIMULATION MODE"
+            : scenarioMode === "canonical"
+              ? "REFERENCE REPLAY"
+              : "REFERENCE PARAMETRIC REPLAY"}
+        </span>
         <span>{altitude.toFixed(1)} km</span>
       </div>
       <div className="camera-modes" aria-label="Camera mode">
@@ -1775,121 +1789,6 @@ function GlobeScene({
       </div>
     </div>
   );
-}
-
-function SignalChart({ data }: { data: Sample[] }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    const ratio = Math.min(window.devicePixelRatio, 2);
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.round(rect.width * ratio));
-    canvas.height = Math.max(1, Math.round(rect.height * ratio));
-    context.scale(ratio, ratio);
-    const width = rect.width;
-    const height = rect.height;
-    context.clearRect(0, 0, width, height);
-
-    context.strokeStyle = "rgba(126, 170, 194, 0.12)";
-    context.lineWidth = 1;
-    for (let row = 1; row < 4; row += 1) {
-      const y = (height / 4) * row;
-      context.beginPath();
-      context.moveTo(0, y);
-      context.lineTo(width, y);
-      context.stroke();
-    }
-
-    const max = Math.max(520, ...data.map((point) => point.observed)) * 1.08;
-    const drawSeries = (
-      getValue: (point: Sample) => number,
-      color: string,
-      lineWidth: number,
-      fill?: string,
-    ) => {
-      context.beginPath();
-      data.forEach((point, index) => {
-        const x = (index / Math.max(1, data.length - 1)) * width;
-        const y = height - (getValue(point) / max) * (height - 8) - 4;
-        if (index === 0) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      });
-      if (fill) {
-        context.lineTo(width, height);
-        context.lineTo(0, height);
-        context.closePath();
-        context.fillStyle = fill;
-        context.fill();
-        context.beginPath();
-        data.forEach((point, index) => {
-          const x = (index / Math.max(1, data.length - 1)) * width;
-          const y = height - (getValue(point) / max) * (height - 8) - 4;
-          if (index === 0) context.moveTo(x, y);
-          else context.lineTo(x, y);
-        });
-      }
-      context.strokeStyle = color;
-      context.lineWidth = lineWidth;
-      context.stroke();
-    };
-
-    drawSeries(
-      (point) => point.observed,
-      "#62d9ff",
-      1.35,
-      "rgba(52, 181, 223, 0.07)",
-    );
-    drawSeries(
-      (point) => point.background,
-      "rgba(190, 209, 217, 0.88)",
-      1.15,
-    );
-
-    let index = 0;
-    while (index < data.length) {
-      while (index < data.length && data[index].source <= 0) index += 1;
-      const start = index;
-      while (index < data.length && data[index].source > 0) index += 1;
-      const end = index - 1;
-      if (start > end) continue;
-
-      context.beginPath();
-      for (let pointIndex = start; pointIndex <= end; pointIndex += 1) {
-        const point = data[pointIndex];
-        const x = (pointIndex / Math.max(1, data.length - 1)) * width;
-        const y = height - (point.observed / max) * (height - 8) - 4;
-        if (pointIndex === start) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      }
-      for (let pointIndex = end; pointIndex >= start; pointIndex -= 1) {
-        const point = data[pointIndex];
-        const x = (pointIndex / Math.max(1, data.length - 1)) * width;
-        const y = height - (point.background / max) * (height - 8) - 4;
-        context.lineTo(x, y);
-      }
-      context.closePath();
-      context.fillStyle = "rgba(255, 200, 87, 0.18)";
-      context.fill();
-
-      context.beginPath();
-      for (let pointIndex = start; pointIndex <= end; pointIndex += 1) {
-        const point = data[pointIndex];
-        const x = (pointIndex / Math.max(1, data.length - 1)) * width;
-        const y = height - (point.observed / max) * (height - 8) - 4;
-        if (pointIndex === start) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      }
-      context.strokeStyle = "#ffc857";
-      context.lineWidth = 2;
-      context.stroke();
-    }
-  }, [data]);
-
-  return <canvas ref={canvasRef} className="signal-canvas" aria-label="Photon count time series" />;
 }
 
 function HistoryDialog({
@@ -3983,7 +3882,9 @@ export default function Home() {
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [detectorExpanded, setDetectorExpanded] = useState(false);
   const [historyView, setHistoryView] = useState<"events" | null>(null);
-  const [kalmanView, setKalmanView] = useState(false);
+  const [simulatorMode, setSimulatorMode] =
+    useState<SimulatorMode>("reference");
+  const [simulationSeed, setSimulationSeed] = useState(DEFAULT_SIMULATION_SEED);
   const [testBurstDraft, setTestBurstDraft] = useState<TestBurstDraft>({
     raDeg: 0,
     decDeg: 0,
@@ -4025,6 +3926,11 @@ export default function Home() {
   const persistenceFailedRef = useRef(false);
   const activeBurstsRef = useRef<BurstEvent[]>([]);
   const nextBurstIdRef = useRef(1);
+  const observationRandomRef = useRef(createSeededRandom(DEFAULT_SIMULATION_SEED));
+  const burstRandomRef = useRef(
+    createSeededRandom(DEFAULT_SIMULATION_SEED ^ 0xa5a5_5a5a),
+  );
+  const nextAutomaticBurstBinRef = useRef(15);
   const totalRef = useRef(0);
   const capturedRef = useRef(0);
   const pixelConfigurationRef = useRef(DEFAULT_PIXEL_CONFIGURATION);
@@ -4039,6 +3945,8 @@ export default function Home() {
     orbitInclinationDeg,
     mountX,
     mountZ,
+    simulatorMode,
+    simulationSeed,
   });
 
   useEffect(() => {
@@ -4211,6 +4119,8 @@ export default function Home() {
       orbitInclinationDeg,
       mountX,
       mountZ,
+      simulatorMode,
+      simulationSeed,
     };
   }, [
     speed,
@@ -4221,6 +4131,8 @@ export default function Home() {
     orbitInclinationDeg,
     mountX,
     mountZ,
+    simulatorMode,
+    simulationSeed,
   ]);
 
   useEffect(() => {
@@ -4315,15 +4227,14 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!detectorExpanded && !historyView && !kalmanView) return;
+    if (!detectorExpanded && !historyView) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setDetectorExpanded(false);
       if (event.key === "Escape") setHistoryView(null);
-      if (event.key === "Escape") setKalmanView(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [detectorExpanded, historyView, kalmanView]);
+  }, [detectorExpanded, historyView]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -4394,6 +4305,88 @@ export default function Home() {
         mountedMoonNoise,
         mountedEarthAlbedoNoise,
       );
+      if (
+        settings.simulatorMode === "simulation" &&
+        photonBinRef.current >= nextAutomaticBurstBinRef.current
+      ) {
+        const random = burstRandomRef.current;
+        const configuration = pixelConfigurationRef.current;
+        const configuredNormals = getConfiguredPixelNormals(configuration);
+        const configuredSphereSlots = getConfiguredPixelSphereSlots(configuration);
+        const halfFovCosine = Math.cos(
+          THREE.MathUtils.degToRad(
+            getMountEffectiveFov(settings.mountX, settings.mountZ) / 2,
+          ),
+        );
+        const visibleTargets = configuration.pixels.filter((configuredPixel) => {
+          const normal = configuredNormals[configuredPixel.pixelId];
+          return (
+            normal[1] >= halfFovCosine &&
+            getMountSkyVisibility(
+              configuredSphereSlots[configuredPixel.pixelId],
+              settings.mountX,
+              settings.mountZ,
+            ) >= 0.12
+          );
+        });
+        const targetPixel =
+          visibleTargets[Math.floor(random() * visibleTargets.length)]?.pixelId ?? 0;
+        const footprintCount = 4 + Math.floor(random() * 25);
+        const intensity = 72 + random() * 28;
+        const durationSeconds = 1.2 + random() * 4;
+        const transmission =
+          Math.max(0, configuredNormals[targetPixel][1]) ** 2 *
+          getMountSkyVisibility(
+            configuredSphereSlots[targetPixel],
+            settings.mountX,
+            settings.mountZ,
+          );
+        const sourceDirection = new THREE.Vector3()
+          .fromArray(configuredNormals[targetPixel])
+          .applyQuaternion(
+            new THREE.Quaternion().setFromUnitVectors(
+              new THREE.Vector3(0, 1, 0),
+              new THREE.Vector3().fromArray(celestial.satelliteDirection),
+            ),
+          )
+          .normalize();
+        const coordinates = sceneDirectionToEquatorial(
+          sourceDirection.toArray() as [number, number, number],
+        );
+        const burstId = nextBurstIdRef.current;
+        nextBurstIdRef.current += 1;
+        const pixelIds = getBurstFootprint(
+          configuration,
+          targetPixel,
+          footprintCount,
+        );
+        activeBurstsRef.current = [
+          ...activeBurstsRef.current,
+          {
+            id: burstId,
+            pixelId: targetPixel,
+            pixelIds,
+            transmission,
+            intensity,
+            raDeg: coordinates.raDeg,
+            decDeg: coordinates.decDeg,
+            ageTicks: 0,
+            ticksRemaining: Math.max(1, Math.round(durationSeconds / 0.2)),
+            origin: "automatic",
+          },
+        ];
+        setEventLog((current) => [
+          ...current,
+          {
+            time: `T+${formatTime(elapsedRef.current).slice(3)}`,
+            utc: celestial.date.toISOString(),
+            text: `Automatic synthetic GRB #${burstId} · seed ${settings.simulationSeed} · ${intensity.toFixed(0)}% · ${durationSeconds.toFixed(1)} s · ${pixelIds.length} px`,
+            kind: "grb",
+          },
+        ]);
+        nextAutomaticBurstBinRef.current =
+          photonBinRef.current + 10 + Math.floor(random() * 16);
+      }
       const activeBursts = activeBurstsRef.current.filter(
         (burst) => burst.ticksRemaining > 0,
       );
@@ -4412,7 +4405,11 @@ export default function Home() {
           0,
         ),
       );
-      const observed = background + source;
+      const expectedCounts = background + source;
+      const observed =
+        settings.simulatorMode === "simulation"
+          ? samplePoisson(expectedCounts, observationRandomRef.current)
+          : expectedCounts;
       totalRef.current += observed;
       capturedRef.current += source;
       const currentPixelConfiguration = pixelConfigurationRef.current;
@@ -4597,6 +4594,7 @@ export default function Home() {
     raDeg,
     decDeg,
     transmission,
+    origin = "manual",
   }: {
     targetPixel: number;
     footprintCount: number;
@@ -4605,6 +4603,7 @@ export default function Home() {
     raDeg: number;
     decDeg: number;
     transmission: number;
+    origin?: "manual" | "automatic";
   }) => {
     const pixelIndices = getBurstFootprint(
       pixelConfigurationRef.current,
@@ -4640,6 +4639,7 @@ export default function Home() {
         decDeg,
         ageTicks: 0,
         ticksRemaining: Math.max(1, Math.round(durationSeconds / 0.2)),
+        origin,
       },
     ];
     setEventLog((current) => [
@@ -4656,6 +4656,8 @@ export default function Home() {
   }, [selectPixel]);
 
   const injectGRB = useCallback(() => {
+    if (settingsRef.current.simulatorMode !== "simulation") return;
+    const random = burstRandomRef.current;
     const configuration = pixelConfigurationRef.current;
     const configuredNormals = getConfiguredPixelNormals(configuration);
     const configuredSphereSlots = getConfiguredPixelSphereSlots(configuration);
@@ -4679,10 +4681,10 @@ export default function Home() {
       );
     });
     const targetPixel =
-      visibleTargets[Math.floor(Math.random() * visibleTargets.length)]?.pixelId ??
+      visibleTargets[Math.floor(random() * visibleTargets.length)]?.pixelId ??
       0;
-    const footprintCount = 4 + Math.floor(Math.random() * 25);
-    const intensity = 72 + Math.random() * 28;
+    const footprintCount = 4 + Math.floor(random() * 25);
+    const intensity = 72 + random() * 28;
     const boresight = satelliteDirectionRef.current;
     const sourceDirection = new THREE.Vector3()
       .fromArray(configuredNormals[targetPixel])
@@ -4826,6 +4828,7 @@ export default function Home() {
     nextBurstIdRef.current = 1;
     photonBinRef.current = 0;
     photonRunIdRef.current = createPhotonRunId();
+    settingsRef.current.epochMs = ephemeris.startMs;
     setEpochMs(ephemeris.startMs);
     setEphemerisError(null);
     selectPixel(43);
@@ -4947,6 +4950,46 @@ export default function Home() {
     selectPixel,
   ]);
 
+  const startSimulationMode = useCallback(() => {
+    resetSimulation();
+    observationRandomRef.current = createSeededRandom(simulationSeed);
+    burstRandomRef.current = createSeededRandom(simulationSeed ^ 0xa5a5_5a5a);
+    nextAutomaticBurstBinRef.current = 15;
+    settingsRef.current.simulatorMode = "simulation";
+    settingsRef.current.simulationSeed = simulationSeed;
+    settingsRef.current.paused = false;
+    setPaused(false);
+    setSimulatorMode("simulation");
+    setEventLog((current) => [
+      ...current,
+      {
+        time: "T+00:00",
+        utc: new Date(ECI_EPHEMERIS_START_MS).toISOString(),
+        text: `Simulation Mode started · deterministic seed ${simulationSeed} · automatic synthetic GRBs enabled`,
+        kind: "system",
+      },
+    ]);
+  }, [resetSimulation, simulationSeed]);
+
+  const stopSimulationMode = useCallback(() => {
+    activeBurstsRef.current = activeBurstsRef.current.filter(
+      (burst) => burst.origin !== "automatic",
+    );
+    settingsRef.current.simulatorMode = "reference";
+    setSimulatorMode("reference");
+    setEventLog((current) => [
+      ...current,
+      {
+        time: `T+${formatTime(elapsedRef.current).slice(3)}`,
+        utc: new Date(
+          settingsRef.current.epochMs + elapsedRef.current * 1000,
+        ).toISOString(),
+        text: "Reference Mode restored · automatic synthetic GRBs disabled",
+        kind: "system",
+      },
+    ]);
+  }, []);
+
   const effectiveMountFov = useMemo(() => {
     return getMountEffectiveFov(mountX, mountZ);
   }, [mountX, mountZ]);
@@ -4954,7 +4997,7 @@ export default function Home() {
     telemetry.sunSeparation <= effectiveMountFov / 2 && telemetry.sunNoise > 0.1;
   const mountedMoonInFov =
     telemetry.moonSeparation <= effectiveMountFov / 2 && telemetry.moonNoise > 0.1;
-  const kalmanLiveSamples = useMemo<readonly KalmanLiveSample[]>(
+  const adaptiveAnalysisSamples = useMemo<readonly AdaptiveAnalysisSample[]>(
     () =>
       samples.map((sample) => ({
         frameIndex: sample.frameIndex,
@@ -4962,6 +5005,7 @@ export default function Home() {
         exposureSeconds: sample.exposureSeconds,
         expectedBackgroundCounts: sample.background,
         expectedSourceCounts: sample.source,
+        observedCounts: sample.observed,
       })),
     [samples],
   );
@@ -4998,6 +5042,17 @@ export default function Home() {
         </div>
         <AppNav current="/" />
         <div className="mission-status">
+          <button
+            type="button"
+            className={`simulation-mode-button ${simulatorMode}`}
+            onClick={
+              simulatorMode === "simulation"
+                ? stopSimulationMode
+                : startSimulationMode
+            }
+          >
+            {simulatorMode === "simulation" ? "STOP SIMULATION" : "START SIMULATION"}
+          </button>
           <button
             type="button"
             className="placement-settings-button"
@@ -5186,6 +5241,7 @@ export default function Home() {
           <GlobeScene
             altitude={telemetry.altitudeKm}
             scenarioMode={orbitScenarioMode}
+            simulatorMode={simulatorMode}
             paused={paused}
             simulatedTimestampMs={Date.parse(telemetry.simulatedDate)}
             grbActive={telemetry.grbActive}
@@ -5213,12 +5269,12 @@ export default function Home() {
           />
           <div className="stage-title">
             <span className="eyebrow">
-              {orbitScenarioMode === "canonical"
-                ? "CANONICAL ECI REPLAY"
-                : "PARAMETRIC SATELLITE SCENARIO · ECI CELESTIAL TIMELINE"}
+              {simulatorMode === "simulation"
+                ? "SIMULATION MODE · SEEDED SYNTHETIC OBSERVATIONS"
+                : "REFERENCE MODE · RITO BACKGROUND REFERENCE"}
             </span>
             <h2>
-              {orbitScenarioMode === "canonical" ? "Earth · source satellite replay" : "Earth · LEO override"}
+              {orbitScenarioMode === "canonical" ? "Earth · source reference replay" : "Earth · LEO reference override"}
               <em>
                 {orbitScenarioMode === "canonical"
                   ? ` ${telemetry.altitudeKm.toFixed(1)} km`
@@ -5250,28 +5306,12 @@ export default function Home() {
             </span>
           </a>
 
-          <div className="chart-card photon-stream-chart">
-            <div className="chart-header">
-              <div>
-                <small>LIGHT CURVE</small>
-                <strong>Observed counts = background + GRB excess</strong>
-              </div>
-              <span>0.2 s bins · deterministic</span>
-            </div>
-            <SignalChart data={samples} />
-          </div>
-
-          <button
-            type="button"
-            className="kalman-analysis-launch"
-            onClick={() => setKalmanView(true)}
-          >
-            <span>
-              <small>KALMAN SCENARIOS · ASI BRIGHT GRB PRIMARY</small>
-              <strong>Synthetic engineering demonstrator — physical calibration pending.</strong>
-            </span>
-            <ChevronRight size={14} />
-          </button>
+          <AdaptiveBackgroundPanel
+            samples={adaptiveAnalysisSamples}
+            mode={simulatorMode}
+            seed={simulationSeed}
+            onSeedChange={setSimulationSeed}
+          />
 
           <div
             className={`persistence-status ${persistenceStatus}`}
@@ -5293,7 +5333,7 @@ export default function Home() {
             }`}
             role={backgroundProfileError ? "alert" : "status"}
           >
-            <small>BACKGROUND PROFILE</small>
+            <small>RITO BACKGROUND REFERENCE</small>
             <strong>
               {backgroundProfileError
                 ? `UNAVAILABLE · ${backgroundProfileError}`
@@ -5469,7 +5509,17 @@ export default function Home() {
             </div>
 
             <div className="burst-inline-actions">
-              <button type="button" className="random-grb-mini" onClick={injectGRB}>
+              <button
+                type="button"
+                className="random-grb-mini"
+                onClick={injectGRB}
+                disabled={simulatorMode !== "simulation"}
+                title={
+                  simulatorMode === "simulation"
+                    ? "Add a seeded random GRB"
+                    : "Random GRBs are available only in Simulation Mode"
+                }
+              >
                 <Sparkles size={12} /> RANDOM GRB
               </button>
               <button type="submit" className="inject-test-inline">
@@ -5484,13 +5534,6 @@ export default function Home() {
         <HistoryDialog
           events={eventLog}
           onClose={() => setHistoryView(null)}
-        />
-      )}
-
-      {kalmanView && (
-        <KalmanScenarioDialog
-          liveSamples={kalmanLiveSamples}
-          onClose={() => setKalmanView(false)}
         />
       )}
 

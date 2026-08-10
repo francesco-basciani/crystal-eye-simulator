@@ -1,16 +1,16 @@
-# CE-SIM-20260810 — Reproducible Kalman scenarios demonstrator
+# CE-SIM-20260810 — Reproducible adaptive-background demonstrator
 
 ## Task, authorization, and boundary
 
 - **Date:** 2026-08-10 (Europe/Rome).
-- **Objective:** add an ASI-presentation demonstrator with versioned scenarios,
+- **Objective:** add a presentation demonstrator with versioned scenarios,
   seeded Poisson observations, an aggregate background Kalman estimator, plots,
   provisional metrics, and the same analysis path for presets and the current
   simulator GRB stream.
 - **Author authorization:** explicit on 2026-08-10 for the recommended minimal
   demonstrator, subsequently clarified so that GRB scenarios are an alternative
   to Earth occultation. A follow-up quantitative sanity check required a
-  separate bright 100%-amplitude presentation case as the initial ASI display;
+  separate bright 100%-amplitude presentation case;
   the weak GRB remains visible as a limitations case and Crab as a secondary
   benchmark.
 - **Pre-change checkpoint:** annotated tag
@@ -53,7 +53,7 @@ Scenario schema version: `1`.
 
 | Scenario ID | Intended use | Parameters | Status |
 |---|---|---|---|
-| `bright-grb-presentation-v1` | initial ASI presentation display | 60 s, 0.2 s exposure and simulation step, `5711.5784 counts/s` background, `675 counts/s` peak FRED source at 20 s, 1.1 s decay, 4 s bounded interval | `PROVISIONAL`; synthetic 100%-amplitude simulator case |
+| `bright-grb-presentation-v1` | presentation sanity case | 60 s, 0.2 s exposure and simulation step, `5711.5784 counts/s` background, `675 counts/s` peak FRED source at 20 s, 1.1 s decay, 4 s bounded interval | `PROVISIONAL`; synthetic 100%-amplitude simulator case |
 | `weak-grb-v1` | limitations/sub-threshold-per-bin demonstration | 60 s, 0.2 s exposure and simulation step, `5711.5784 counts/s` background, `202.5 counts/s` peak FRED source at 20 s, 1.1 s decay, 4 s bounded interval | `PROVISIONAL` |
 | `quiet-background-v1` | background-only control | 60 s, 0.2 s exposure/step, `5711.5784 counts/s`, no source | `PROVISIONAL` |
 | `crab-emergence-15px-v1` | secondary Earth-occultation benchmark | 100 s, 0.2 s exposure/step, `496 counts/s` baseline, `13.3 counts/s` source after a 1 s smooth transition | `PROVISIONAL`; domain validation pending |
@@ -130,35 +130,67 @@ residual only where the synthetic/configured source reference is positive.
 Metrics are computed against synthetic or simulator-reference expected values.
 They do not measure accuracy against Crystal Eye hardware or flight data.
 
+## Approved dashboard-mode revision
+
+The author subsequently approved replacing the standalone full-screen scenario
+dialog with an inline `Adaptive Background Analysis` panel so the three-
+dimensional orbit remains visible. The dashboard contract is now:
+
+- **Reference Mode** is the default. It retains the Rito `pixbkg.txt` background
+  reference rates and the existing additive Sun, Moon and Earth terms. No
+  automatic or random burst is created in this mode; the configured manual test
+  burst remains available.
+- **Simulation Mode** starts only through the prominent top-bar control and
+  resets the ECI replay to its origin. It samples photon counts with a seeded
+  Poisson generator and schedules automatic synthetic GRBs. The editable run
+  seed is locked while the run is active.
+- Observation and automatic-event random streams are distinct xorshift32
+  streams derived from the same run seed. The first automatic event occurs at
+  bin 15. Further events are separated by a seeded 10–25 bins; duration is
+  seeded in 1.2–5.2 s, footprint in 4–28 pixels and intensity in 72–100%.
+  Intervals may overlap and all active source contributions add to each other
+  and to all environmental terms. This is a presentation-compressed synthetic
+  cadence, not a realistic or validated astrophysical occurrence rate.
+- Stopping restores Reference Mode and removes only automatic events. Existing
+  manual events, if any, are not silently discarded.
+- The 3D HUD reads `REFERENCE REPLAY` (or `REFERENCE PARAMETRIC REPLAY`) in
+  Reference Mode and `SIMULATION MODE` while active.
+
+The Rito input is described only as a background-rate reference. Neither its
+deterministic replay nor the synthetic Poisson samples are presented as real
+flight measurements. Scheduler ranges and event amplitude remain
+`PROVISIONAL` engineering choices already within the approved demonstrator;
+they do not imply an astrophysical population or event rate.
+
 ## Files produced or modified
 
 - `app/lib/kalman-scenarios.ts`: pure scenario, seeded observation and Kalman
   analysis core.
-- `app/components/kalman-scenario-dialog.tsx`: shared preset/live controls,
-  plots, metrics and permanent warning.
-- `app/page.tsx`: stable live analysis frames, current-source adapter, launcher
-  and dialog integration.
-- `app/globals.css`: launcher, responsive dialog and SVG plot styling.
+- `app/components/adaptive-background-panel.tsx`: inline live plot, compact
+  metrics, seed control and permanent warning.
+- `app/page.tsx`: explicit modes, deterministic stochastic streams, automatic
+  GRB scheduler, additive current-stream adapter and mode-aware 3D labels.
+- `app/globals.css`: prominent simulation control, inline panel and SVG styling.
 - `tests/kalman-scenarios.test.ts`: replay, Poisson, scenario, live-time,
   gating, metric and covariance tests.
-- `tests/dashboard-layout.test.ts`: launcher, label, live adapter and plot
-  integration assertions.
+- `tests/dashboard-layout.test.ts`: inline placement, mode contract, naming,
+  seeded observation and automatic-event integration assertions.
 - `docs/provenance/CE-SIM-20260810-kalman-scenarios.md`: this record.
 
 Final implementation hashes before handoff:
 
 - `app/lib/kalman-scenarios.ts`:
-  `c6b2231e3d9c0e15be2845c59af7ed58a142d878f3fa14f0888b389982244190`;
-- `app/components/kalman-scenario-dialog.tsx`:
-  `d8fae131d8d3b528b89e0719e5d48949a2c8ee5b1024d9da844a94a4bec0050c`;
+  `e9ac3d5346e16e687f972de7691589f34580bd8707fc2cb78e6a9611628b7e92`;
+- `app/components/adaptive-background-panel.tsx`:
+  `adf1ff6863cd3c83acdf48a952b9bcce0299233b2aa7067afbd6a5728c398253`;
 - `app/page.tsx`:
-  `9b741622721d69aa6d57aef126f730439eb84d734d2a04677ba216e623075f3a`;
+  `eedb0b794feddf6ceb98a634b015eaff5867e30fc148b04375734c6ef94ea135`;
 - `app/globals.css`:
-  `d3654e19a1b336c5ebd9d875e4005ac2c93fade80b68fbc088b2152b03bd40e3`;
+  `038c11fa1a3835fa9f227de711034107d143fd2d624a3fbf0209f65d4df33c08`;
 - `tests/kalman-scenarios.test.ts`:
   `4bf2866c7ac8d00676646dc2ede543165af97ce22377bcc4ef81af17ad55c78d`;
 - `tests/dashboard-layout.test.ts`:
-  `637d6580ee016ec9f15c33fa13ea3e98fab8dd306ac7c2bc0ae79e43f9432556`.
+  `60ae71ec55bc5b54a5c35b69d2b5a16ae58ac61a88ccc25af754ecf30d73ca15`.
 
 ## Agents and tools
 
@@ -182,7 +214,7 @@ PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/n
 # PASS: 43 tests, 43 passed, 0 failed
 
 PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" \
-  ./node_modules/.bin/tsc --noEmit --allowImportingTsExtensions
+  ./node_modules/.bin/tsc --noEmit --allowImportingTsExtensions --incremental false
 # PASS
 
 PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" npm run lint
@@ -192,15 +224,16 @@ PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/n
 # PASS: compiled, TypeScript checked, 5/5 static pages generated
 
 curl --fail --silent http://localhost:3000/
-# PASS: rendered launcher contains the ASI bright-GRB label and permanent warning
+# Superseded by the integrated-dashboard revision; browser QA pending below.
 
 git diff --check
 # PASS
 ```
 
-The in-app browser runtime exposed no available browser instance, so interactive
-visual QA could not be completed in that surface. This is an explicit remaining
-verification item rather than an inferred visual pass.
+The local development server started successfully on port 3001, but the browser
+runtime reported an empty browser list. Interactive 1280×720 visual QA therefore
+could not be completed. The compact right-panel dimensions and responsive CSS
+were reviewed statically, but that is not treated as a visual pass.
 
 ## Status and open gates
 

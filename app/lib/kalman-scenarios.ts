@@ -124,7 +124,7 @@ export const KALMAN_SCENARIOS: readonly KalmanScenarioSpec[] = Object.freeze([
     id: "bright-grb-presentation-v1",
     title: "Bright GRB · presentation case",
     description:
-      "Primary ASI display: the current simulator's synthetic 100% test amplitude over seeded aggregate count noise.",
+      "Presentation display: the current simulator's synthetic 100% test amplitude over seeded aggregate count noise.",
     status: "PROVISIONAL",
     exposureSeconds: 0.2,
     simulationStepSeconds: 0.2,
@@ -146,7 +146,7 @@ export const KALMAN_SCENARIOS: readonly KalmanScenarioSpec[] = Object.freeze([
     id: "weak-grb-v1",
     title: "Weak GRB over aggregate background",
     description:
-      "Primary ASI preset: a 30%-of-current-test-amplitude FRED transient over seeded aggregate count noise.",
+      "Limitation case: a 30%-of-current-test-amplitude FRED transient over seeded aggregate count noise.",
     status: "PROVISIONAL",
     exposureSeconds: 0.2,
     simulationStepSeconds: 0.2,
