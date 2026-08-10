@@ -158,6 +158,7 @@ type TestBurstDraft = {
 type CameraMode = "orbit" | "satellite";
 type OrbitScenarioMode = "canonical" | "parametric";
 type SimulatorMode = "reference" | "simulation";
+type WorkspaceFocus = "analysis" | "detector" | null;
 
 const DEFAULT_SIMULATION_SEED = 0x4345_1000;
 
@@ -3880,7 +3881,9 @@ export default function Home() {
   const [mountZ, setMountZ] = useState(0);
   const [epochMs, setEpochMs] = useState(ECI_EPHEMERIS_START_MS);
   const [selectedPixel, setSelectedPixel] = useState(43);
-  const [detectorExpanded, setDetectorExpanded] = useState(false);
+  const [workspaceFocus, setWorkspaceFocus] = useState<WorkspaceFocus>(null);
+  const [leftColumnVisible, setLeftColumnVisible] = useState(true);
+  const [rightColumnVisible, setRightColumnVisible] = useState(true);
   const [historyView, setHistoryView] = useState<"events" | null>(null);
   const [simulatorMode, setSimulatorMode] =
     useState<SimulatorMode>("reference");
@@ -4227,14 +4230,14 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!detectorExpanded && !historyView) return;
+    if (!workspaceFocus && !historyView) return;
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setDetectorExpanded(false);
+      if (event.key === "Escape") setWorkspaceFocus(null);
       if (event.key === "Escape") setHistoryView(null);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [detectorExpanded, historyView]);
+  }, [workspaceFocus, historyView]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -5174,8 +5177,41 @@ export default function Home() {
         />
       )}
 
-      <section className="workspace">
-        <aside className="control-panel left-panel">
+      <section
+        className={`workspace ${leftColumnVisible ? "" : "left-column-hidden"} ${
+          rightColumnVisible ? "" : "right-column-hidden"
+        } ${workspaceFocus ? `split-focus focus-${workspaceFocus}` : ""}`}
+      >
+        <div className="workspace-view-controls" aria-label="Dashboard view controls">
+          {workspaceFocus ? (
+            <button type="button" className="restore-dashboard" onClick={() => setWorkspaceFocus(null)}>
+              RESTORE DASHBOARD
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                aria-pressed={leftColumnVisible}
+                onClick={() => setLeftColumnVisible((visible) => !visible)}
+              >
+                {leftColumnVisible ? "HIDE LEFT" : "SHOW LEFT"}
+              </button>
+              <button
+                type="button"
+                aria-pressed={rightColumnVisible}
+                onClick={() => setRightColumnVisible((visible) => !visible)}
+              >
+                {rightColumnVisible ? "HIDE RIGHT" : "SHOW RIGHT"}
+              </button>
+            </>
+          )}
+        </div>
+
+        <aside
+          className="control-panel left-panel"
+          aria-hidden={!leftColumnVisible || workspaceFocus !== null}
+          inert={!leftColumnVisible || workspaceFocus !== null}
+        >
           <div className="left-sensor-slot">
             <SensorView
               satelliteDirection={telemetry.satelliteDirection}
@@ -5292,7 +5328,11 @@ export default function Home() {
           </div>
         </section>
 
-        <aside className="control-panel right-panel">
+        <aside
+          className="control-panel right-panel"
+          aria-hidden={workspaceFocus ? false : !rightColumnVisible}
+          inert={!workspaceFocus && !rightColumnVisible}
+        >
           <a
             className="panel-heading history-launch"
             href={`${PUBLIC_BASE_PATH}/photon-history/`}
@@ -5311,6 +5351,7 @@ export default function Home() {
             mode={simulatorMode}
             seed={simulationSeed}
             onSeedChange={setSimulationSeed}
+            onExpand={() => setWorkspaceFocus("analysis")}
           />
 
           <div
@@ -5352,9 +5393,9 @@ export default function Home() {
               <button
                 type="button"
                 className="detector-expand-button"
-                onClick={() => setDetectorExpanded(true)}
-                aria-label="Open enlarged detector map"
-                title="Open enlarged detector map"
+                onClick={() => setWorkspaceFocus("detector")}
+                aria-label="Open detector split focus"
+                title="Open detector alongside the 3D viewer"
               >
                 <Maximize2 size={13} />
               </button>
@@ -5535,51 +5576,6 @@ export default function Home() {
           events={eventLog}
           onClose={() => setHistoryView(null)}
         />
-      )}
-
-      {detectorExpanded && (
-        <div
-          className="detector-expanded-backdrop"
-          role="presentation"
-          onPointerDown={(event) => {
-            if (event.target === event.currentTarget) setDetectorExpanded(false);
-          }}
-        >
-          <section
-            className="detector-expanded-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Enlarged configured detector map"
-          >
-            <button
-              type="button"
-              className="detector-expand-button close-expanded"
-              onClick={() => setDetectorExpanded(false)}
-              aria-label="Close enlarged detector map"
-              title="Close enlarged detector map"
-            >
-              <X size={18} />
-            </button>
-            <DetectorMap
-              values={telemetry.detector}
-              hits={telemetry.detectorHits}
-              backgroundRates={telemetry.detectorBackgroundRates}
-              backgroundExpectedCounts={
-                telemetry.detectorBackgroundExpectedCounts
-              }
-              grbActive={telemetry.grbActive}
-              burstPixelGroups={telemetry.burstPixelGroups}
-              pixelConfiguration={pixelConfiguration}
-              selectedPixelId={selectedPixel}
-              earthIllumination={telemetry.earthIllumination}
-              earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
-              earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
-              mountX={mountX}
-              mountZ={mountZ}
-              onSelect={selectPixel}
-            />
-          </section>
-        </div>
       )}
 
       <footer className="bottom-panel">

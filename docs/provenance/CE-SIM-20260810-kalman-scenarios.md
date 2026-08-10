@@ -171,19 +171,51 @@ minimum 4% rate span rounded to 1/2/5×10^n tick steps. The panel now has a 340 
 minimum height and scrolls within the existing right column. A larger dashboard
 quadrant architecture remains a separate author decision and is not implemented.
 
+## Approved return to three columns and split focus
+
+The author rejected the four-area cockpit commit `3d60369`. It was reverted in
+isolation with `git revert --no-edit 3d60369`, producing commit `7de1827`; this
+preserved the preceding `c33afa2` title/plot revision and all scenario/state
+work. The checkpoint tag still resolves to
+`0963901032f6b5eb8ba5ca63e11f14b61b81cf80`.
+
+The restored desktop default is the prior 286 px / flexible 3D / 330 px
+three-column layout. Two always-accessible workspace controls independently
+collapse or restore the left and right columns, and the 3D viewer consumes the
+released space. Hidden columns are marked `aria-hidden` and `inert`.
+
+Analysis and detector expansion now use a non-modal `45% / 55%` split:
+
+- the 3D viewer remains in the left split;
+- the existing right panel supplies either Photon Stream plus Adaptive
+  Background Analysis, or Rito status plus the configured detector map;
+- unrelated side content is hidden only for the focus state;
+- `RESTORE DASHBOARD` or Escape returns to the prior independent column state;
+- the detector retains aspect ratio `1.18`; the analysis focus explicitly uses
+  a three-row grid so its graph owns the flexible row without overflow;
+- at widths up to 900 px the same focus states stack 3D before the selected
+  analysis/detector surface.
+
+The former detector full-screen backdrop/dialog and its CSS were removed. This
+revision changes presentation state and layout only; scientific models,
+parameters, streams, source scheduling and detector mapping were not altered.
+
 ## Files produced or modified
 
 - `app/lib/kalman-scenarios.ts`: pure scenario, seeded observation and Kalman
   analysis core.
 - `app/components/adaptive-background-panel.tsx`: inline live plot, compact
-  metrics, seed control and permanent warning.
+  metrics, seed control, permanent warning and split-focus action.
 - `app/page.tsx`: explicit modes, deterministic stochastic streams, automatic
-  GRB scheduler, additive current-stream adapter and mode-aware 3D labels.
-- `app/globals.css`: prominent simulation control, inline panel and SVG styling.
+  GRB scheduler, additive current-stream adapter, mode-aware 3D labels, column
+  visibility state and shared split-focus state.
+- `app/globals.css`: simulation control, three-column collapse rules, 45/55
+  split-focus views, responsive stacking and inline plot styling.
 - `tests/kalman-scenarios.test.ts`: replay, Poisson, scenario, live-time,
   gating, metric and covariance tests.
 - `tests/dashboard-layout.test.ts`: inline placement, mode contract, naming,
-  seeded observation and automatic-event integration assertions.
+  seeded observation, column visibility, split focus, overflow/aspect and
+  automatic-event integration assertions.
 - `docs/provenance/CE-SIM-20260810-kalman-scenarios.md`: this record.
 
 Final implementation hashes before handoff:
@@ -191,15 +223,15 @@ Final implementation hashes before handoff:
 - `app/lib/kalman-scenarios.ts`:
   `e9ac3d5346e16e687f972de7691589f34580bd8707fc2cb78e6a9611628b7e92`;
 - `app/components/adaptive-background-panel.tsx`:
-  `fc1f091ea9bb6ec7a8d300ce7b83446a835527467d38f42b077885dbe620a9e9`;
+  `24e69fec4c06d00b2c59fc4416ddb13ee764e3939cd0133993f9743525701033`;
 - `app/page.tsx`:
-  `6b7369687286dd41f37cd7cbba9ca4cd588f38a7ab712d3865435846e0304adf`;
+  `a7374f925593286a056ee447392b12d75d8d5cc23e5f1e1ab5944d05b1d3894f`;
 - `app/globals.css`:
-  `f160ad1eccc5e67c05798803a88f80127bfcd3150b6ad90e381d4b66e750d9d8`;
+  `3175328cccde5383b3b84d2bef6a7dfa529ad93caec3f372e76dc74dad954d88`;
 - `tests/kalman-scenarios.test.ts`:
   `4bf2866c7ac8d00676646dc2ede543165af97ce22377bcc4ef81af17ad55c78d`;
 - `tests/dashboard-layout.test.ts`:
-  `cbab49d32bf20f5707bf96848e2806b557706f64e70ad58eeb534917029e5732`.
+  `cf5b3466d6f398777e6013e34d35e88233dc541174bd769272dabf5f0760c668`.
 
 ## Agents and tools
 
@@ -220,7 +252,7 @@ Final implementation hashes before handoff:
 
 ```sh
 PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" npm test
-# PASS: 43 tests, 43 passed, 0 failed
+# PASS: 44 tests, 44 passed, 0 failed
 
 PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" \
   ./node_modules/.bin/tsc --noEmit --allowImportingTsExtensions --incremental false
@@ -232,17 +264,19 @@ PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/n
 PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" npm run build:pages
 # PASS: compiled, TypeScript checked, 5/5 static pages generated
 
-curl --fail --silent http://localhost:3000/
-# Superseded by the integrated-dashboard revision; browser QA pending below.
+curl --fail --silent --show-error http://localhost:3001/
+# PASS: HTTP 200; server-rendered output contains HIDE LEFT, HIDE RIGHT,
+# both split-focus action labels, Reference Replay and START SIMULATION.
 
 git diff --check
 # PASS
 ```
 
 The local development server started successfully on port 3001, but the browser
-runtime reported an empty browser list. Interactive 1280×720 visual QA therefore
-could not be completed. The compact right-panel dimensions and responsive CSS
-were reviewed statically, but that is not treated as a visual pass.
+runtime again reported `No browser is available`. Interactive visual QA could
+not be completed. Static split ownership, desktop overflow, aspect-ratio and
+responsive CSS plus rendered HTTP labels were verified, but that is not treated
+as a visual pass.
 
 ## Status and open gates
 

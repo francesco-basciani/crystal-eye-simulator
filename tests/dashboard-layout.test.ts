@@ -18,14 +18,14 @@ const adaptiveAnalysisSource = readFileSync(
 
 test("adaptive analysis belongs to the right-hand Photon Stream panel", () => {
   const leftPanelStart = pageSource.indexOf(
-    '<aside className="control-panel left-panel">',
+    'className="control-panel left-panel"',
   );
   const simulationStageStart = pageSource.indexOf(
     '<section className="simulation-stage">',
     leftPanelStart,
   );
   const rightPanelStart = pageSource.indexOf(
-    '<aside className="control-panel right-panel">',
+    'className="control-panel right-panel"',
   );
   const rightPanelEnd = pageSource.indexOf("</aside>", rightPanelStart);
 
@@ -75,9 +75,29 @@ test("the vinext development overlay does not mask opaque script errors", () => 
   );
 });
 
+test("side columns toggle independently and focus views keep the 3D stage", () => {
+  assert.match(pageSource, /\[leftColumnVisible, setLeftColumnVisible\] = useState\(true\)/);
+  assert.match(pageSource, /\[rightColumnVisible, setRightColumnVisible\] = useState\(true\)/);
+  assert.match(pageSource, /type WorkspaceFocus = "analysis" \| "detector" \| null/);
+  assert.match(pageSource, /HIDE LEFT/);
+  assert.match(pageSource, /SHOW LEFT/);
+  assert.match(pageSource, /HIDE RIGHT/);
+  assert.match(pageSource, /SHOW RIGHT/);
+  assert.match(pageSource, /RESTORE DASHBOARD/);
+  assert.match(pageSource, /setWorkspaceFocus\("analysis"\)/);
+  assert.match(pageSource, /setWorkspaceFocus\("detector"\)/);
+  assert.match(styles, /\.workspace\.split-focus\s*\{[\s\S]*?45fr[\s\S]*?55fr/);
+  assert.match(styles, /\.workspace\.split-focus > \.simulation-stage\s*\{[\s\S]*?grid-column:\s*1;/);
+  assert.match(styles, /\.workspace\.split-focus > \.right-panel\s*\{[\s\S]*?grid-column:\s*2;/);
+  assert.match(styles, /\.workspace\.focus-analysis \.right-panel\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-rows:\s*auto minmax\(0, 1fr\) auto;/);
+  assert.match(styles, /\.workspace\.focus-detector \.right-panel \.detector-map\.projection-unfolded\s*\{[\s\S]*?aspect-ratio:\s*1\.18;/);
+  assert.doesNotMatch(pageSource, /detector-expanded-backdrop|aria-modal="true"[\s\S]*?Enlarged configured detector map/);
+  assert.doesNotMatch(styles, /\.detector-expanded-backdrop|\.detector-expanded-dialog/);
+});
+
 test("Reference and Simulation modes keep analysis inline and simulation explicit", () => {
   const rightPanelStart = pageSource.indexOf(
-    '<aside className="control-panel right-panel">',
+    'className="control-panel right-panel"',
   );
   const rightPanelEnd = pageSource.indexOf("</aside>", rightPanelStart);
   const rightPanel = pageSource.slice(rightPanelStart, rightPanelEnd);

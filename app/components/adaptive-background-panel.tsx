@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Maximize2 } from "lucide-react";
 import {
   KALMAN_DEMONSTRATOR_LABEL,
   runAggregateBackgroundKalman,
@@ -170,11 +171,13 @@ export function AdaptiveBackgroundPanel({
   mode,
   seed,
   onSeedChange,
+  onExpand,
 }: {
   samples: readonly AdaptiveAnalysisSample[];
   mode: "reference" | "simulation";
   seed: number;
   onSeedChange: (seed: number) => void;
+  onExpand?: () => void;
 }) {
   const run = useMemo(() => {
     const frames: KalmanReferenceFrame[] = samples.map((sample) => ({
@@ -201,20 +204,27 @@ export function AdaptiveBackgroundPanel({
           <small>TRANSIENT ANALYSIS · {run.status}</small>
           <strong id="adaptive-analysis-title">Adaptive Background Analysis</strong>
         </div>
-        <label>
-          <span>RUN SEED</span>
-          <input
-            type="number"
-            min="1"
-            max="4294967295"
-            value={seed}
-            disabled={mode === "simulation"}
-            onChange={(event) => {
-              const value = Math.max(1, Math.min(0xffff_ffff, Number(event.target.value)));
-              if (Number.isFinite(value)) onSeedChange(Math.trunc(value));
-            }}
-          />
-        </label>
+        <div className="adaptive-analysis-actions">
+          <label>
+            <span>RUN SEED</span>
+            <input
+              type="number"
+              min="1"
+              max="4294967295"
+              value={seed}
+              disabled={mode === "simulation"}
+              onChange={(event) => {
+                const value = Math.max(1, Math.min(0xffff_ffff, Number(event.target.value)));
+                if (Number.isFinite(value)) onSeedChange(Math.trunc(value));
+              }}
+            />
+          </label>
+          {onExpand && (
+            <button type="button" onClick={onExpand} aria-label="Open analysis split focus" title="Open analysis alongside the 3D viewer">
+              <Maximize2 size={13} />
+            </button>
+          )}
+        </div>
       </header>
       <div className="adaptive-analysis-warning">{KALMAN_DEMONSTRATOR_LABEL}</div>
       <div className="adaptive-analysis-legend">
