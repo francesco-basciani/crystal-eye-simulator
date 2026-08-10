@@ -59,6 +59,11 @@ import {
 } from "./lib/photon-repository";
 import { createParametricOrbitOverride } from "./lib/orbital-overrides";
 import {
+  PAYLOAD_PLACEMENT_STORAGE_KEY_V1,
+  parseStoredPayloadPlacement,
+  serializePayloadPlacement,
+} from "./lib/payload-placement";
+import {
   DEFAULT_PIXEL_CONFIGURATION,
   PIXEL_CONFIGURATION_STORAGE_KEY_V1,
   PIXEL_CONFIGURATION_STORAGE_KEY_V2,
@@ -2512,7 +2517,7 @@ function SensorView({
           <small>CRYSTAL EYE VIEW</small>
           <strong>
             {mode === "geometry"
-              ? "Earth · satellite · Sun · Moon"
+              ? "Orbit context · enlarged payload detail"
               : `Instantaneous FOV · ${effectiveFov.toFixed(0)}°`}
           </strong>
         </div>
@@ -2545,6 +2550,8 @@ function SensorView({
             moonPhase={moonPhase}
             earthIllumination={earthIllumination}
             effectiveFov={effectiveFov}
+            mountX={mountX}
+            mountZ={mountZ}
           />
         ) : (
           <>
@@ -2565,7 +2572,7 @@ function SensorView({
           {mode === "events"
             ? `${detectorHits.filter((hits) => hits > 0).length} PX ON`
             : mode === "geometry"
-              ? `FOV ${effectiveFov.toFixed(0)}° · top-down`
+              ? "orbit context + enlarged payload"
               : "reconstruction · non-RGB"}
         </em>
       </div>
@@ -2760,6 +2767,8 @@ function SystemGeometryCanvas({
   moonPhase,
   earthIllumination,
   effectiveFov,
+  mountX,
+  mountZ,
 }: {
   satelliteDirection: [number, number, number];
   sunDirection: [number, number, number];
@@ -2767,6 +2776,8 @@ function SystemGeometryCanvas({
   moonPhase: number;
   earthIllumination: number;
   effectiveFov: number;
+  mountX: number;
+  mountZ: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -2785,10 +2796,10 @@ function SystemGeometryCanvas({
 
       const width = rect.width;
       const height = rect.height;
-      const cx = width * 0.5;
-      const cy = height * 0.52;
-      const orbitX = width * 0.29;
-      const orbitY = height * 0.34;
+      const cx = width * 0.27;
+      const cy = height * 0.54;
+      const orbitX = width * 0.2;
+      const orbitY = height * 0.3;
       const earthRadius = Math.min(width, height) * 0.115;
       const projectDirection = (direction: [number, number, number]) => {
         const length = Math.hypot(direction[0], direction[2]) || 1;
@@ -2808,6 +2819,12 @@ function SystemGeometryCanvas({
       context.fillStyle = background;
       context.fillRect(0, 0, width, height);
 
+      context.fillStyle = "rgba(119, 155, 169, 0.76)";
+      context.font = "6px monospace";
+      context.textAlign = "left";
+      context.fillText("EARTH–ORBIT CONTEXT", 8, 11);
+      context.fillText("SUN / MOON: DIRECTION ONLY · DISTANCE NOT SHOWN", 8, height - 7);
+
       context.strokeStyle = "rgba(102, 201, 232, 0.28)";
       context.lineWidth = 1;
       context.setLineDash([4, 5]);
@@ -2816,36 +2833,41 @@ function SystemGeometryCanvas({
       context.stroke();
       context.setLineDash([]);
 
-      const drawCelestialVector = (
+      const drawCelestialDirection = (
         direction: readonly [number, number],
-        distance: number,
         color: string,
         label: string,
-        radius: number,
       ) => {
+        const distance = Math.min(width * 0.22, height * 0.32);
         const x = cx + direction[0] * distance;
         const y = cy + direction[1] * distance * 0.72;
+        const angle = Math.atan2(y - cy, x - cx);
         context.strokeStyle = color;
-        context.globalAlpha = 0.38;
+        context.globalAlpha = 0.52;
         context.setLineDash([3, 5]);
         context.beginPath();
-        context.moveTo(cx, cy);
+        context.moveTo(
+          cx + Math.cos(angle) * (earthRadius + 3),
+          cy + Math.sin(angle) * (earthRadius + 3),
+        );
         context.lineTo(x, y);
         context.stroke();
         context.setLineDash([]);
-        context.globalAlpha = 1;
         context.fillStyle = color;
         context.beginPath();
-        context.arc(x, y, radius, 0, Math.PI * 2);
+        context.moveTo(x, y);
+        context.lineTo(x - Math.cos(angle - 0.55) * 6, y - Math.sin(angle - 0.55) * 6);
+        context.lineTo(x - Math.cos(angle + 0.55) * 6, y - Math.sin(angle + 0.55) * 6);
+        context.closePath();
         context.fill();
-        context.fillStyle = color;
+        context.globalAlpha = 1;
         context.font = "7px monospace";
-        context.textAlign = "center";
-        context.fillText(label, x, y - radius - 5);
+        context.textAlign = direction[0] >= 0 ? "right" : "left";
+        context.fillText(`${label} DIR`, x + (direction[0] >= 0 ? -5 : 5), y - 5);
       };
 
-      drawCelestialVector(sun, Math.min(width, height) * 0.53, "#ffc857", "SUN", 6);
-      drawCelestialVector(moon, Math.min(width, height) * 0.43, "#b9ceff", "MOON", 4);
+      drawCelestialDirection(sun, "#ffc857", "SUN");
+      drawCelestialDirection(moon, "#b9ceff", "MOON");
 
       const dayOffsetX = sun[0] * earthRadius * 0.38;
       const dayOffsetY = sun[1] * earthRadius * 0.38;
@@ -2905,20 +2927,97 @@ function SystemGeometryCanvas({
       context.textAlign = "center";
       context.fillText("EARTH", cx, cy + 3);
       context.fillStyle = "#62d9ff";
-      context.fillText("CRYSTAL EYE", satelliteX, satelliteY - 9);
-      context.fillStyle = "rgba(119, 155, 169, 0.75)";
+      context.fillText("SAT + CE", satelliteX, satelliteY - 9);
+
+      const detailLeft = width * 0.56;
+      const detailTop = 17;
+      const detailRight = width - 7;
+      const detailBottom = height - 28;
+      const detailWidth = detailRight - detailLeft;
+      const busLeft = detailLeft + detailWidth * 0.16;
+      const busRight = detailRight - detailWidth * 0.16;
+      const busTop = detailTop + (detailBottom - detailTop) * 0.58;
+      const busBottom = detailBottom - 8;
+      const plateY = busTop - 4;
+      const mountCenterX = THREE.MathUtils.lerp(
+        busLeft + 8,
+        busRight - 8,
+        (mountX + 1) / 2,
+      );
+      const domeRadius = Math.max(7, Math.min(12, detailWidth * 0.13));
+
+      context.strokeStyle = "rgba(98, 217, 255, 0.24)";
+      context.fillStyle = "rgba(5, 21, 30, 0.8)";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.roundRect(detailLeft, detailTop, detailWidth, detailBottom - detailTop, 3);
+      context.fill();
+      context.stroke();
+      context.fillStyle = "#7ca9b7";
+      context.font = "6px monospace";
+      context.textAlign = "center";
+      context.fillText("ENLARGED PAYLOAD SECTION", (detailLeft + detailRight) / 2, detailTop + 10);
+      context.fillText("OUTWARD / SPACE", (detailLeft + detailRight) / 2, detailTop + 21);
+
+      context.strokeStyle = "rgba(98, 217, 255, 0.35)";
+      context.setLineDash([2, 3]);
+      context.beginPath();
+      context.moveTo(satelliteX + 5, satelliteY);
+      context.lineTo(detailLeft, detailTop + 16);
+      context.stroke();
+      context.setLineDash([]);
+
+      context.fillStyle = "#325466";
+      context.fillRect(busLeft, busTop, busRight - busLeft, busBottom - busTop);
+      context.strokeStyle = "#6d9eb0";
+      context.strokeRect(busLeft, busTop, busRight - busLeft, busBottom - busTop);
+      context.fillStyle = "#59879a";
+      context.fillRect(busLeft - 3, plateY, busRight - busLeft + 6, 5);
+
+      context.fillStyle = "rgba(98, 217, 255, 0.3)";
+      context.beginPath();
+      context.arc(mountCenterX, plateY, domeRadius, Math.PI, 0);
+      context.lineTo(mountCenterX + domeRadius, plateY);
+      context.lineTo(mountCenterX - domeRadius, plateY);
+      context.closePath();
+      context.fill();
+      context.strokeStyle = "#62d9ff";
+      context.stroke();
+      context.fillStyle = "#dff8ff";
+      context.font = "6px monospace";
+      context.textAlign = "center";
+      context.fillText("CE", mountCenterX, plateY - 4);
+      context.fillStyle = "#93b7c3";
+      context.fillText("SATELLITE 60 × 60 CM", (busLeft + busRight) / 2, busBottom - 5);
+      context.fillText("EARTH / NADIR", (detailLeft + detailRight) / 2, detailBottom - 2);
+      context.fillStyle = "#638997";
       context.textAlign = "left";
-      context.fillText("TOP-DOWN GEOMETRY · NOT TO SCALE", 8, height - 7);
+      context.fillText(
+        `MOUNT X ${Math.round(mountX * 30)} · Z ${Math.round(mountZ * 30)} CM`,
+        detailLeft + 5,
+        detailTop + 32,
+      );
     };
 
     const observer = new ResizeObserver(draw);
     observer.observe(canvas);
     draw();
     return () => observer.disconnect();
-  }, [earthIllumination, effectiveFov, moonDirection, satelliteDirection, sunDirection]);
+  }, [
+    earthIllumination,
+    effectiveFov,
+    moonDirection,
+    mountX,
+    mountZ,
+    satelliteDirection,
+    sunDirection,
+  ]);
 
   return (
-    <div className="system-geometry-view" aria-label="Earth, satellite, Sun, and Moon geometry">
+    <div
+      className="system-geometry-view"
+      aria-label="Not-to-scale Earth-orbit context, enlarged Crystal Eye placement on the satellite top, and Sun and Moon direction indicators"
+    >
       <canvas ref={canvasRef} />
       <div className="system-geometry-metrics">
         <span>FOV <b>{effectiveFov.toFixed(0)}°</b></span>
@@ -2972,7 +3071,7 @@ function ConfigurationHub({
             <span>
               <small>MECHANICAL CONFIGURATION</small>
               <strong>Payload placement</strong>
-              <em>Position the Crystal Eye on the 60 × 60 cm satellite surface.</em>
+              <em>Position the Crystal Eye on the 60 × 60 cm satellite surface; saved locally.</em>
             </span>
             <ChevronRight size={18} />
           </button>
@@ -2987,8 +3086,8 @@ function ConfigurationHub({
           </button>
         </div>
         <footer>
-          Configuration changes are applied to the simulator and retained by their
-          respective controls.
+          Configuration changes are applied to the simulator. Pixel mapping and
+          payload placement are saved locally in this browser.
         </footer>
       </section>
     </div>
@@ -4063,7 +4162,7 @@ function PayloadPlacementPanel({
         </div>
 
         <footer>
-          <span>Changes are applied live to photon detection.</span>
+          <span>Changes are applied live and saved locally in this browser.</span>
           <button type="button" onClick={onClose}>DONE</button>
         </footer>
       </section>
@@ -4150,6 +4249,7 @@ export default function Home() {
   const totalRef = useRef(0);
   const capturedRef = useRef(0);
   const pixelConfigurationRef = useRef(DEFAULT_PIXEL_CONFIGURATION);
+  const payloadPlacementPersistenceReadyRef = useRef(false);
   const backgroundProfileRef = useRef<PixelBackgroundProfile | null>(null);
   const ephemerisProfileRef = useRef<EciEphemerisProfile | null>(null);
   const settingsRef = useRef({
@@ -4326,6 +4426,41 @@ export default function Home() {
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, []);
+
+  useEffect(() => {
+    let timer: number | undefined;
+    try {
+      const stored = parseStoredPayloadPlacement(
+        window.localStorage.getItem(PAYLOAD_PLACEMENT_STORAGE_KEY_V1),
+      );
+      if (stored) {
+        timer = window.setTimeout(() => {
+          setMountX(stored.mountX);
+          setMountZ(stored.mountZ);
+        }, 0);
+      }
+    } catch {
+      // Unavailable browser storage must not prevent configuration or simulation.
+    }
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!payloadPlacementPersistenceReadyRef.current) {
+      payloadPlacementPersistenceReadyRef.current = true;
+      return;
+    }
+    try {
+      window.localStorage.setItem(
+        PAYLOAD_PLACEMENT_STORAGE_KEY_V1,
+        serializePayloadPlacement({ mountX, mountZ }),
+      );
+    } catch {
+      // Keep the live placement even if browser persistence is unavailable.
+    }
+  }, [mountX, mountZ]);
 
   useEffect(() => {
     settingsRef.current = {

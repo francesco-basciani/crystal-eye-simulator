@@ -551,3 +551,51 @@ analysis-plot height. A seeded live run displayed exactly one circle,
 `Injected GRB burst-1 started · frame 51`, with no console error. The complete
 automated gate after this CSS correction passed 56/56 tests, ESLint, explicit
 TypeScript checking, the static Pages build and `git diff --check`.
+
+### Geometry hierarchy and payload-placement audit
+
+Task input: clean commit `05499c4`. The Geometry sensor view previously drew
+Earth, a satellite/CE glyph, Sun and Moon markers in one small top-down plane.
+Although labeled not to scale, the composition visually implied comparable
+distances and did not show that Crystal Eye is mounted on the outward/top side
+of the spacecraft.
+
+The revised schematic separates an Earth–orbit context from an explicitly
+enlarged local payload section. The orbit glyph is now labeled `SAT + CE` and
+linked to a detail showing CE above the 60 × 60 cm satellite top, with
+`OUTWARD / SPACE` and `EARTH / NADIR` labels. Sun and Moon are direction arrows,
+not nearby bodies, and the view states `DIRECTION ONLY · DISTANCE NOT SHOWN`.
+The live X/Z mount coordinates are shown in the detail. This is a UI hierarchy
+correction only; it changes no ephemeris, detector response or physical model.
+
+Payload placement remains discoverable through `CONFIGURATION` →
+`Payload placement`. The existing live parent state already affected 3D payload
+position, FOV, Sun/Moon direction visibility, aggregate Earth transmission,
+per-pixel Earth weights and burst visibility, but was lost on reload. A small
+versioned local record, `crystal-eye.payload-placement.v1`, now persists
+`mountX` and `mountZ`. Parsing accepts only schema version 1 and finite
+normalized coordinates in `[-1, 1]`; malformed, unsupported or unavailable
+browser storage fails closed while leaving the live configurator usable. No
+external service or dependency was added.
+
+Read-only audit of the current Earth-shadow approximation found:
+
+- a hard-coded 30 cm spacecraft half-width and 15 cm detector radius;
+- rim clearance in the top-plane X/Z projection, transformed by
+  `exp(-clearance / 4.5) × 0.12` and clipped to at least `0.015`;
+- Earth response restricted to outer ring 6, so all 91 pixels in rings 0–5
+  always receive zero modeled Earth albedo;
+- no spacecraft height, CE standoff/base height, photon ray, ray/box
+  intersection, finite Earth angular extent or pixel-face partial visibility.
+
+For the current full-illumination/directional audit case, center/edge/corner
+mounts produced heuristic aggregate transmissions of `1.5%`, `52.7%` and
+`75.5%`. The `0.12` downstream support threshold leaves zero supported rim
+pixels at center and 16 at edge/corner; inner-pixel support is always zero.
+These numbers describe implementation behavior, not physical validation.
+
+No shadow-response formula was changed. A physically explicit ray/platform
+model requires author selection plus domain validation of bus height, CE base
+and dome reference heights, permitted footprint overhang, pixel surface
+positions/areas, and the Earth-direction sampling domain. The Kalman estimator
+also remains unchanged under its separate author decision gate.

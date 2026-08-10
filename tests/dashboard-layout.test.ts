@@ -67,6 +67,20 @@ test("the right-hand planar map preserves the configurator aspect and geometry",
   );
 });
 
+test("geometry separates orbit context, payload detail, and unscaled celestial directions", () => {
+  assert.match(pageSource, /EARTH–ORBIT CONTEXT/);
+  assert.match(pageSource, /SUN \/ MOON: DIRECTION ONLY · DISTANCE NOT SHOWN/);
+  assert.match(pageSource, /ENLARGED PAYLOAD SECTION/);
+  assert.match(pageSource, /SATELLITE 60 × 60 CM/);
+  assert.match(pageSource, /OUTWARD \/ SPACE/);
+  assert.match(pageSource, /EARTH \/ NADIR/);
+  assert.match(pageSource, /Orbit context · enlarged payload detail/);
+  assert.match(pageSource, /PAYLOAD_PLACEMENT_STORAGE_KEY_V1/);
+  assert.match(pageSource, /parseStoredPayloadPlacement/);
+  assert.match(pageSource, /serializePayloadPlacement/);
+  assert.match(pageSource, /saved locally in this browser/i);
+});
+
 test("the vinext development overlay does not mask opaque script errors", () => {
   assert.match(viteConfig, /hmr:\s*\{\s*overlay:\s*false\s*\}/);
   assert.match(
