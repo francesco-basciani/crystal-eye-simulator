@@ -5092,6 +5092,269 @@ button {
   }
 }
 
+/* Four-area cockpit: the scientific models remain unchanged; only ownership and
+   sizing of the existing dashboard surfaces changes. */
+.workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(440px, 42fr) minmax(600px, 58fr);
+  grid-template-rows: minmax(260px, 48fr) minmax(300px, 52fr);
+  grid-template-areas:
+    "globe detector"
+    "context analysis";
+  overflow: hidden;
+}
+
+.cockpit-panel {
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  z-index: 5;
+  overflow: hidden;
+  background: var(--panel);
+  backdrop-filter: blur(18px);
+}
+
+.cockpit-globe {
+  grid-area: globe;
+  border-right: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.cockpit-detector {
+  grid-area: detector;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.cockpit-detector > .panel-heading .detector-expand-button {
+  position: static;
+  width: 25px;
+  height: 25px;
+}
+
+.cockpit-detector .detector-inline-expand {
+  display: none;
+}
+
+.cockpit-detector .background-model-status {
+  min-height: 27px;
+  padding-block: 3px;
+}
+
+.cockpit-detector .detector-section {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(160px, 30%) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.cockpit-detector .detector-section-header {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.cockpit-detector .detector-response-summary {
+  grid-column: 1;
+  grid-row: 2;
+  align-content: start;
+  grid-template-columns: 1fr;
+  border-right: 1px solid var(--line);
+}
+
+.cockpit-detector .detector-response-summary span {
+  padding: 5px 2px;
+  border-bottom: 1px solid rgba(130, 184, 210, 0.08);
+}
+
+.cockpit-detector .detector-module {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.cockpit-detector .detector-map.projection-unfolded {
+  width: auto;
+  height: min(100%, 31vw);
+  max-width: 100%;
+  aspect-ratio: 1.18;
+}
+
+.cockpit-detector .detector-map.projection-unfolded .detector-pixel {
+  width: 5.2%;
+}
+
+.cockpit-context {
+  grid-area: context;
+  display: grid;
+  grid-template-columns: minmax(210px, 44%) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  border-right: 1px solid var(--line-strong);
+}
+
+.cockpit-context-heading {
+  grid-column: 1 / -1;
+  grid-row: 1;
+}
+
+.cockpit-context > .left-sensor-slot {
+  grid-column: 1;
+  grid-row: 2 / 4;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.cockpit-context > .celestial-card {
+  grid-column: 2;
+  grid-row: 2;
+  min-height: 0;
+  padding: 6px 8px;
+  overflow: auto;
+}
+
+.cockpit-context > .celestial-card p,
+.cockpit-context > .celestial-card .chart-header strong {
+  display: none;
+}
+
+.cockpit-context .celestial-rows {
+  gap: 3px;
+}
+
+.cockpit-context .celestial-rows > div {
+  min-height: 31px;
+  padding: 3px 5px;
+}
+
+.cockpit-context > .burst-inline-panel {
+  grid-column: 2;
+  grid-row: 3;
+  max-height: 132px;
+  overflow: auto;
+}
+
+.cockpit-analysis {
+  grid-area: analysis;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.cockpit-analysis > .adaptive-analysis-panel {
+  min-height: 0;
+  height: 100%;
+  border-inline: 0;
+}
+
+.cockpit-analysis .adaptive-analysis-plot {
+  min-height: 0;
+  height: 100%;
+}
+
+.cockpit-analysis > .persistence-status {
+  min-height: 27px;
+  padding-block: 3px;
+}
+
+@media (max-width: 1099px) {
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100dvh;
+    grid-template-rows: auto auto auto;
+  }
+
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
+    grid-template-areas:
+      "globe"
+      "analysis"
+      "detector"
+      "context";
+    overflow: visible;
+  }
+
+  .cockpit-globe,
+  .cockpit-analysis,
+  .cockpit-detector,
+  .cockpit-context {
+    min-height: 420px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-strong);
+  }
+
+  .cockpit-analysis > .adaptive-analysis-panel {
+    min-height: 340px;
+  }
+
+  .cockpit-detector .detector-map.projection-unfolded {
+    height: min(100%, 390px);
+  }
+
+  .cockpit-context {
+    grid-template-columns: minmax(280px, 44%) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 699px) {
+  .cockpit-globe {
+    min-height: 320px;
+  }
+
+  .cockpit-analysis,
+  .cockpit-detector,
+  .cockpit-context {
+    min-height: 0;
+  }
+
+  .cockpit-detector {
+    grid-template-rows: auto auto minmax(360px, auto);
+  }
+
+  .cockpit-detector .detector-section {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto minmax(300px, auto);
+  }
+
+  .cockpit-detector .detector-section-header,
+  .cockpit-detector .detector-response-summary,
+  .cockpit-detector .detector-module {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .cockpit-detector .detector-response-summary {
+    grid-template-columns: repeat(3, 1fr);
+    border-right: 0;
+  }
+
+  .cockpit-context {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .cockpit-context > .left-sensor-slot {
+    min-height: 300px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .cockpit-context > .burst-inline-panel {
+    max-height: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

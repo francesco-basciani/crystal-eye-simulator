@@ -164,12 +164,29 @@ they do not imply an astrophysical population or event rate.
 
 Following author feedback, the large central title is the unambiguous
 `Simulation Mode` or `Reference Replay`; seeded-observation detail stays in the
-eyebrow and orbit detail in the suffix. The inline plot was enlarged without changing the dashboard
-grid: 680×342 SVG view box, 82-unit left gutter, five rate ticks with compact
+eyebrow and orbit detail in the suffix. The inline plot uses a 680×342 SVG view
+box, 82-unit left gutter, five rate ticks with compact
 `k` formatting, visible `-4/0/+4` innovation labels, 14-unit label text and a
-minimum 4% rate span rounded to 1/2/5×10^n tick steps. The panel now has a 340 px
-minimum height and scrolls within the existing right column. A larger dashboard
-quadrant architecture remains a separate author decision and is not implemented.
+minimum 4% rate span rounded to 1/2/5×10^n tick steps.
+
+## Approved four-area cockpit revision
+
+The author approved the dashboard redesign from clean commit `c33afa2`. At
+desktop widths of at least 1100 px, the content between top bar and event footer
+is a whole-window grid with 42%/58% columns and 48%/52% rows:
+
+- top-left: continuously visible 3D orbit viewer;
+- top-right: detector response plus selected-pixel and Rito background status;
+- bottom-left: Crystal Eye sensor view, celestial/environment terms, and manual
+  or seeded-random source controls in compact subpanels;
+- bottom-right: wide Photon Stream and inline Adaptive Background Analysis.
+
+The desktop body remains non-scrolling. Each quadrant owns its overflow; the
+context tools and environment subpanels may scroll internally. Below 1100 px,
+the page stacks in the approved order: 3D, analysis, detector, context. Below
+700 px the detector summary and context subpanels also collapse to one column.
+This revision changes DOM ownership and responsive CSS only; no estimator,
+background, event-scheduling, orbit or physical parameter was changed.
 
 ## Files produced or modified
 
@@ -178,8 +195,10 @@ quadrant architecture remains a separate author decision and is not implemented.
 - `app/components/adaptive-background-panel.tsx`: inline live plot, compact
   metrics, seed control and permanent warning.
 - `app/page.tsx`: explicit modes, deterministic stochastic streams, automatic
-  GRB scheduler, additive current-stream adapter and mode-aware 3D labels.
-- `app/globals.css`: prominent simulation control, inline panel and SVG styling.
+  GRB scheduler, additive current-stream adapter, mode-aware 3D labels and four
+  cockpit panel owners.
+- `app/globals.css`: simulation control, inline plot styling, 42%/58% cockpit
+  grid, panel-internal overflow and responsive stack.
 - `tests/kalman-scenarios.test.ts`: replay, Poisson, scenario, live-time,
   gating, metric and covariance tests.
 - `tests/dashboard-layout.test.ts`: inline placement, mode contract, naming,
@@ -193,13 +212,13 @@ Final implementation hashes before handoff:
 - `app/components/adaptive-background-panel.tsx`:
   `fc1f091ea9bb6ec7a8d300ce7b83446a835527467d38f42b077885dbe620a9e9`;
 - `app/page.tsx`:
-  `6b7369687286dd41f37cd7cbba9ca4cd588f38a7ab712d3865435846e0304adf`;
+  `572d438b2839f916c5b5d1035af642ed1b8fad73a2806f0d0bf2859c12dbe3c2`;
 - `app/globals.css`:
-  `f160ad1eccc5e67c05798803a88f80127bfcd3150b6ad90e381d4b66e750d9d8`;
+  `dd8289ad8130c7fe9064fd9084534f2b77a06c78b8fca6c12540025fda573f55`;
 - `tests/kalman-scenarios.test.ts`:
   `4bf2866c7ac8d00676646dc2ede543165af97ce22377bcc4ef81af17ad55c78d`;
 - `tests/dashboard-layout.test.ts`:
-  `cbab49d32bf20f5707bf96848e2806b557706f64e70ad58eeb534917029e5732`.
+  `dd2623c526092ad4b81ce19f6c734accd7a07d974493d8ef25d39a08f27f7eac`.
 
 ## Agents and tools
 
@@ -220,7 +239,7 @@ Final implementation hashes before handoff:
 
 ```sh
 PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" npm test
-# PASS: 43 tests, 43 passed, 0 failed
+# PASS: 44 tests, 44 passed, 0 failed
 
 PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" \
   ./node_modules/.bin/tsc --noEmit --allowImportingTsExtensions --incremental false
@@ -232,17 +251,19 @@ PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/n
 PATH="/Users/basciani/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin:$PATH" npm run build:pages
 # PASS: compiled, TypeScript checked, 5/5 static pages generated
 
-curl --fail --silent http://localhost:3000/
-# Superseded by the integrated-dashboard revision; browser QA pending below.
+curl --fail --silent --show-error http://localhost:3001/
+# PASS: HTTP 200; rendered output contains the four cockpit headings,
+# Reference Replay, Simulation Mode and START SIMULATION.
 
 git diff --check
 # PASS
 ```
 
 The local development server started successfully on port 3001, but the browser
-runtime reported an empty browser list. Interactive 1280×720 visual QA therefore
-could not be completed. The compact right-panel dimensions and responsive CSS
-were reviewed statically, but that is not treated as a visual pass.
+runtime again reported `No browser is available`. Interactive 1280×720 visual
+QA therefore could not be completed. Static dimensions, responsive ownership,
+build output and rendered HTTP labels were verified, but this is not treated as
+a visual pass.
 
 ## Status and open gates
 
