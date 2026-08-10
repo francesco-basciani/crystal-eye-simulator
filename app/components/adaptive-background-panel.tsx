@@ -6,6 +6,7 @@ import {
   KALMAN_DEMONSTRATOR_LABEL,
   runAggregateBackgroundKalman,
   type KalmanAnalysisPoint,
+  type KalmanFilterState,
   type KalmanReferenceFrame,
 } from "../lib/kalman-scenarios";
 
@@ -29,6 +30,7 @@ const UPPER_TOP = 28;
 const UPPER_BOTTOM = 330;
 const LOWER_TOP = 386;
 const LOWER_BOTTOM = 466;
+export const ADAPTIVE_ANALYSIS_VISIBLE_BIN_COUNT = 120;
 
 function niceStep(rawStep: number) {
   const magnitude = 10 ** Math.floor(Math.log10(Math.max(Number.EPSILON, rawStep)));
@@ -62,10 +64,11 @@ export function AdaptiveAnalysisPlot({
   points: readonly KalmanAnalysisPoint[];
   selectedFrameIndex?: number;
 }) {
+  const visiblePoints = points.slice(-ADAPTIVE_ANALYSIS_VISIBLE_BIN_COUNT);
   const plotWidth = WIDTH - LEFT - RIGHT;
   const maximumRate = Math.max(
     1,
-    ...points.map((point) =>
+    ...visiblePoints.map((point) =>
       Math.max(
         point.observedRateCountsPerSecond,
         point.upperBackgroundRateCountsPerSecond,
@@ -75,7 +78,7 @@ export function AdaptiveAnalysisPlot({
   const minimumRate = Math.max(
     0,
     Math.min(
-      ...points.map((point) =>
+      ...visiblePoints.map((point) =>
         Math.min(
           point.observedRateCountsPerSecond,
           point.lowerBackgroundRateCountsPerSecond,
@@ -96,7 +99,7 @@ export function AdaptiveAnalysisPlot({
   const yMaximum = Math.ceil(provisionalMaximum / tickStep) * tickStep;
   const rateSpan = Math.max(1, yMaximum - yMinimum);
   const x = (_point: KalmanAnalysisPoint, index: number) =>
-    LEFT + (index / Math.max(1, points.length - 1)) * plotWidth;
+    LEFT + (index / Math.max(1, visiblePoints.length - 1)) * plotWidth;
   const yRate = (value: number) =>
     UPPER_BOTTOM - ((value - yMinimum) / rateSpan) * (UPPER_BOTTOM - UPPER_TOP);
   const yInnovation = (value: number) =>
@@ -104,11 +107,11 @@ export function AdaptiveAnalysisPlot({
     ((Math.max(-6, Math.min(6, value)) + 6) / 12) *
       (LOWER_BOTTOM - LOWER_TOP);
   const confidenceArea = [
-    ...points.map((point, index) =>
+    ...visiblePoints.map((point, index) =>
       `${index === 0 ? "M" : "L"}${x(point, index).toFixed(2)},${yRate(point.upperBackgroundRateCountsPerSecond).toFixed(2)}`,
     ),
-    ...[...points].reverse().map((point, reverseIndex) => {
-      const index = points.length - reverseIndex - 1;
+    ...[...visiblePoints].reverse().map((point, reverseIndex) => {
+      const index = visiblePoints.length - reverseIndex - 1;
       return `L${x(point, index).toFixed(2)},${yRate(point.lowerBackgroundRateCountsPerSecond).toFixed(2)}`;
     }),
     "Z",
@@ -133,10 +136,10 @@ export function AdaptiveAnalysisPlot({
         );
       })}
       <path className="kalman-confidence" d={confidenceArea} />
-      <path className="kalman-truth-line" d={linePath(points, x, (point) => yRate(point.expectedBackgroundRateCountsPerSecond))} />
-      <path className="kalman-estimate-line" d={linePath(points, x, (point) => yRate(point.estimatedBackgroundRateCountsPerSecond))} />
-      <path className="kalman-observed-line" d={linePath(points, x, (point) => yRate(point.observedRateCountsPerSecond))} />
-      {points.flatMap((point, index) =>
+      <path className="kalman-truth-line" d={linePath(visiblePoints, x, (point) => yRate(point.expectedBackgroundRateCountsPerSecond))} />
+      <path className="kalman-estimate-line" d={linePath(visiblePoints, x, (point) => yRate(point.estimatedBackgroundRateCountsPerSecond))} />
+      <path className="kalman-observed-line" d={linePath(visiblePoints, x, (point) => yRate(point.observedRateCountsPerSecond))} />
+      {visiblePoints.flatMap((point, index) =>
         (point.startedBurstIds ?? []).map((burstId, burstIndex) => (
           <circle
             className="kalman-source-event-marker"
@@ -149,7 +152,7 @@ export function AdaptiveAnalysisPlot({
           </circle>
         )),
       )}
-      {selectedFrameIndex !== undefined && points.map((point, index) =>
+      {selectedFrameIndex !== undefined && visiblePoints.map((point, index) =>
         point.frameIndex === selectedFrameIndex ? (
           <line
             className="kalman-selected-frame"
@@ -167,11 +170,11 @@ export function AdaptiveAnalysisPlot({
           <text className="kalman-axis-label" x={LEFT - 12} y={yInnovation(innovation) + 5} textAnchor="end">{innovation > 0 ? `+${innovation}` : innovation}</text>
         </g>
       ))}
-      <path className="kalman-innovation-line" d={linePath(points, x, (point) => yInnovation(point.normalizedInnovation))} />
+      <path className="kalman-innovation-line" d={linePath(visiblePoints, x, (point) => yInnovation(point.normalizedInnovation))} />
       <text className="kalman-axis-title" x={8} y={18}>RATE · COUNTS/S</text>
       <text className="kalman-axis-title" x={8} y={LOWER_TOP - 10}>NORMALIZED INNOVATION · ±4 GATE</text>
-      <text className="kalman-time-label" x={LEFT} y={HEIGHT - 4}>{(points[0]?.simulationTimeSeconds ?? 0).toFixed(1)} s</text>
-      <text className="kalman-time-label" x={WIDTH - RIGHT} y={HEIGHT - 4} textAnchor="end">{(points.at(-1)?.simulationTimeSeconds ?? 0).toFixed(1)} s acquisition time</text>
+      <text className="kalman-time-label" x={LEFT} y={HEIGHT - 4}>{(visiblePoints[0]?.simulationTimeSeconds ?? 0).toFixed(1)} s</text>
+      <text className="kalman-time-label" x={WIDTH - RIGHT} y={HEIGHT - 4} textAnchor="end">{(visiblePoints.at(-1)?.simulationTimeSeconds ?? 0).toFixed(1)} s acquisition time</text>
     </svg>
   );
 }
@@ -183,6 +186,7 @@ export function AdaptiveBackgroundPanel({
   onSeedChange,
   onExpand,
   historyHref,
+  initialFilterState,
 }: {
   samples: readonly AdaptiveAnalysisSample[];
   mode: "reference" | "simulation";
@@ -190,6 +194,7 @@ export function AdaptiveBackgroundPanel({
   onSeedChange: (seed: number) => void;
   onExpand?: () => void;
   historyHref?: string;
+  initialFilterState?: KalmanFilterState;
 }) {
   const run = useMemo(() => {
     const frames: KalmanReferenceFrame[] = samples.map((sample) => ({
@@ -209,8 +214,9 @@ export function AdaptiveBackgroundPanel({
       scenarioId: mode === "simulation" ? "live-seeded-simulation-v1" : "live-reference-replay-v1",
       scenarioSchemaVersion: 1,
       seed,
+      initialState: initialFilterState,
     });
-  }, [mode, samples, seed]);
+  }, [initialFilterState, mode, samples, seed]);
 
   return (
     <section className={`adaptive-analysis-panel ${mode}`} aria-labelledby="adaptive-analysis-title">

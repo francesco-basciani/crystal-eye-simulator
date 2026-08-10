@@ -704,3 +704,66 @@ excitation frame for one transitional render only, and the next valid telemetry
 frame replaces it. Tests verify the 126-zero transitional contract, fail-loud
 malformed vectors, explicit initial length, and absence of the unsafe direct
 3D access. Kalman and Earth-albedo calculations are unchanged.
+
+### Adaptive-state continuity and photon-history compatibility
+
+Task input: clean commit `eab443e`. The author reported a cyan adaptive estimate
+that was usually flat, sometimes jumped, and appeared to return to zero, plus a
+recurring Photon History error. The investigation kept the approved filter and
+all physical amplitudes fixed.
+
+The live adapter previously retained only the last 120 raw samples and reran the
+filter from the first retained observation on every render. Once the acquisition
+exceeded 120 bins, the left boundary moved every 0.2 s and therefore changed the
+filter initial state. A deterministic 500 counts/s Poisson fixture showed that
+the estimate for the same frame 119 changed from `505.326625` to `505.213773`
+counts/s solely because frame 0 rather than frame 1 initialized the replay.
+That moving-initial-condition dependency was a software defect, not filter
+physics.
+
+The corrected adapter keeps a bounded 120-frame display window plus the exact
+Kalman state immediately before that window. Each dropped frame advances this
+carry state once; the visible window then runs from the carried state. A
+260-frame seeded regression proves that a split run and one uninterrupted run
+produce exactly equal points and final state. Work and memory are bounded:
+each UI update analyzes at most 120 visible frames and advances only the newly
+dropped prefix, rather than replaying a run that can reach approximately 52,000
+frames before the 60-day ephemeris ends at 500× time warp. Plotting remains a
+120-bin view. Gate sigma, process noise, measurement variance, confidence level,
+minimum rate, exposure and source handling are unchanged.
+
+The flat near-zero behavior is separately classified as current-model behavior.
+Simulation Mode can begin with zero supported Sun/Moon/Earth contribution; the
+observation-only estimator then uses its existing 1 count/s minimum. Subsequent
+environmental or injected-source rises above the existing 4σ threshold are
+gated rather than assimilated. Expected source is used for markers and metrics,
+not for conditioning the state. Changing that behavior requires the still-open
+author gate on a source/environment-conditioned estimator; it was not changed
+here.
+
+The in-app browser was unavailable to this worker. Independent root browser QA
+opened a current database with more than 31,000 rows and traversed eight older
+pages without a crash, so the reported browser-specific failure could not be
+reproduced against that current store. A schema-v1 compatibility fixture did
+reproduce the synchronous `NotFoundError` raised at
+`objectStore.index("bySimulatedAt")` when a legacy database lacks that index.
+The repository now falls back only for that named condition to a normalized
+object-store scan, reverse compound-key sorting and the existing keyset paging.
+The IndexedDB name, store and version remain unchanged at v1; current indexed
+databases retain the fast cursor path. The error-name check does not require a
+global `DOMException` constructor.
+
+History analysis reconstruction also validates that count-to-rate conversion
+remains finite and catches reconstruction exceptions locally. A malformed row
+can no longer crash the whole page: the exact analysis error is displayed while
+the normalized persisted table remains accessible. Repository/query failures
+continue to surface explicitly and are not silently replaced. Tests cover the
+missing-index v1 fixture, normalization, ordering, pagination, finite-analysis
+guard, carry-state equivalence and UI wiring.
+
+Limits: the exact persisted browser state that produced the author's generic
+script error was not available in this worker session, so the missing-index
+path is a reproduced compatibility failure, not a claim that it was the unique
+cause in the author's profile. Browser re-verification against that profile is
+still required. No result here is domain validation or a detector-performance
+claim.

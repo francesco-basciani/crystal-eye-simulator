@@ -43,6 +43,10 @@ test("adaptive event dots are driven only by recorded injected GRB starts", () =
   assert.match(pageSource, /startedBurstIds,/);
   assert.match(pageSource, /activeBurstCount: sample\.activeBurstCount/);
   assert.match(pageSource, /startedBurstIds: sample\.startedBurstIds/);
+  assert.match(adaptiveSource, /points\.slice\(-ADAPTIVE_ANALYSIS_VISIBLE_BIN_COUNT\)/);
+  assert.match(pageSource, /appendAdaptiveAnalysisSample/);
+  assert.match(pageSource, /initialFilterState=\{adaptiveAnalysisWindow\.initialFilterState\}/);
+  assert.doesNotMatch(pageSource, /current\.slice\(-119\)/);
 });
 
 test("the persisted history supports row selection and current-page reconstruction", () => {
@@ -55,5 +59,8 @@ test("the persisted history supports row selection and current-page reconstructi
   assert.match(historySource, /NEWER ROW/);
   assert.match(historySource, /OLDER ROW/);
   assert.match(historySource, /Each yellow dot marks one injected GRB start/);
+  assert.match(historySource, /ANALYSIS RECONSTRUCTION UNAVAILABLE/);
+  assert.match(historySource, /Persisted rows remain available below/);
+  assert.match(historySource, /Number\.isFinite\(observedRate\)/);
   assert.match(adaptiveSource, /complete persisted photon and analysis history/);
 });

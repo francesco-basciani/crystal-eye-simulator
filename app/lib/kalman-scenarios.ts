@@ -78,6 +78,16 @@ export type KalmanAnalysisMetrics = Readonly<{
   sourceReferenceCounts: number;
 }>;
 
+export type KalmanFilterState = Readonly<{
+  backgroundRateCountsPerSecond: number;
+  driftRateCountsPerSecondSquared: number;
+  covariance00: number;
+  covariance01: number;
+  covariance10: number;
+  covariance11: number;
+  previousSimulationTimeSeconds: number;
+}>;
+
 export type KalmanAnalysisRun = Readonly<{
   analysisVersion: typeof KALMAN_ANALYSIS_VERSION;
   scenarioId: string;
@@ -88,6 +98,7 @@ export type KalmanAnalysisRun = Readonly<{
   filter: KalmanFilterConfiguration;
   points: readonly KalmanAnalysisPoint[];
   metrics: KalmanAnalysisMetrics;
+  finalState: KalmanFilterState;
 }>;
 
 export const DEFAULT_KALMAN_FILTER_CONFIGURATION: KalmanFilterConfiguration =
@@ -364,6 +375,7 @@ export function runAggregateBackgroundKalman(
     scenarioSchemaVersion?: number;
     seed: number;
     filter?: KalmanFilterConfiguration;
+    initialState?: KalmanFilterState;
   }>,
 ): KalmanAnalysisRun {
   if (frames.length === 0) {
@@ -371,17 +383,20 @@ export function runAggregateBackgroundKalman(
   }
   const filter = options.filter ?? DEFAULT_KALMAN_FILTER_CONFIGURATION;
   const first = frames[0];
-  let backgroundRate = first.observedCounts / first.exposureSeconds;
-  let driftRate = 0;
+  const suppliedState = options.initialState;
+  let backgroundRate = suppliedState?.backgroundRateCountsPerSecond ??
+    first.observedCounts / first.exposureSeconds;
+  let driftRate = suppliedState?.driftRateCountsPerSecondSquared ?? 0;
   const initialMeasurementVariance = Math.max(
     filter.minimumRateCountsPerSecond,
     backgroundRate,
   ) / first.exposureSeconds;
-  let p00 = initialMeasurementVariance;
-  let p01 = 0;
-  let p10 = 0;
-  let p11 = initialMeasurementVariance / (60 * 60);
-  let previousSimulationTime = first.simulationTimeSeconds;
+  let p00 = suppliedState?.covariance00 ?? initialMeasurementVariance;
+  let p01 = suppliedState?.covariance01 ?? 0;
+  let p10 = suppliedState?.covariance10 ?? 0;
+  let p11 = suppliedState?.covariance11 ?? initialMeasurementVariance / (60 * 60);
+  let previousSimulationTime = suppliedState?.previousSimulationTimeSeconds ??
+    first.simulationTimeSeconds;
 
   const points: KalmanAnalysisPoint[] = [];
   for (const frame of frames) {
@@ -515,6 +530,15 @@ export function runAggregateBackgroundKalman(
     filter,
     points: Object.freeze(points),
     metrics,
+    finalState: Object.freeze({
+      backgroundRateCountsPerSecond: backgroundRate,
+      driftRateCountsPerSecondSquared: driftRate,
+      covariance00: p00,
+      covariance01: p01,
+      covariance10: p10,
+      covariance11: p11,
+      previousSimulationTimeSeconds: previousSimulationTime,
+    }),
   });
 }
 

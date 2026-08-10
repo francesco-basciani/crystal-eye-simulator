@@ -45,6 +45,22 @@ export type PhotonQueryResult = Readonly<{
   hasMore: boolean;
 }>;
 
+function compareCompoundKey(
+  left: readonly [number, number],
+  right: readonly [number, number],
+): number {
+  return left[0] - right[0] || left[1] - right[1];
+}
+
+function isMissingIndexError(reason: unknown): boolean {
+  return (
+    typeof reason === "object" &&
+    reason !== null &&
+    "name" in reason &&
+    reason.name === "NotFoundError"
+  );
+}
+
 function requestFailure(request: IDBRequest, fallback: string): Error {
   return request.error ?? new Error(fallback);
 }
@@ -261,10 +277,26 @@ export class PhotonRepository {
 
     return new Promise((resolve, reject) => {
       const transaction = this.database.transaction(PHOTON_STORE_NAME, "readonly");
-      const index = transaction.objectStore(PHOTON_STORE_NAME).index("bySimulatedAt");
-      const range = this.keyRange.bound(lower, upper, false, upperOpen);
-      const request = index.openCursor(range, "prev");
+      const store = transaction.objectStore(PHOTON_STORE_NAME);
+      let compatibilityScan = false;
+      let request: IDBRequest<IDBCursorWithValue | null>;
+      try {
+        const index = store.index("bySimulatedAt");
+        const range = this.keyRange.bound(lower, upper, false, upperOpen);
+        request = index.openCursor(range, "prev");
+      } catch (reason: unknown) {
+        if (!isMissingIndexError(reason)) {
+          reject(reason);
+          return;
+        }
+        // Some pre-index schema-v1 databases exist in the field. Keep the
+        // database version unchanged and scan only for that compatibility case.
+        // Normalization below also makes missing legacy timestamps queryable.
+        compatibilityScan = true;
+        request = store.openCursor();
+      }
       const items: PhotonRecord[] = [];
+      const compatibilityItems: PhotonRecord[] = [];
       let settled = false;
 
       request.onsuccess = () => {
@@ -272,8 +304,44 @@ export class PhotonRepository {
         if (!cursor) {
           if (!settled) {
             settled = true;
+            if (compatibilityScan) {
+              const matching = compatibilityItems
+                .filter((record) => {
+                  const key: [number, number] = [record.simulatedAtMs, record.id];
+                  return (
+                    compareCompoundKey(key, lower) >= 0 &&
+                    (upperOpen
+                      ? compareCompoundKey(key, upper) < 0
+                      : compareCompoundKey(key, upper) <= 0)
+                  );
+                })
+                .sort((left, right) =>
+                  compareCompoundKey(
+                    [right.simulatedAtMs, right.id],
+                    [left.simulatedAtMs, left.id],
+                  ),
+                );
+              const pageItems = matching.slice(0, limit);
+              const hasMore = matching.length > limit;
+              const last = pageItems.at(-1);
+              resolve({
+                items: pageItems,
+                nextCursor: hasMore && last
+                  ? { simulatedAtMs: last.simulatedAtMs, id: last.id }
+                  : null,
+                hasMore,
+              });
+              return;
+            }
             resolve({ items, nextCursor: null, hasMore: false });
           }
+          return;
+        }
+        if (compatibilityScan) {
+          compatibilityItems.push(
+            normalizeStoredPhotonRecord(cursor.value, Number(cursor.primaryKey)),
+          );
+          cursor.continue();
           return;
         }
         if (items.length === limit) {

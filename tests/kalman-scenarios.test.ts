@@ -146,6 +146,46 @@ test("the aggregate filter gates a large innovation instead of absorbing it", ()
   assert.ok(run.metrics.gatedBinCount >= 1);
 });
 
+test("a bounded window with carry-in state is exactly equivalent to one uninterrupted run", () => {
+  const random = createSeededRandom(0x4345_7712);
+  const frames: KalmanReferenceFrame[] = Array.from(
+    { length: 260 },
+    (_, frameIndex) => {
+      const expectedBackgroundRateCountsPerSecond =
+        frameIndex < 70 ? 0 : 420 + frameIndex * 0.35;
+      return {
+        frameIndex,
+        simulationTimeSeconds: frameIndex * 0.2,
+        exposureSeconds: 0.2,
+        expectedBackgroundRateCountsPerSecond,
+        expectedSourceRateCountsPerSecond:
+          frameIndex >= 150 && frameIndex < 156 ? 800 : 0,
+        observedCounts: samplePoisson(
+          (expectedBackgroundRateCountsPerSecond +
+            (frameIndex >= 150 && frameIndex < 156 ? 800 : 0)) * 0.2,
+          random,
+        ),
+      };
+    },
+  );
+  const uninterrupted = runAggregateBackgroundKalman(frames, {
+    scenarioId: "uninterrupted",
+    seed: 12,
+  });
+  const prefix = runAggregateBackgroundKalman(frames.slice(0, 140), {
+    scenarioId: "prefix",
+    seed: 12,
+  });
+  const continued = runAggregateBackgroundKalman(frames.slice(140), {
+    scenarioId: "continued",
+    seed: 12,
+    initialState: prefix.finalState,
+  });
+
+  assert.deepEqual(continued.points, uninterrupted.points.slice(140));
+  assert.deepEqual(continued.finalState, uninterrupted.finalState);
+});
+
 test("the reported residual is signed rather than positive-clipped", () => {
   const frames: KalmanReferenceFrame[] = [
     {

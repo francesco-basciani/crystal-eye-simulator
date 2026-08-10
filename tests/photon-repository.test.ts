@@ -36,6 +36,11 @@ class FakeDatabase {
   records: PhotonRecord[] = [];
   nextId = 1;
   closed = false;
+  private readonly missingSimulatedAtIndex: boolean;
+
+  constructor(missingSimulatedAtIndex = false) {
+    this.missingSimulatedAtIndex = missingSimulatedAtIndex;
+  }
 
   close() {
     this.closed = true;
@@ -89,8 +94,35 @@ class FakeDatabase {
         });
         return request;
       },
+      openCursor: () => {
+        let index = 0;
+        const request: Record<string, unknown> = {
+          result: null,
+          error: null,
+          onsuccess: null,
+          onerror: null,
+        };
+        const emit = () => {
+          const value = this.records[index];
+          request.result = value
+            ? {
+                value,
+                primaryKey: value.id,
+                continue: () => { index += 1; queueMicrotask(emit); },
+              }
+            : null;
+          (request.onsuccess as (() => void) | null)?.();
+        };
+        queueMicrotask(emit);
+        return request;
+      },
       index: (name: string) => {
         assert.equal(name, "bySimulatedAt");
+        if (this.missingSimulatedAtIndex) {
+          const reason = new Error("The specified index was not found.");
+          reason.name = "NotFoundError";
+          throw reason;
+        }
         return {
           openCursor: (range: FakeRange, direction: string) => {
             assert.equal(direction, "prev");
@@ -188,6 +220,33 @@ test("reverse compound keyset paging is inclusive and has no gaps or duplicates"
     [...first.items, ...second.items].map((record) => record.id),
     [4, 3, 2, 1],
   );
+});
+
+test("schema-v1 history without the timestamp index falls back to a normalized store scan", async () => {
+  const database = new FakeDatabase(true);
+  const repository = new PhotonRepository(database as unknown as IDBDatabase, fakeKeyRange);
+  database.records = [
+    { ...input("run-a", 1, 1_000), id: 1 },
+    {
+      id: 2,
+      runId: "legacy-run",
+      bin: 2,
+      simulatedDate: new Date(2_000).toISOString(),
+      capturedAtMs: 2_500,
+      background: 7,
+      observed: 9,
+    } as unknown as PhotonRecord,
+    { ...input("run-a", 3, 3_000), id: 3 },
+  ];
+
+  const first = await repository.query({ limit: 2 });
+  assert.deepEqual(first.items.map((record) => record.id), [3, 2]);
+  assert.equal(first.hasMore, true);
+  assert.ok(first.items[1].normalizationWarnings?.includes("simulatedAtMs:derived"));
+
+  const second = await repository.query({ cursor: first.nextCursor!, limit: 2 });
+  assert.deepEqual(second.items.map((record) => record.id), [1]);
+  assert.equal(second.hasMore, false);
 });
 
 test("unavailable IndexedDB fails explicitly", async () => {

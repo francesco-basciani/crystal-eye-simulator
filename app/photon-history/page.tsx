@@ -118,27 +118,54 @@ export default function PhotonHistoryPage() {
       .filter((record) => record.runId === selectedRecord.runId)
       .sort((left, right) => left.bin - right.bin || left.id - right.id);
   }, [result.items, selectedRecord]);
-  const analysisRun = useMemo(() => {
-    if (analysisRecords.length === 0 || !selectedRecord) return null;
-    const burstStartsByRecord = deriveBurstStartsByRecord(analysisRecords);
-    return runAggregateBackgroundKalman(
-      analysisRecords.map((record) => ({
-        frameIndex: record.bin,
-        simulationTimeSeconds: record.bin * 0.2,
-        exposureSeconds: 0.2,
-        expectedBackgroundRateCountsPerSecond: record.background / 0.2,
-        expectedSourceRateCountsPerSecond: record.source / 0.2,
-        observedCounts: record.observed,
-        activeBurstCount: record.activeBursts,
-        startedBurstIds: burstStartsByRecord.get(record.id) ?? [],
-      })),
-      {
-        scenarioId: `persisted-run-${selectedRecord.runId}`,
-        scenarioSchemaVersion: selectedRecord.schemaVersion,
-        seed: selectedRecord.id,
-      },
-    );
+  const analysisReconstruction = useMemo(() => {
+    if (analysisRecords.length === 0 || !selectedRecord) {
+      return { run: null, error: null };
+    }
+    try {
+      const burstStartsByRecord = deriveBurstStartsByRecord(analysisRecords);
+      const frames = analysisRecords.map((record) => {
+        const backgroundRate = record.background / 0.2;
+        const sourceRate = record.source / 0.2;
+        const observedRate = record.observed / 0.2;
+        if (
+          !Number.isFinite(backgroundRate) ||
+          !Number.isFinite(sourceRate) ||
+          !Number.isFinite(observedRate)
+        ) {
+          throw new RangeError(
+            `Persisted bin ${record.bin} exceeds the finite analysis range.`,
+          );
+        }
+        return {
+          frameIndex: record.bin,
+          simulationTimeSeconds: record.bin * 0.2,
+          exposureSeconds: 0.2,
+          expectedBackgroundRateCountsPerSecond: backgroundRate,
+          expectedSourceRateCountsPerSecond: sourceRate,
+          observedCounts: record.observed,
+          activeBurstCount: record.activeBursts,
+          startedBurstIds: burstStartsByRecord.get(record.id) ?? [],
+        };
+      });
+      return {
+        run: runAggregateBackgroundKalman(frames, {
+          scenarioId: `persisted-run-${selectedRecord.runId}`,
+          scenarioSchemaVersion: selectedRecord.schemaVersion,
+          seed: selectedRecord.id,
+        }),
+        error: null,
+      };
+    } catch (reason: unknown) {
+      return {
+        run: null,
+        error: reason instanceof Error
+          ? reason.message
+          : "Unknown persisted-analysis reconstruction error.",
+      };
+    }
   }, [analysisRecords, selectedRecord]);
+  const analysisRun = analysisReconstruction.run;
   const selectPageRow = (record: PhotonRecord) => setSelectedRecordId(record.id);
 
   return (
@@ -172,6 +199,12 @@ export default function PhotonHistoryPage() {
       </div>
 
       <section className="data-table-panel" aria-busy={status === "loading"}>
+        {selectedRecord && analysisReconstruction.error && (
+          <div className="data-status error" role="alert">
+            ANALYSIS RECONSTRUCTION UNAVAILABLE · {analysisReconstruction.error}
+            {" · "}Persisted rows remain available below.
+          </div>
+        )}
         {selectedRecord && analysisRun && (
           <section className="history-analysis-inspector" aria-labelledby="history-analysis-title">
             <header>
