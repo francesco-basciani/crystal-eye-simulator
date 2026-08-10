@@ -3,6 +3,7 @@
 import {
   Activity,
   Aperture,
+  ChevronLeft,
   ChevronRight,
   CircleDot,
   Download,
@@ -161,6 +162,11 @@ type SimulatorMode = "reference" | "simulation";
 type WorkspaceFocus = "analysis" | "detector" | null;
 
 const DEFAULT_SIMULATION_SEED = 0x4345_1000;
+const AUTOMATIC_GRB_INITIAL_DELAY_BINS = 50;
+const AUTOMATIC_GRB_MINIMUM_GAP_BINS = 90;
+const AUTOMATIC_GRB_GAP_RANGE_BINS = 61;
+const AUTOMATIC_GRB_MINIMUM_DURATION_SECONDS = 0.8;
+const AUTOMATIC_GRB_DURATION_RANGE_SECONDS = 1.6;
 
 function createBaselineSamples(background: number, count = 80): SignalSample[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -3933,7 +3939,7 @@ export default function Home() {
   const burstRandomRef = useRef(
     createSeededRandom(DEFAULT_SIMULATION_SEED ^ 0xa5a5_5a5a),
   );
-  const nextAutomaticBurstBinRef = useRef(15);
+  const nextAutomaticBurstBinRef = useRef(AUTOMATIC_GRB_INITIAL_DELAY_BINS);
   const totalRef = useRef(0);
   const capturedRef = useRef(0);
   const pixelConfigurationRef = useRef(DEFAULT_PIXEL_CONFIGURATION);
@@ -4310,7 +4316,10 @@ export default function Home() {
       );
       if (
         settings.simulatorMode === "simulation" &&
-        photonBinRef.current >= nextAutomaticBurstBinRef.current
+        photonBinRef.current >= nextAutomaticBurstBinRef.current &&
+        !activeBurstsRef.current.some(
+          (burst) => burst.origin === "automatic" && burst.ticksRemaining > 0,
+        )
       ) {
         const random = burstRandomRef.current;
         const configuration = pixelConfigurationRef.current;
@@ -4336,7 +4345,9 @@ export default function Home() {
           visibleTargets[Math.floor(random() * visibleTargets.length)]?.pixelId ?? 0;
         const footprintCount = 4 + Math.floor(random() * 25);
         const intensity = 72 + random() * 28;
-        const durationSeconds = 1.2 + random() * 4;
+        const durationSeconds =
+          AUTOMATIC_GRB_MINIMUM_DURATION_SECONDS +
+          random() * AUTOMATIC_GRB_DURATION_RANGE_SECONDS;
         const transmission =
           Math.max(0, configuredNormals[targetPixel][1]) ** 2 *
           getMountSkyVisibility(
@@ -4388,7 +4399,9 @@ export default function Home() {
           },
         ]);
         nextAutomaticBurstBinRef.current =
-          photonBinRef.current + 10 + Math.floor(random() * 16);
+          photonBinRef.current +
+          AUTOMATIC_GRB_MINIMUM_GAP_BINS +
+          Math.floor(random() * AUTOMATIC_GRB_GAP_RANGE_BINS);
       }
       const activeBursts = activeBurstsRef.current.filter(
         (burst) => burst.ticksRemaining > 0,
@@ -4957,7 +4970,7 @@ export default function Home() {
     resetSimulation();
     observationRandomRef.current = createSeededRandom(simulationSeed);
     burstRandomRef.current = createSeededRandom(simulationSeed ^ 0xa5a5_5a5a);
-    nextAutomaticBurstBinRef.current = 15;
+    nextAutomaticBurstBinRef.current = AUTOMATIC_GRB_INITIAL_DELAY_BINS;
     settingsRef.current.simulatorMode = "simulation";
     settingsRef.current.simulationSeed = simulationSeed;
     settingsRef.current.paused = false;
@@ -5182,30 +5195,40 @@ export default function Home() {
           rightColumnVisible ? "" : "right-column-hidden"
         } ${workspaceFocus ? `split-focus focus-${workspaceFocus}` : ""}`}
       >
-        <div className="workspace-view-controls" aria-label="Dashboard view controls">
-          {workspaceFocus ? (
-            <button type="button" className="restore-dashboard" onClick={() => setWorkspaceFocus(null)}>
-              RESTORE DASHBOARD
+        {workspaceFocus ? (
+          <button
+            type="button"
+            className="split-restore-control"
+            onClick={() => setWorkspaceFocus(null)}
+            aria-label="Restore three-column dashboard"
+            title="Restore dashboard"
+          >
+            RESTORE DASHBOARD
+          </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="workspace-edge-toggle left-edge-toggle"
+              aria-label={leftColumnVisible ? "Hide left dashboard column" : "Show left dashboard column"}
+              title={leftColumnVisible ? "Hide left column" : "Show left column"}
+              aria-pressed={leftColumnVisible}
+              onClick={() => setLeftColumnVisible((visible) => !visible)}
+            >
+              {leftColumnVisible ? <ChevronLeft size={15} /> : <ChevronRight size={15} />}
             </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                aria-pressed={leftColumnVisible}
-                onClick={() => setLeftColumnVisible((visible) => !visible)}
-              >
-                {leftColumnVisible ? "HIDE LEFT" : "SHOW LEFT"}
-              </button>
-              <button
-                type="button"
-                aria-pressed={rightColumnVisible}
-                onClick={() => setRightColumnVisible((visible) => !visible)}
-              >
-                {rightColumnVisible ? "HIDE RIGHT" : "SHOW RIGHT"}
-              </button>
-            </>
-          )}
-        </div>
+            <button
+              type="button"
+              className="workspace-edge-toggle right-edge-toggle"
+              aria-label={rightColumnVisible ? "Hide right dashboard column" : "Show right dashboard column"}
+              title={rightColumnVisible ? "Hide right column" : "Show right column"}
+              aria-pressed={rightColumnVisible}
+              onClick={() => setRightColumnVisible((visible) => !visible)}
+            >
+              {rightColumnVisible ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+            </button>
+          </>
+        )}
 
         <aside
           className="control-panel left-panel"

@@ -146,11 +146,13 @@ dimensional orbit remains visible. The dashboard contract is now:
   seed is locked while the run is active.
 - Observation and automatic-event random streams are distinct xorshift32
   streams derived from the same run seed. The first automatic event occurs at
-  bin 15. Further events are separated by a seeded 10–25 bins; duration is
-  seeded in 1.2–5.2 s, footprint in 4–28 pixels and intensity in 72–100%.
-  Intervals may overlap and all active source contributions add to each other
-  and to all environmental terms. This is a presentation-compressed synthetic
-  cadence, not a realistic or validated astrophysical occurrence rate.
+  bin 50 (10 s of 0.2 s exposures). Further events are separated by a seeded
+  90–150 bins (18–30 s of exposures); duration is seeded in 0.8–2.4 s,
+  footprint in 4–28 pixels and intensity in 72–100%. The scheduler also checks
+  that no automatic event is active before starting another. Manual/test events
+  may overlap and every active source remains additive with all environmental
+  terms. This is a presentation-compressed synthetic cadence, not a realistic
+  or validated astrophysical occurrence rate.
 - Stopping restores Reference Mode and removes only automatic events. Existing
   manual events, if any, are not silently discarded.
 - The 3D HUD reads `REFERENCE REPLAY` (or `REFERENCE PARAMETRIC REPLAY`) in
@@ -167,7 +169,11 @@ Following author feedback, the large central title is the unambiguous
 eyebrow and orbit detail in the suffix. The inline plot was enlarged without changing the dashboard
 grid: 680×342 SVG view box, 82-unit left gutter, five rate ticks with compact
 `k` formatting, visible `-4/0/+4` innovation labels, 14-unit label text and a
-minimum 4% rate span rounded to 1/2/5×10^n tick steps. The panel now has a 340 px
+minimum 25% rate span around the current center, rounded to 1/2/5×10^n tick
+steps. Observations and uncertainty bands are still included when deriving the
+range and therefore are not clipped. This scale floor is visualization-only: it
+does not modify observations, filter inputs, covariance, residuals or metrics.
+The panel now has a 340 px
 minimum height and scrolls within the existing right column. A larger dashboard
 quadrant architecture remains a separate author decision and is not implemented.
 
@@ -196,9 +202,28 @@ Analysis and detector expansion now use a non-modal `45% / 55%` split:
 - at widths up to 900 px the same focus states stack 3D before the selected
   analysis/detector surface.
 
-The former detector full-screen backdrop/dialog and its CSS were removed. This
-revision changes presentation state and layout only; scientific models,
-parameters, streams, source scheduling and detector mapping were not altered.
+The former detector full-screen backdrop/dialog and its CSS were removed. That
+split-focus revision changed presentation state and layout only; scientific
+models, parameters, streams, source scheduling and detector mapping were not
+altered at that gate.
+
+## Approved edge controls and isolated-event refinement
+
+From clean commit `d468a85`, the author approved three focused refinements:
+
+- the former top-center text toolbar was replaced by 22×54 px chevron tabs at
+  each column boundary. CSS variables hold the 286/330 px desktop and 250/292 px
+  compact widths, so each tab follows its own boundary and moves to the viewport
+  edge when hidden. The split restore action is anchored at the 45% focus edge;
+- the display-only analysis range floor changed from 4% to 25% of the current
+  rate center so background count noise appears comparatively near-flat while
+  all observations/bands remain inside nice rounded bounds;
+- automatic synthetic events now use the isolated timing contract documented
+  above. The seed streams, environmental additions, intensity and footprint
+  ranges are unchanged. Manual/test overlap remains permitted.
+
+These settings remain `PROVISIONAL` presentation behavior and are not a claim
+about astrophysical rate, duration distribution or detector performance.
 
 ## Files produced or modified
 
@@ -223,15 +248,15 @@ Final implementation hashes before handoff:
 - `app/lib/kalman-scenarios.ts`:
   `e9ac3d5346e16e687f972de7691589f34580bd8707fc2cb78e6a9611628b7e92`;
 - `app/components/adaptive-background-panel.tsx`:
-  `24e69fec4c06d00b2c59fc4416ddb13ee764e3939cd0133993f9743525701033`;
+  `5281f57bb5a6a1939152df87d07af2759ceed28b88a08eaf4e8aedfc9c58b708`;
 - `app/page.tsx`:
-  `a7374f925593286a056ee447392b12d75d8d5cc23e5f1e1ab5944d05b1d3894f`;
+  `90962f5d4c16a4e9cdbcd59cb83a5a9ae54a3018dead9c4c9395a2c26bc94aaa`;
 - `app/globals.css`:
-  `3175328cccde5383b3b84d2bef6a7dfa529ad93caec3f372e76dc74dad954d88`;
+  `36224e68000370bc485857ef6d83079b8aa7cfff57cc0f6038ea04618aaf154b`;
 - `tests/kalman-scenarios.test.ts`:
   `4bf2866c7ac8d00676646dc2ede543165af97ce22377bcc4ef81af17ad55c78d`;
 - `tests/dashboard-layout.test.ts`:
-  `cf5b3466d6f398777e6013e34d35e88233dc541174bd769272dabf5f0760c668`.
+  `332b2f4d02436874def182eeac78a232f4403cb85521dd8aa7c92b5f9521d1c3`.
 
 ## Agents and tools
 

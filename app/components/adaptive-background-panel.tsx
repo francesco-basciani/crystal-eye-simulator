@@ -77,7 +77,9 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
     ),
   );
   const center = (maximumRate + minimumRate) / 2;
-  const minimumSpan = Math.max(10, center * 0.04);
+  // Display-only floor: keep count noise and environmental variation visually
+  // subordinate to a transient without changing any observation or filter input.
+  const minimumSpan = Math.max(10, center * 0.25);
   const dataSpan = Math.max(minimumSpan, maximumRate - minimumRate);
   const padding = dataSpan * 0.08;
   const provisionalMinimum = Math.max(0, center - dataSpan / 2 - padding);
