@@ -473,3 +473,81 @@ with the upper rate region increased from 186 to 242 viewBox units. CSS minimums
 are now 300 px for the normal live plot, 420 px in analysis split focus and
 400 px in the history inspector. These are display-only changes and do not
 modify data, estimator state, scale values or physical parameters.
+
+### Event-identity marker correction and estimator diagnosis
+
+Author-approved marker correction: each injected burst is now represented by
+exactly one yellow dot at its first acquired bin, rather than one dot for every
+bin in which that event remains active. Live samples carry the simulator's
+existing numeric `BurstEvent.id`, the set of active IDs and the subset whose
+`ageTicks` is zero. The same optional arrays are appended to the existing
+IndexedDB version-1 records; no store, index or database-version migration was
+introduced. Burst duration remains represented by `activeBursts` and is not
+discarded to obtain the single-marker presentation.
+
+History reconstruction uses explicit persisted start IDs when available. For
+legacy records without those fields, it creates an onset marker only when the
+active-event count increases between adjacent chronological rows of the same
+run. It deliberately does not mark an event already active at a page boundary,
+because its true onset is outside the loaded evidence. This fallback cannot
+recover an event replacement that leaves the active count unchanged and is
+therefore labeled as a compatibility inference, not measured event identity.
+
+Read-only quantitative diagnosis used the versioned
+`bright-grb-presentation-v1` preset and its fixed seed `0x43450004` on commit
+`15548a4`. The cyan curve is
+`estimatedBackgroundRateCountsPerSecond`, the two-state aggregate estimator's
+posterior background state. Only 1 of the 20 injected-source bins crossed the
+configured 4-sigma innovation gate. The remaining decaying source tail was
+assimilated as background/drift: mean estimator bias was `+40.68 counts/s`
+during the source interval and `+25.04 counts/s` over acquisition times
+24–30 s, while the preset's modeled drift is only `0.04 counts/s²`. This
+reproduces the reported post-burst rise and rules out marker rendering as its
+cause. No time-ordering or source-lifecycle error was observed in this preset;
+the cause is the estimator update contract for sub-gate source bins.
+
+No estimator correction was applied in this revision because selecting among
+an injected-truth mask, source-conditioned observations, or a modeled-
+environment control input changes the analysis model and remains an explicit
+author decision gate. No source/environment amplitude or other physical
+parameter was changed. The current estimator and all diagnosis metrics remain
+**PROVISIONAL** and are not evidence of a deployable GRB detector.
+
+The plot viewBox was increased from `680 × 420` to `680 × 500`. Both the upper
+rate region and lower normalized-innovation region receive additional vertical
+coordinates without changing values, scale-floor policy, filter inputs or
+physical parameters. Normal live, split-focus and history CSS use viewport-
+bounded `clamp()`/`min()` heights; the mobile rule caps plot height to preserve
+responsive stacking.
+
+### Finite-replay stop diagnosis (decision pending)
+
+The only normal application state transition that stops the running timer is
+the explicit ECI boundary branch: the requested time is clamped to the last
+ephemeris row and `paused` becomes true. The bundled replay spans
+`2033-01-01T00:00:00Z` through `2033-03-01T23:50:39Z` (`5,183,439 s`, or
+`59.9935 d`). Starting from the first row, the boundary is reached after
+approximately `2.880 h` wall time at `500×`, `7.199 h` at `200×`, or
+`28.797 h` at `50×`; selecting a UTC close to the end shortens that time.
+The branch records `ECI replay reached the final available sample and stopped`
+in the event log. Build and deterministic static checks found no competing
+mode-transition stop or reproduced runtime exception.
+
+The approved UI-only resolution preserves that scientifically honest finite
+boundary. It now raises a prominent `EPHEMERIS END · ACQUISITION PAUSED` alert
+with the exact final UTC and a `RESTART FROM DATASET START` action. Ordinary
+resume is disabled while the boundary alert is active, avoiding repeated end
+events; restart uses the existing mode-aware reset, resets Simulation Mode's
+two random streams and automatic-event cadence from the configured seed, and
+resumes acquisition from the first record. Continuing with a frozen final environment would conceal
+stale inputs, while cyclically reusing the replay would introduce a March-to-
+January environment discontinuity. Neither behavior was introduced.
+
+Final in-app browser verification confirmed that the live analysis SVG renders
+at a non-compressible `320 px` height in the default narrow column with viewBox
+`680 × 500`; the earlier percentage-height rule had allowed the grid track to
+compress it below the declared minimum and was replaced by an explicit
+analysis-plot height. A seeded live run displayed exactly one circle,
+`Injected GRB burst-1 started · frame 51`, with no console error. The complete
+automated gate after this CSS correction passed 56/56 tests, ESLint, explicit
+TypeScript checking, the static Pages build and `git diff --check`.

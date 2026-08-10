@@ -86,6 +86,8 @@ type SignalSample = Sample & {
   simulationTimeSeconds: number;
   exposureSeconds: number;
   activeBurstCount: number;
+  activeBurstIds: readonly number[];
+  startedBurstIds: readonly number[];
 };
 
 type EventRecord = {
@@ -185,6 +187,8 @@ function createBaselineSamples(background: number, count = 80): SignalSample[] {
     source: 0,
     observed: background,
     activeBurstCount: 0,
+    activeBurstIds: [],
+    startedBurstIds: [],
   }));
 }
 
@@ -4078,6 +4082,7 @@ export default function Home() {
   );
   const [speed, setSpeed] = useState(50);
   const [paused, setPaused] = useState(false);
+  const [ephemerisEndReached, setEphemerisEndReached] = useState(false);
   const [cameraMode, setCameraMode] = useState<CameraMode>("orbit");
   const [systemZoom, setSystemZoom] = useState(55);
   const [configurationView, setConfigurationView] = useState<
@@ -4484,6 +4489,7 @@ export default function Home() {
       if (requestedTimestampMs >= ephemeris.endMs) {
         settingsRef.current.paused = true;
         setPaused(true);
+        setEphemerisEndReached(true);
         setEventLog((current) => [
           ...current,
           {
@@ -4613,6 +4619,10 @@ export default function Home() {
       const activeBursts = activeBurstsRef.current.filter(
         (burst) => burst.ticksRemaining > 0,
       );
+      const activeBurstIds = activeBursts.map((burst) => burst.id);
+      const startedBurstIds = activeBursts
+        .filter((burst) => burst.ageTicks === 0)
+        .map((burst) => burst.id);
       const burstDirections = activeBursts.map((burst) => burst.pixelId);
       const burstPixelGroups = activeBursts.map((burst) => burst.pixelIds);
       const isGRB = activeBursts.length > 0;
@@ -4671,6 +4681,8 @@ export default function Home() {
         simulationTimeSeconds: elapsedRef.current,
         exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS,
         activeBurstCount: activeBursts.length,
+        activeBurstIds,
+        startedBurstIds,
       };
       photonBinRef.current += 1;
       setSamples((current) => [...current.slice(-119), nextSignalSample]);
@@ -4690,6 +4702,8 @@ export default function Home() {
           moon: effectiveMoonCounts,
           earthAlbedo: effectiveEarthCounts,
           activeBursts: activeBursts.length,
+          activeBurstIds,
+          startedBurstIds,
           hitPixels: detectorHits.filter((hits) => hits > 0).length,
         }).then(() => {
           setPhotonRecordCount((current) => current + 1);
@@ -4997,6 +5011,7 @@ export default function Home() {
       return;
     }
     setEphemerisError(null);
+    setEphemerisEndReached(false);
     setEpochMs(requestedTime - elapsedRef.current * 1000);
   }, []);
 
@@ -5016,6 +5031,7 @@ export default function Home() {
     settingsRef.current.epochMs = ephemeris.startMs;
     setEpochMs(ephemeris.startMs);
     setEphemerisError(null);
+    setEphemerisEndReached(false);
     selectPixel(43);
     const celestial = getCelestialGeometry(
       sampleEciEphemeris(ephemeris, ephemeris.startMs),
@@ -5152,6 +5168,17 @@ export default function Home() {
     ]);
   }, [resetSimulation, simulationSeed]);
 
+  const restartFromEphemerisStart = useCallback(() => {
+    resetSimulation(simulatorMode);
+    if (simulatorMode === "simulation") {
+      observationRandomRef.current = createSeededRandom(simulationSeed);
+      burstRandomRef.current = createSeededRandom(simulationSeed ^ 0xa5a5_5a5a);
+      nextAutomaticBurstBinRef.current = AUTOMATIC_GRB_INITIAL_DELAY_BINS;
+    }
+    settingsRef.current.paused = false;
+    setPaused(false);
+  }, [resetSimulation, simulationSeed, simulatorMode]);
+
   const stopSimulationMode = useCallback(() => {
     activeBurstsRef.current = activeBurstsRef.current.filter(
       (burst) => burst.origin !== "automatic",
@@ -5190,6 +5217,7 @@ export default function Home() {
         expectedSourceCounts: sample.source,
         observedCounts: sample.observed,
         activeBurstCount: sample.activeBurstCount,
+        startedBurstIds: sample.startedBurstIds.map((id) => `burst-${id}`),
       })),
     [samples],
   );
@@ -5267,6 +5295,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setPaused((value) => !value)}
+              disabled={ephemerisEndReached}
               aria-label={paused ? "Resume simulation" : "Pause simulation"}
               aria-pressed={paused}
             >
@@ -5290,6 +5319,18 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {ephemerisEndReached && (
+        <aside className="ephemeris-end-notice" role="alert" aria-live="assertive">
+          <div>
+            <strong>EPHEMERIS END · ACQUISITION PAUSED</strong>
+            <span>The finite ECI replay reached 2033-03-01 23:50:39 UTC.</span>
+          </div>
+          <button type="button" onClick={restartFromEphemerisStart}>
+            RESTART FROM DATASET START
+          </button>
+        </aside>
+      )}
 
       {configurationView === "hub" && (
         <ConfigurationHub

@@ -17,6 +17,8 @@ export type PhotonRecordInput = Readonly<{
   moon: number;
   earthAlbedo: number;
   activeBursts: number;
+  activeBurstIds?: readonly number[];
+  startedBurstIds?: readonly number[];
   hitPixels: number;
 }>;
 
@@ -73,6 +75,23 @@ export function normalizeStoredPhotonRecord(
     warnings.push(`${field}:negative`);
     return fallback;
   };
+  const optionalNonNegativeIntegerArray = (field: string) => {
+    const candidate = raw[field];
+    if (candidate === undefined) return undefined;
+    if (!Array.isArray(candidate)) {
+      warnings.push(field);
+      return undefined;
+    }
+    const normalized = candidate.filter(
+      (item): item is number =>
+        typeof item === "number" &&
+        Number.isFinite(item) &&
+        item >= 0 &&
+        Number.isInteger(item),
+    );
+    if (normalized.length !== candidate.length) warnings.push(`${field}:normalized`);
+    return Object.freeze([...new Set(normalized)]);
+  };
   const id = Math.max(0, Math.trunc(nonNegative("id", fallbackId)));
   const bin = Math.max(0, Math.trunc(nonNegative("bin", id)));
   const background = nonNegative("background", 0);
@@ -103,6 +122,8 @@ export function normalizeStoredPhotonRecord(
     : `legacy-${id}`;
   if (runId.startsWith("legacy-") && raw.runId !== runId) warnings.push("runId");
   if (raw.schemaVersion !== 1) warnings.push("schemaVersion");
+  const activeBurstIds = optionalNonNegativeIntegerArray("activeBurstIds");
+  const startedBurstIds = optionalNonNegativeIntegerArray("startedBurstIds");
 
   return Object.freeze({
     schemaVersion: 1,
@@ -119,12 +140,47 @@ export function normalizeStoredPhotonRecord(
     moon: nonNegative("moon", 0),
     earthAlbedo: nonNegative("earthAlbedo", 0),
     activeBursts: Math.max(0, Math.trunc(nonNegative("activeBursts", 0))),
+    ...(activeBurstIds !== undefined ? { activeBurstIds } : {}),
+    ...(startedBurstIds !== undefined ? { startedBurstIds } : {}),
     hitPixels: Math.max(0, Math.trunc(nonNegative("hitPixels", 0))),
     id,
     ...(warnings.length > 0
       ? { normalizationWarnings: Object.freeze([...new Set(warnings)]) }
       : {}),
   });
+}
+
+export function deriveBurstStartsByRecord(
+  chronologicalRecords: readonly PhotonRecord[],
+): ReadonlyMap<number, readonly string[]> {
+  const startsByRecord = new Map<number, readonly string[]>();
+  const previousActiveCountByRun = new Map<string, number>();
+
+  for (const record of chronologicalRecords) {
+    if (record.startedBurstIds !== undefined) {
+      startsByRecord.set(
+        record.id,
+        Object.freeze(record.startedBurstIds.map((id) => `burst-${id}`)),
+      );
+    } else {
+      const previousCount = previousActiveCountByRun.get(record.runId);
+      const inferredCount = previousCount === undefined
+        ? 0
+        : Math.max(0, record.activeBursts - previousCount);
+      startsByRecord.set(
+        record.id,
+        Object.freeze(
+          Array.from(
+            { length: inferredCount },
+            (_, index) => `legacy-${record.runId}-${record.id}-${index + 1}`,
+          ),
+        ),
+      );
+    }
+    previousActiveCountByRun.set(record.runId, record.activeBursts);
+  }
+
+  return startsByRecord;
 }
 
 export class PhotonRepository {

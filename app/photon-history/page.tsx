@@ -5,6 +5,7 @@ import { AppNav } from "../components/app-nav";
 import { AdaptiveAnalysisPlot } from "../components/adaptive-background-panel";
 import { runAggregateBackgroundKalman } from "../lib/kalman-scenarios";
 import {
+  deriveBurstStartsByRecord,
   openPhotonRepository,
   type PhotonCursor,
   type PhotonQueryResult,
@@ -119,6 +120,7 @@ export default function PhotonHistoryPage() {
   }, [result.items, selectedRecord]);
   const analysisRun = useMemo(() => {
     if (analysisRecords.length === 0 || !selectedRecord) return null;
+    const burstStartsByRecord = deriveBurstStartsByRecord(analysisRecords);
     return runAggregateBackgroundKalman(
       analysisRecords.map((record) => ({
         frameIndex: record.bin,
@@ -128,6 +130,7 @@ export default function PhotonHistoryPage() {
         expectedSourceRateCountsPerSecond: record.source / 0.2,
         observedCounts: record.observed,
         activeBurstCount: record.activeBursts,
+        startedBurstIds: burstStartsByRecord.get(record.id) ?? [],
       })),
       {
         scenarioId: `persisted-run-${selectedRecord.runId}`,
@@ -213,7 +216,7 @@ export default function PhotonHistoryPage() {
               />
             </div>
             <p>
-              Reconstructed from persisted rows for the selected run on this 100-row page. Yellow dots mark only bins with a recorded active injected GRB; environmental changes and Poisson samples never create event dots.
+              Reconstructed from persisted rows for the selected run on this 100-row page. Each yellow dot marks one injected GRB start; environmental changes and Poisson samples never create event dots. Legacy pages infer starts only from an increase in the recorded active-event count, so an event already active at the page boundary is not marked.
             </p>
           </section>
         )}

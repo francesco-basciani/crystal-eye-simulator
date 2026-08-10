@@ -18,16 +18,17 @@ export type AdaptiveAnalysisSample = Readonly<{
   expectedSourceCounts: number;
   observedCounts: number;
   activeBurstCount: number;
+  startedBurstIds: readonly string[];
 }>;
 
 const WIDTH = 680;
-const HEIGHT = 420;
+const HEIGHT = 500;
 const LEFT = 82;
 const RIGHT = 18;
 const UPPER_TOP = 28;
-const UPPER_BOTTOM = 270;
-const LOWER_TOP = 326;
-const LOWER_BOTTOM = 390;
+const UPPER_BOTTOM = 330;
+const LOWER_TOP = 386;
+const LOWER_BOTTOM = 466;
 
 function niceStep(rawStep: number) {
   const magnitude = 10 ** Math.floor(Math.log10(Math.max(Number.EPSILON, rawStep)));
@@ -135,18 +136,18 @@ export function AdaptiveAnalysisPlot({
       <path className="kalman-truth-line" d={linePath(points, x, (point) => yRate(point.expectedBackgroundRateCountsPerSecond))} />
       <path className="kalman-estimate-line" d={linePath(points, x, (point) => yRate(point.estimatedBackgroundRateCountsPerSecond))} />
       <path className="kalman-observed-line" d={linePath(points, x, (point) => yRate(point.observedRateCountsPerSecond))} />
-      {points.map((point, index) =>
-        (point.activeBurstCount ?? 0) > 0 ? (
+      {points.flatMap((point, index) =>
+        (point.startedBurstIds ?? []).map((burstId, burstIndex) => (
           <circle
             className="kalman-source-event-marker"
-            key={`source-event-${point.frameIndex}`}
+            key={`source-event-${point.frameIndex}-${burstId}`}
             cx={x(point, index)}
-            cy={yRate(point.observedRateCountsPerSecond)}
+            cy={yRate(point.observedRateCountsPerSecond) - burstIndex * 9}
             r={4.2}
           >
-            <title>{`Injected GRB active · frame ${point.frameIndex}`}</title>
+            <title>{`Injected GRB ${burstId} started · frame ${point.frameIndex}`}</title>
           </circle>
-        ) : null,
+        )),
       )}
       {selectedFrameIndex !== undefined && points.map((point, index) =>
         point.frameIndex === selectedFrameIndex ? (
@@ -202,6 +203,7 @@ export function AdaptiveBackgroundPanel({
         sample.expectedSourceCounts / sample.exposureSeconds,
       observedCounts: sample.observedCounts,
       activeBurstCount: sample.activeBurstCount,
+      startedBurstIds: sample.startedBurstIds,
     }));
     return runAggregateBackgroundKalman(frames, {
       scenarioId: mode === "simulation" ? "live-seeded-simulation-v1" : "live-reference-replay-v1",
@@ -246,7 +248,7 @@ export function AdaptiveBackgroundPanel({
       </header>
       <div className="adaptive-analysis-warning">{KALMAN_DEMONSTRATOR_LABEL}</div>
       <div className="adaptive-analysis-legend">
-        <span>observed stream</span><span>{mode === "simulation" ? "environment reference" : "Rito + environment reference"}</span><span>estimate ±95%</span><span>active injected GRB dots</span>
+        <span>observed stream</span><span>{mode === "simulation" ? "environment reference" : "Rito + environment reference"}</span><span>estimate ±95%</span><span>injected GRB start dots</span>
       </div>
       <AdaptiveAnalysisPlot points={run.points} />
       <footer>

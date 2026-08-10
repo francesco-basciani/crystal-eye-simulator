@@ -214,7 +214,7 @@ button {
 .adaptive-analysis-legend span:nth-child(4) { color: var(--yellow); }
 
 .adaptive-analysis-plot {
-  min-height: 300px;
+  min-height: clamp(320px, 42dvh, 380px);
   padding: 0 5px;
 }
 
@@ -413,6 +413,73 @@ button {
 .simulation-mode-button.simulation {
   color: #ffe49a;
   background: rgba(113, 75, 7, 0.62);
+}
+
+.ephemeris-end-notice {
+  position: absolute;
+  z-index: 32;
+  top: 78px;
+  left: 50%;
+  width: min(620px, calc(100vw - 28px));
+  min-height: 48px;
+  padding: 7px 9px 7px 13px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid rgba(255, 200, 87, 0.72);
+  color: #ffe49a;
+  background: rgba(37, 27, 7, 0.96);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.52);
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.ephemeris-end-notice strong,
+.ephemeris-end-notice span {
+  display: block;
+}
+
+.ephemeris-end-notice strong {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.ephemeris-end-notice span {
+  margin-top: 3px;
+  color: #bba86f;
+  font-size: 7px;
+}
+
+.ephemeris-end-notice button {
+  min-height: 30px;
+  padding: 0 10px;
+  flex: 0 0 auto;
+  border: 1px solid #ffc857;
+  color: #151005;
+  background: #ffc857;
+  font-size: 7px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.time-warp-controls button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+@media (max-width: 620px) {
+  .ephemeris-end-notice {
+    position: fixed;
+    top: 10px;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ephemeris-end-notice button {
+    width: 100%;
+  }
 }
 
 .status-live {
@@ -4203,7 +4270,7 @@ button {
 }
 
 .history-analysis-plot {
-  min-height: 400px;
+  min-height: clamp(440px, 58dvh, 560px);
 }
 
 .history-analysis-inspector > p {
@@ -4339,10 +4406,17 @@ button {
 
 .kalman-plot {
   width: 100%;
-  height: 100%;
+  /* Let the analysis-specific minimum height win in the narrow live column.
+     A percentage height allowed the grid track to compress the SVG below it. */
+  height: auto;
   min-height: 250px;
   padding: 0 12px;
   overflow: visible;
+}
+
+.kalman-plot.adaptive-analysis-plot {
+  height: clamp(320px, 42dvh, 380px);
+  min-height: clamp(320px, 42dvh, 380px);
 }
 
 .kalman-grid,
@@ -5332,8 +5406,16 @@ button {
 }
 
 .workspace.focus-analysis .adaptive-analysis-plot {
-  min-height: 420px;
+  min-height: min(500px, calc(100dvh - 190px));
   height: 100%;
+}
+
+@media (max-width: 900px) {
+  .adaptive-analysis-plot,
+  .workspace.focus-analysis .adaptive-analysis-plot,
+  .history-analysis-plot {
+    min-height: clamp(340px, 62dvh, 460px);
+  }
 }
 
 .workspace.focus-detector .right-panel > .panel-heading,

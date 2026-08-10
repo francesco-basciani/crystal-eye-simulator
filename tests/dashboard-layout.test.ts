@@ -124,7 +124,7 @@ test("Reference and Simulation modes keep analysis inline and simulation explici
   assert.doesNotMatch(adaptiveAnalysisSource, /sourceResidualRateCountsPerSecond/);
   assert.match(adaptiveAnalysisSource, /sample\.acquisitionTimeSeconds/);
   assert.match(adaptiveAnalysisSource, /acquisition time/);
-  assert.match(adaptiveAnalysisSource, /active injected GRB dots/);
+  assert.match(adaptiveAnalysisSource, /injected GRB start dots/);
   assert.match(adaptiveAnalysisSource, /KALMAN_DEMONSTRATOR_LABEL/);
   assert.doesNotMatch(pageSource, /KALMAN SCENARIOS|ASI/);
   assert.doesNotMatch(adaptiveAnalysisSource, /KALMAN SCENARIOS|ASI/);
@@ -136,6 +136,13 @@ test("Reference and Simulation modes keep analysis inline and simulation explici
   assert.match(pageSource, /AUTOMATIC_GRB_MINIMUM_DURATION_SECONDS = 0\.8/);
   assert.match(pageSource, /AUTOMATIC_GRB_DURATION_RANGE_SECONDS = 1\.6/);
   assert.match(pageSource, /burst\.origin === "automatic" && burst\.ticksRemaining > 0/);
+  assert.match(pageSource, /setEphemerisEndReached\(true\)/);
+  assert.match(pageSource, /EPHEMERIS END · ACQUISITION PAUSED/);
+  assert.match(pageSource, /RESTART FROM DATASET START/);
+  assert.match(pageSource, /restartFromEphemerisStart/);
+  assert.match(pageSource, /restartFromEphemerisStart[\s\S]*?createSeededRandom\(simulationSeed\)[\s\S]*?AUTOMATIC_GRB_INITIAL_DELAY_BINS/);
+  assert.match(pageSource, /disabled=\{ephemerisEndReached\}/);
+  assert.match(styles, /\.ephemeris-end-notice\s*\{/);
   assert.match(pageSource, /composeModeBackgroundRate\(/);
   assert.match(pageSource, /composePixelSignalFrame\(/);
   assert.match(pageSource, /ENVIRONMENT-ONLY SEEDED SYNTHETIC OBSERVATIONS/);
