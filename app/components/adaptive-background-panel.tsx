@@ -21,13 +21,13 @@ export type AdaptiveAnalysisSample = Readonly<{
 }>;
 
 const WIDTH = 680;
-const HEIGHT = 342;
+const HEIGHT = 420;
 const LEFT = 82;
 const RIGHT = 18;
 const UPPER_TOP = 28;
-const UPPER_BOTTOM = 214;
-const LOWER_TOP = 258;
-const LOWER_BOTTOM = 314;
+const UPPER_BOTTOM = 270;
+const LOWER_TOP = 326;
+const LOWER_BOTTOM = 390;
 
 function niceStep(rawStep: number) {
   const magnitude = 10 ** Math.floor(Math.log10(Math.max(Number.EPSILON, rawStep)));
@@ -68,8 +68,6 @@ export function AdaptiveAnalysisPlot({
       Math.max(
         point.observedRateCountsPerSecond,
         point.upperBackgroundRateCountsPerSecond,
-        point.expectedBackgroundRateCountsPerSecond +
-          point.expectedSourceRateCountsPerSecond,
       ),
     ),
   );
@@ -114,17 +112,6 @@ export function AdaptiveAnalysisPlot({
     }),
     "Z",
   ].join(" ");
-  const sourceArea = [
-    ...points.map((point, index) =>
-      `${index === 0 ? "M" : "L"}${x(point, index).toFixed(2)},${yRate(point.expectedBackgroundRateCountsPerSecond + point.expectedSourceRateCountsPerSecond).toFixed(2)}`,
-    ),
-    ...[...points].reverse().map((point, reverseIndex) => {
-      const index = points.length - reverseIndex - 1;
-      return `L${x(point, index).toFixed(2)},${yRate(point.expectedBackgroundRateCountsPerSecond).toFixed(2)}`;
-    }),
-    "Z",
-  ].join(" ");
-
   return (
     <svg
       className="kalman-plot adaptive-analysis-plot"
@@ -145,7 +132,6 @@ export function AdaptiveAnalysisPlot({
         );
       })}
       <path className="kalman-confidence" d={confidenceArea} />
-      <path className="kalman-source-area" d={sourceArea} />
       <path className="kalman-truth-line" d={linePath(points, x, (point) => yRate(point.expectedBackgroundRateCountsPerSecond))} />
       <path className="kalman-estimate-line" d={linePath(points, x, (point) => yRate(point.estimatedBackgroundRateCountsPerSecond))} />
       <path className="kalman-observed-line" d={linePath(points, x, (point) => yRate(point.observedRateCountsPerSecond))} />
@@ -155,10 +141,7 @@ export function AdaptiveAnalysisPlot({
             className="kalman-source-event-marker"
             key={`source-event-${point.frameIndex}`}
             cx={x(point, index)}
-            cy={yRate(
-              point.expectedBackgroundRateCountsPerSecond +
-                point.expectedSourceRateCountsPerSecond,
-            )}
+            cy={yRate(point.observedRateCountsPerSecond)}
             r={4.2}
           >
             <title>{`Injected GRB active · frame ${point.frameIndex}`}</title>
@@ -185,9 +168,9 @@ export function AdaptiveAnalysisPlot({
       ))}
       <path className="kalman-innovation-line" d={linePath(points, x, (point) => yInnovation(point.normalizedInnovation))} />
       <text className="kalman-axis-title" x={8} y={18}>RATE · COUNTS/S</text>
-      <text className="kalman-axis-title" x={8} y={248}>NORMALIZED INNOVATION · ±4 GATE</text>
-      <text className="kalman-time-label" x={LEFT} y={338}>{(points[0]?.simulationTimeSeconds ?? 0).toFixed(1)} s</text>
-      <text className="kalman-time-label" x={WIDTH - RIGHT} y={338} textAnchor="end">{(points.at(-1)?.simulationTimeSeconds ?? 0).toFixed(1)} s acquisition time</text>
+      <text className="kalman-axis-title" x={8} y={LOWER_TOP - 10}>NORMALIZED INNOVATION · ±4 GATE</text>
+      <text className="kalman-time-label" x={LEFT} y={HEIGHT - 4}>{(points[0]?.simulationTimeSeconds ?? 0).toFixed(1)} s</text>
+      <text className="kalman-time-label" x={WIDTH - RIGHT} y={HEIGHT - 4} textAnchor="end">{(points.at(-1)?.simulationTimeSeconds ?? 0).toFixed(1)} s acquisition time</text>
     </svg>
   );
 }
@@ -263,7 +246,7 @@ export function AdaptiveBackgroundPanel({
       </header>
       <div className="adaptive-analysis-warning">{KALMAN_DEMONSTRATOR_LABEL}</div>
       <div className="adaptive-analysis-legend">
-        <span>observed stream</span><span>{mode === "simulation" ? "environment reference" : "Rito + environment reference"}</span><span>estimate ±95%</span><span>GRB dots + injected source truth</span>
+        <span>observed stream</span><span>{mode === "simulation" ? "environment reference" : "Rito + environment reference"}</span><span>estimate ±95%</span><span>active injected GRB dots</span>
       </div>
       <AdaptiveAnalysisPlot points={run.points} />
       <footer>

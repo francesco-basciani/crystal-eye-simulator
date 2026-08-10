@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   PHOTON_STORE_NAME,
   PhotonRepository,
+  normalizeStoredPhotonRecord,
   openPhotonRepository,
   type PhotonRecord,
   type PhotonRecordInput,
@@ -188,4 +189,26 @@ test("reverse compound keyset paging is inclusive and has no gaps or duplicates"
 
 test("unavailable IndexedDB fails explicitly", async () => {
   await assert.rejects(openPhotonRepository(undefined), /unavailable/);
+});
+
+test("legacy persisted rows are normalized without changing valid schema-v1 rows", () => {
+  const valid = { ...input("run-a", 4, 4_000), id: 9 };
+  assert.deepEqual(normalizeStoredPhotonRecord(valid), valid);
+
+  const legacy = normalizeStoredPhotonRecord({
+    id: 12,
+    simulatedAtMs: 8_000,
+    capturedAtMs: 1e300,
+    background: 8,
+    observed: Number.NaN,
+  });
+  assert.equal(legacy.runId, "legacy-12");
+  assert.equal(legacy.bin, 12);
+  assert.equal(legacy.source, 0);
+  assert.equal(legacy.observed, 8);
+  assert.equal(legacy.activeBursts, 0);
+  assert.equal(legacy.capturedAtMs, 8_000);
+  assert.equal(legacy.simulatedDate, new Date(8_000).toISOString());
+  assert.ok(legacy.normalizationWarnings?.includes("runId"));
+  assert.ok(legacy.normalizationWarnings?.includes("observed"));
 });

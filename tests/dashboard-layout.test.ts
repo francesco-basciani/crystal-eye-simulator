@@ -124,7 +124,7 @@ test("Reference and Simulation modes keep analysis inline and simulation explici
   assert.doesNotMatch(adaptiveAnalysisSource, /sourceResidualRateCountsPerSecond/);
   assert.match(adaptiveAnalysisSource, /sample\.acquisitionTimeSeconds/);
   assert.match(adaptiveAnalysisSource, /acquisition time/);
-  assert.match(adaptiveAnalysisSource, /injected source truth/);
+  assert.match(adaptiveAnalysisSource, /active injected GRB dots/);
   assert.match(adaptiveAnalysisSource, /KALMAN_DEMONSTRATOR_LABEL/);
   assert.doesNotMatch(pageSource, /KALMAN SCENARIOS|ASI/);
   assert.doesNotMatch(adaptiveAnalysisSource, /KALMAN SCENARIOS|ASI/);

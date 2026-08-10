@@ -14,6 +14,10 @@ const pageSource = readFileSync(
   new URL("../app/page.tsx", import.meta.url),
   "utf8",
 );
+const styles = readFileSync(
+  new URL("../app/globals.css", import.meta.url),
+  "utf8",
+);
 
 test("adaptive event dots are driven only by recorded active injected GRBs", () => {
   const markerStart = adaptiveSource.indexOf('className="kalman-source-event-marker"');
@@ -24,11 +28,16 @@ test("adaptive event dots are driven only by recorded active injected GRBs", () 
   );
   const markerCondition = adaptiveSource.slice(markerConditionStart, markerStart + 500);
   assert.match(markerCondition, /\(point\.activeBurstCount \?\? 0\) > 0/);
-  assert.doesNotMatch(markerCondition, /gated|normalizedInnovation|observedRate/);
+  assert.doesNotMatch(markerCondition, /gated|normalizedInnovation/);
   assert.match(adaptiveSource, /Injected GRB active · frame/);
   assert.match(adaptiveSource, /className="kalman-observed-line"/);
   assert.equal((adaptiveSource.match(/<circle/g) ?? []).length, 1);
   assert.doesNotMatch(adaptiveSource, /kalman-observation|kalman-gated-point/);
+  assert.doesNotMatch(adaptiveSource, /sourceArea|kalman-source-area/);
+  assert.doesNotMatch(styles, /\.kalman-source-area/);
+  assert.match(adaptiveSource, /const HEIGHT = 420/);
+  assert.match(styles, /\.history-analysis-plot\s*\{[\s\S]*?min-height:\s*400px/);
+  assert.match(styles, /\.workspace\.focus-analysis \.adaptive-analysis-plot\s*\{[\s\S]*?min-height:\s*420px/);
   assert.match(pageSource, /activeBurstCount: activeBursts\.length/);
   assert.match(pageSource, /activeBurstCount: sample\.activeBurstCount/);
 });

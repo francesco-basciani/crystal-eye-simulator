@@ -441,3 +441,35 @@ Exposure remains the schema-v1 invariant `0.2 s`; estimator time is reconstructe
 as `bin × 0.2 s`. The displayed reconstruction is limited to records for the
 selected run present on the current 100-row page and is labeled **PROVISIONAL**.
 It is inspection of synthetic/configured history, not a GRB detection claim.
+
+### History compatibility and graph simplification correction
+
+Reported symptom: the persisted Photon/Kalman History screen displayed a generic
+client `Script error`. A subsequent browser check against approximately 31,000
+persisted rows loaded without console errors, so the original event could not be
+reproduced on the clean candidate and may have been a development/HMR transient.
+Static inspection nevertheless identified unsafe assumptions at the persisted
+data boundary: direct `.slice()`, `.toFixed()` and `Date.toISOString()` calls,
+plus estimator inputs, trusted every stored field without runtime validation.
+
+Without changing IndexedDB version `1`, repository reads now normalize legacy
+or malformed cursor values into the schema-v1 view. Missing nonessential counts
+default to zero; missing observed counts default to the available background
+plus source; missing run/bin/time metadata receive deterministic legacy values.
+Every substituted field is listed in the non-persisted
+`normalizationWarnings` metadata and the history UI labels affected rows as
+legacy-normalized. Valid schema-v1 records retain their values unchanged. This
+is defensive display compatibility, not creation of scientific evidence.
+
+The upper analysis plot no longer constructs or renders the filled source area
+between background and `background + source`. That parallel boundary was
+visually confusable with a second background curve. The remaining upper plot is
+limited to continuous observed, configured-background and estimate/uncertainty
+series; active injected GRBs are shown only as dots placed on the observed line.
+Selected history rows continue to state the stored injected-source count.
+
+Actual plot geometry was enlarged from a `680 × 342` to a `680 × 420` viewBox,
+with the upper rate region increased from 186 to 242 viewBox units. CSS minimums
+are now 300 px for the normal live plot, 420 px in analysis split focus and
+400 px in the history inspector. These are display-only changes and do not
+modify data, estimator state, scale values or physical parameters.

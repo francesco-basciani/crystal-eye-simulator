@@ -20,7 +20,10 @@ export type PhotonRecordInput = Readonly<{
   hitPixels: number;
 }>;
 
-export type PhotonRecord = PhotonRecordInput & Readonly<{ id: number }>;
+export type PhotonRecord = PhotonRecordInput & Readonly<{
+  id: number;
+  normalizationWarnings?: readonly string[];
+}>;
 
 export type PhotonCursor = Readonly<{
   simulatedAtMs: number;
@@ -46,6 +49,82 @@ function requestFailure(request: IDBRequest, fallback: string): Error {
 
 function transactionFailure(transaction: IDBTransaction): Error {
   return transaction.error ?? new Error("IndexedDB transaction failed.");
+}
+
+export function normalizeStoredPhotonRecord(
+  value: unknown,
+  fallbackId = 0,
+): PhotonRecord {
+  const raw = value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
+  const warnings: string[] = [];
+  const finite = (field: string, fallback: number) => {
+    const candidate = raw[field];
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      return candidate;
+    }
+    warnings.push(field);
+    return fallback;
+  };
+  const nonNegative = (field: string, fallback: number) => {
+    const candidate = finite(field, fallback);
+    if (candidate >= 0) return candidate;
+    warnings.push(`${field}:negative`);
+    return fallback;
+  };
+  const id = Math.max(0, Math.trunc(nonNegative("id", fallbackId)));
+  const bin = Math.max(0, Math.trunc(nonNegative("bin", id)));
+  const background = nonNegative("background", 0);
+  const source = nonNegative("source", 0);
+  const observed = nonNegative("observed", background + source);
+  const capturedCandidate = finite("capturedAtMs", Number.NaN);
+  const simulatedCandidate = finite("simulatedAtMs", Number.NaN);
+  const validTimestamp = (candidate: number) =>
+    Number.isFinite(candidate) && Number.isFinite(new Date(candidate).getTime());
+  const parsedSimulatedDate =
+    typeof raw.simulatedDate === "string"
+      ? Date.parse(raw.simulatedDate)
+      : Number.NaN;
+  const simulatedAtMs = validTimestamp(simulatedCandidate)
+    ? simulatedCandidate
+    : validTimestamp(parsedSimulatedDate)
+      ? parsedSimulatedDate
+      : validTimestamp(capturedCandidate)
+        ? capturedCandidate
+        : 0;
+  const capturedAtMs = validTimestamp(capturedCandidate)
+    ? capturedCandidate
+    : simulatedAtMs;
+  if (!validTimestamp(simulatedCandidate)) warnings.push("simulatedAtMs:derived");
+  if (!validTimestamp(capturedCandidate)) warnings.push("capturedAtMs:derived");
+  const runId = typeof raw.runId === "string" && raw.runId.trim()
+    ? raw.runId
+    : `legacy-${id}`;
+  if (runId.startsWith("legacy-") && raw.runId !== runId) warnings.push("runId");
+  if (raw.schemaVersion !== 1) warnings.push("schemaVersion");
+
+  return Object.freeze({
+    schemaVersion: 1,
+    runId,
+    bin,
+    elapsed: nonNegative("elapsed", bin * 0.2),
+    capturedAtMs,
+    simulatedAtMs,
+    simulatedDate: new Date(simulatedAtMs).toISOString(),
+    observed,
+    background,
+    source,
+    sun: nonNegative("sun", 0),
+    moon: nonNegative("moon", 0),
+    earthAlbedo: nonNegative("earthAlbedo", 0),
+    activeBursts: Math.max(0, Math.trunc(nonNegative("activeBursts", 0))),
+    hitPixels: Math.max(0, Math.trunc(nonNegative("hitPixels", 0))),
+    id,
+    ...(warnings.length > 0
+      ? { normalizationWarnings: Object.freeze([...new Set(warnings)]) }
+      : {}),
+  });
 }
 
 export class PhotonRepository {
@@ -151,7 +230,12 @@ export class PhotonRepository {
           });
           return;
         }
-        items.push(Object.freeze(cursor.value as PhotonRecord));
+        items.push(
+          normalizeStoredPhotonRecord(
+            cursor.value,
+            Number(cursor.primaryKey),
+          ),
+        );
         cursor.continue();
       };
       request.onerror = () => {

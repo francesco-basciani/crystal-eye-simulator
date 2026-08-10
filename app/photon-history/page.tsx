@@ -108,6 +108,9 @@ export default function PhotonHistoryPage() {
   const selectedPageIndex = selectedRecord
     ? result.items.findIndex((record) => record.id === selectedRecord.id)
     : -1;
+  const normalizedLegacyCount = result.items.filter(
+    (record) => (record.normalizationWarnings?.length ?? 0) > 0,
+  ).length;
   const analysisRecords = useMemo(() => {
     if (!selectedRecord) return [];
     return result.items
@@ -162,7 +165,7 @@ export default function PhotonHistoryPage() {
           ? `HISTORY UNAVAILABLE · ${error}`
           : status === "loading"
             ? "READING LOCAL PHOTON RECORDS…"
-            : `${result.items.length} records on this page · newest first · stored locally in this browser`}
+            : `${result.items.length} records on this page · newest first · stored locally in this browser${normalizedLegacyCount > 0 ? ` · ${normalizedLegacyCount} legacy rows normalized for display` : ""}`}
       </div>
 
       <section className="data-table-panel" aria-busy={status === "loading"}>
@@ -170,7 +173,12 @@ export default function PhotonHistoryPage() {
           <section className="history-analysis-inspector" aria-labelledby="history-analysis-title">
             <header>
               <div>
-                <small>PERSISTED PAGE RECONSTRUCTION · PROVISIONAL</small>
+                <small>
+                  PERSISTED PAGE RECONSTRUCTION · PROVISIONAL
+                  {selectedRecord.normalizationWarnings?.length
+                    ? " · LEGACY ROW NORMALIZED"
+                    : ""}
+                </small>
                 <strong id="history-analysis-title">Selected photon bin {selectedRecord.bin}</strong>
               </div>
               <div>
@@ -222,7 +230,13 @@ export default function PhotonHistoryPage() {
           </thead>
           <tbody>
             {result.items.map((record) => (
-              <tr key={record.id} className={record.id === selectedRecordId ? "selected" : ""}>
+              <tr
+                key={record.id}
+                className={`${record.id === selectedRecordId ? "selected" : ""}${record.normalizationWarnings?.length ? " legacy-normalized" : ""}`}
+                title={record.normalizationWarnings?.length
+                  ? `Legacy fields normalized: ${record.normalizationWarnings.join(", ")}`
+                  : undefined}
+              >
                 <td>
                   <button
                     type="button"
