@@ -5175,10 +5175,7 @@ export default function Home() {
       )}
 
       <section className="workspace">
-        <aside className="cockpit-panel cockpit-context" aria-label="Crystal Eye view and source controls">
-          <div className="panel-heading cockpit-context-heading">
-            <span>CRYSTAL EYE VIEW · ENVIRONMENT · SOURCE TOOLS</span>
-          </div>
+        <aside className="control-panel left-panel">
           <div className="left-sensor-slot">
             <SensorView
               satelliteDirection={telemetry.satelliteDirection}
@@ -5238,6 +5235,155 @@ export default function Home() {
             </div>
             <p>Pixel baseline plus separate additive Sun, Moon, and Earth terms; model status and calibration limits are recorded in provenance.</p>
           </div>
+        </aside>
+
+        <section className="simulation-stage">
+          <GlobeScene
+            altitude={telemetry.altitudeKm}
+            scenarioMode={orbitScenarioMode}
+            simulatorMode={simulatorMode}
+            paused={paused}
+            simulatedTimestampMs={Date.parse(telemetry.simulatedDate)}
+            grbActive={telemetry.grbActive}
+            burstDirections={telemetry.burstDirections}
+            burstPixelGroups={telemetry.burstPixelGroups}
+            pixelConfiguration={pixelConfiguration}
+            selectedPixel={selectedPixel}
+            satelliteDirection={telemetry.satelliteDirection}
+            geocentricSunDirection={telemetry.geocentricSunDirection}
+            geocentricMoonDirection={telemetry.geocentricMoonDirection}
+            sunNoise={telemetry.sunNoise}
+            moonNoise={telemetry.moonNoise}
+            earthIllumination={telemetry.earthIllumination}
+            earthAlbedoNoise={telemetry.earthAlbedoNoise}
+            earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
+            earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
+            detectorIntensity={telemetry.detector}
+            detectorHits={telemetry.detectorHits}
+            mountX={mountX}
+            mountZ={mountZ}
+            cameraMode={cameraMode}
+            onCameraModeChange={setCameraMode}
+            systemZoom={systemZoom}
+            onSystemZoomChange={setSystemZoom}
+          />
+          <div className="stage-title">
+            <span className="eyebrow">
+              {simulatorMode === "simulation"
+                ? "SIMULATION MODE · SEEDED SYNTHETIC OBSERVATIONS"
+                : "REFERENCE MODE · RITO BACKGROUND REFERENCE"}
+            </span>
+            <h2>
+              {simulatorMode === "simulation" ? "Simulation Mode" : "Reference Replay"}
+              <em>
+                {orbitScenarioMode === "canonical"
+                  ? ` CANONICAL ECI · ${telemetry.altitudeKm.toFixed(1)} km`
+                  : ` LEO OVERRIDE · ${orbitAltitudeKm.toFixed(0)} km · ${orbitInclinationDeg.toFixed(0)}°`}
+              </em>
+            </h2>
+          </div>
+          <div className={`grb-alert ${telemetry.grbActive ? "visible" : ""}`}>
+            <Zap size={18} />
+            <div><small>TRANSIENT DETECTED</small><strong>GRB candidate · {telemetry.significance.toFixed(2)}σ</strong></div>
+          </div>
+          <div className="orbit-readout">
+            <span>ECI TIMELINE {((telemetry.phase / (Math.PI * 2)) * 100).toFixed(1)}%</span>
+            <div><i style={{ width: `${(telemetry.phase / (Math.PI * 2)) * 100}%` }} /></div>
+          </div>
+        </section>
+
+        <aside className="control-panel right-panel">
+          <a
+            className="panel-heading history-launch"
+            href={`${PUBLIC_BASE_PATH}/photon-history/`}
+            aria-label="Open photon stream history table"
+          >
+            <span>PHOTON STREAM</span>
+            <span className="history-launch-icon">
+              <small>{photonRecordCount.toLocaleString("en-US")} ROWS</small>
+              <Activity size={17} />
+              <ChevronRight size={13} />
+            </span>
+          </a>
+
+          <AdaptiveBackgroundPanel
+            samples={adaptiveAnalysisSamples}
+            mode={simulatorMode}
+            seed={simulationSeed}
+            onSeedChange={setSimulationSeed}
+          />
+
+          <div
+            className={`persistence-status ${persistenceStatus}`}
+            role={persistenceStatus === "not-persisting" ? "alert" : "status"}
+          >
+            <small>PHOTON ARCHIVE · INDEXEDDB</small>
+            <strong>
+              {persistenceStatus === "persisting"
+                ? "PERSISTING"
+                : persistenceStatus === "initializing"
+                  ? "INITIALIZING…"
+                  : `NOT PERSISTING · ${persistenceError ?? "storage unavailable"}`}
+            </strong>
+          </div>
+
+          <div
+            className={`background-model-status ${
+              backgroundProfileError ? "error" : backgroundProfile ? "ready" : "loading"
+            }`}
+            role={backgroundProfileError ? "alert" : "status"}
+          >
+            <small>RITO BACKGROUND REFERENCE</small>
+            <strong>
+              {backgroundProfileError
+                ? `UNAVAILABLE · ${backgroundProfileError}`
+                : backgroundProfile
+                  ? `${backgroundProfile.totalRateCountsPerSecond.toFixed(4)} c/s · 126 pixels · deterministic`
+                  : "VALIDATING pixbkg.txt…"}
+            </strong>
+          </div>
+
+          <div className="detector-section">
+            <div className="detector-section-header">
+              <div>
+                <small>DETECTOR RESPONSE</small>
+                <strong>Configured planar pixel map · actual expected response / 0.2 s</strong>
+              </div>
+              <button
+                type="button"
+                className="detector-expand-button"
+                onClick={() => setDetectorExpanded(true)}
+                aria-label="Open enlarged detector map"
+                title="Open enlarged detector map"
+              >
+                <Maximize2 size={13} />
+              </button>
+            </div>
+            <div className="detector-response-summary" aria-live="polite">
+              <span><small>SELECTED PIXEL</small><strong>PIXEL ID {selectedConfiguredPixel.pixelId}</strong></span>
+              <span><small>TOTAL RESPONSE</small><strong>{selectedExpectedCounts.toFixed(4)}</strong></span>
+              <span><small>BACKGROUND</small><strong>{selectedBackgroundCounts.toFixed(4)}</strong></span>
+            </div>
+            <DetectorMap
+              values={telemetry.detector}
+              hits={telemetry.detectorHits}
+              backgroundRates={telemetry.detectorBackgroundRates}
+              backgroundExpectedCounts={
+                telemetry.detectorBackgroundExpectedCounts
+              }
+              grbActive={telemetry.grbActive}
+              burstPixelGroups={telemetry.burstPixelGroups}
+              pixelConfiguration={pixelConfiguration}
+              selectedPixelId={selectedPixel}
+              earthIllumination={telemetry.earthIllumination}
+              earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
+              earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
+              mountX={mountX}
+              mountZ={mountZ}
+              onSelect={selectPixel}
+            />
+          </div>
+
           <form
             className="burst-inline-panel"
             onSubmit={(event) => {
@@ -5381,171 +5527,6 @@ export default function Home() {
               </button>
             </div>
           </form>
-        </aside>
-
-        <section className="simulation-stage cockpit-globe">
-          <GlobeScene
-            altitude={telemetry.altitudeKm}
-            scenarioMode={orbitScenarioMode}
-            simulatorMode={simulatorMode}
-            paused={paused}
-            simulatedTimestampMs={Date.parse(telemetry.simulatedDate)}
-            grbActive={telemetry.grbActive}
-            burstDirections={telemetry.burstDirections}
-            burstPixelGroups={telemetry.burstPixelGroups}
-            pixelConfiguration={pixelConfiguration}
-            selectedPixel={selectedPixel}
-            satelliteDirection={telemetry.satelliteDirection}
-            geocentricSunDirection={telemetry.geocentricSunDirection}
-            geocentricMoonDirection={telemetry.geocentricMoonDirection}
-            sunNoise={telemetry.sunNoise}
-            moonNoise={telemetry.moonNoise}
-            earthIllumination={telemetry.earthIllumination}
-            earthAlbedoNoise={telemetry.earthAlbedoNoise}
-            earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
-            earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
-            detectorIntensity={telemetry.detector}
-            detectorHits={telemetry.detectorHits}
-            mountX={mountX}
-            mountZ={mountZ}
-            cameraMode={cameraMode}
-            onCameraModeChange={setCameraMode}
-            systemZoom={systemZoom}
-            onSystemZoomChange={setSystemZoom}
-          />
-          <div className="stage-title">
-            <span className="eyebrow">
-              {simulatorMode === "simulation"
-                ? "SIMULATION MODE · SEEDED SYNTHETIC OBSERVATIONS"
-                : "REFERENCE MODE · RITO BACKGROUND REFERENCE"}
-            </span>
-            <h2>
-              {simulatorMode === "simulation" ? "Simulation Mode" : "Reference Replay"}
-              <em>
-                {orbitScenarioMode === "canonical"
-                  ? ` CANONICAL ECI · ${telemetry.altitudeKm.toFixed(1)} km`
-                  : ` LEO OVERRIDE · ${orbitAltitudeKm.toFixed(0)} km · ${orbitInclinationDeg.toFixed(0)}°`}
-              </em>
-            </h2>
-          </div>
-          <div className={`grb-alert ${telemetry.grbActive ? "visible" : ""}`}>
-            <Zap size={18} />
-            <div><small>TRANSIENT DETECTED</small><strong>GRB candidate · {telemetry.significance.toFixed(2)}σ</strong></div>
-          </div>
-          <div className="orbit-readout">
-            <span>ECI TIMELINE {((telemetry.phase / (Math.PI * 2)) * 100).toFixed(1)}%</span>
-            <div><i style={{ width: `${(telemetry.phase / (Math.PI * 2)) * 100}%` }} /></div>
-          </div>
-        </section>
-
-        <aside className="cockpit-panel cockpit-analysis">
-          <a
-            className="panel-heading history-launch"
-            href={`${PUBLIC_BASE_PATH}/photon-history/`}
-            aria-label="Open photon stream history table"
-          >
-            <span>PHOTON STREAM</span>
-            <span className="history-launch-icon">
-              <small>{photonRecordCount.toLocaleString("en-US")} ROWS</small>
-              <Activity size={17} />
-              <ChevronRight size={13} />
-            </span>
-          </a>
-
-          <AdaptiveBackgroundPanel
-            samples={adaptiveAnalysisSamples}
-            mode={simulatorMode}
-            seed={simulationSeed}
-            onSeedChange={setSimulationSeed}
-          />
-
-          <div
-            className={`persistence-status ${persistenceStatus}`}
-            role={persistenceStatus === "not-persisting" ? "alert" : "status"}
-          >
-            <small>PHOTON ARCHIVE · INDEXEDDB</small>
-            <strong>
-              {persistenceStatus === "persisting"
-                ? "PERSISTING"
-                : persistenceStatus === "initializing"
-                  ? "INITIALIZING…"
-                  : `NOT PERSISTING · ${persistenceError ?? "storage unavailable"}`}
-            </strong>
-          </div>
-
-        </aside>
-
-        <aside className="cockpit-panel cockpit-detector">
-          <div className="panel-heading">
-            <span>DETECTOR RESPONSE · PIXEL BACKGROUND</span>
-            <button
-              type="button"
-              className="detector-expand-button"
-              onClick={() => setDetectorExpanded(true)}
-              aria-label="Open enlarged detector map"
-              title="Open enlarged detector map"
-            >
-              <Maximize2 size={13} />
-            </button>
-          </div>
-
-          <div
-            className={`background-model-status ${
-              backgroundProfileError ? "error" : backgroundProfile ? "ready" : "loading"
-            }`}
-            role={backgroundProfileError ? "alert" : "status"}
-          >
-            <small>RITO BACKGROUND REFERENCE</small>
-            <strong>
-              {backgroundProfileError
-                ? `UNAVAILABLE · ${backgroundProfileError}`
-                : backgroundProfile
-                  ? `${backgroundProfile.totalRateCountsPerSecond.toFixed(4)} c/s · 126 pixels · deterministic`
-                  : "VALIDATING pixbkg.txt…"}
-            </strong>
-          </div>
-
-          <div className="detector-section">
-            <div className="detector-section-header">
-              <div>
-                <small>DETECTOR RESPONSE</small>
-                <strong>Configured planar pixel map · actual expected response / 0.2 s</strong>
-              </div>
-              <button
-                type="button"
-                className="detector-expand-button detector-inline-expand"
-                onClick={() => setDetectorExpanded(true)}
-                aria-label="Open enlarged detector map"
-                title="Open enlarged detector map"
-              >
-                <Maximize2 size={13} />
-              </button>
-            </div>
-            <div className="detector-response-summary" aria-live="polite">
-              <span><small>SELECTED PIXEL</small><strong>PIXEL ID {selectedConfiguredPixel.pixelId}</strong></span>
-              <span><small>TOTAL RESPONSE</small><strong>{selectedExpectedCounts.toFixed(4)}</strong></span>
-              <span><small>BACKGROUND</small><strong>{selectedBackgroundCounts.toFixed(4)}</strong></span>
-            </div>
-            <DetectorMap
-              values={telemetry.detector}
-              hits={telemetry.detectorHits}
-              backgroundRates={telemetry.detectorBackgroundRates}
-              backgroundExpectedCounts={
-                telemetry.detectorBackgroundExpectedCounts
-              }
-              grbActive={telemetry.grbActive}
-              burstPixelGroups={telemetry.burstPixelGroups}
-              pixelConfiguration={pixelConfiguration}
-              selectedPixelId={selectedPixel}
-              earthIllumination={telemetry.earthIllumination}
-              earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
-              earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
-              mountX={mountX}
-              mountZ={mountZ}
-              onSelect={selectPixel}
-            />
-          </div>
-
         </aside>
       </section>
 
