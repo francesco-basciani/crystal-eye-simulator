@@ -11,6 +11,10 @@ const viteConfig = readFileSync(
   new URL("../vite.config.ts", import.meta.url),
   "utf8",
 );
+const kalmanDialogSource = readFileSync(
+  new URL("../app/components/kalman-scenario-dialog.tsx", import.meta.url),
+  "utf8",
+);
 
 test("the photon light curve belongs to the right-hand Photon Stream panel", () => {
   const leftPanelStart = pageSource.indexOf(
@@ -72,4 +76,28 @@ test("the vinext development overlay does not mask opaque script errors", () => 
     viteConfig,
     /ignored:\s*\["\*\*\/\.next\/\*\*",\s*"\*\*\/out\/\*\*"\]/,
   );
+});
+
+test("the Kalman analysis is launched from the live Photon Stream and keeps its warning visible", () => {
+  const rightPanelStart = pageSource.indexOf(
+    '<aside className="control-panel right-panel">',
+  );
+  const rightPanelEnd = pageSource.indexOf("</aside>", rightPanelStart);
+  const rightPanel = pageSource.slice(rightPanelStart, rightPanelEnd);
+  assert.match(rightPanel, /KALMAN SCENARIOS · ASI BRIGHT GRB PRIMARY/);
+  assert.match(
+    rightPanel,
+    /Synthetic engineering demonstrator — physical calibration pending\./,
+  );
+  assert.match(pageSource, /liveSamples=\{kalmanLiveSamples\}/);
+  assert.match(
+    kalmanDialogSource,
+    /\[mode, setMode\] = useState<AnalysisMode>\([\s\S]*?"bright-grb-presentation-v1"/,
+  );
+  assert.match(kalmanDialogSource, /ASI · BRIGHT GRB/);
+  assert.match(kalmanDialogSource, /WEAK GRB · LIMITATIONS/);
+  assert.match(kalmanDialogSource, /CURRENT SIMULATOR \+ GRB/);
+  assert.match(kalmanDialogSource, /normalizedInnovation/);
+  assert.match(kalmanDialogSource, /sourceResidualRateCountsPerSecond/);
+  assert.match(styles, /\.kalman-dialog-backdrop\s*\{[\s\S]*?position:\s*fixed;/);
 });

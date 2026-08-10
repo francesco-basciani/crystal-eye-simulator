@@ -4083,6 +4083,440 @@ button {
   cursor: default;
 }
 
+.kalman-analysis-launch {
+  width: 100%;
+  min-height: 54px;
+  padding: 9px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid rgba(255, 200, 87, 0.24);
+  color: #b8d6df;
+  background: linear-gradient(90deg, rgba(255, 200, 87, 0.07), rgba(22, 85, 108, 0.11));
+  text-align: left;
+  cursor: pointer;
+}
+
+.kalman-analysis-launch:hover,
+.kalman-analysis-launch:focus-visible {
+  border-color: rgba(255, 200, 87, 0.58);
+  outline: 0;
+  background: linear-gradient(90deg, rgba(255, 200, 87, 0.13), rgba(22, 85, 108, 0.18));
+}
+
+.kalman-analysis-launch span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.kalman-analysis-launch small,
+.kalman-analysis-launch strong {
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.kalman-analysis-launch small {
+  color: #ffc857;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.kalman-analysis-launch strong {
+  color: #99b5bf;
+  font-size: 7px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.kalman-dialog-backdrop {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  padding: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 5, 9, 0.84);
+  backdrop-filter: blur(8px);
+}
+
+.kalman-dialog {
+  width: min(1180px, calc(100vw - 28px));
+  height: min(900px, calc(100dvh - 28px));
+  min-height: 560px;
+  display: grid;
+  grid-template-rows: auto auto auto auto auto minmax(250px, 1fr) auto auto;
+  overflow: hidden;
+  border: 1px solid rgba(98, 217, 255, 0.34);
+  border-radius: 3px;
+  background:
+    linear-gradient(rgba(73, 155, 191, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(73, 155, 191, 0.025) 1px, transparent 1px),
+    rgba(3, 13, 20, 0.99);
+  background-size: 28px 28px;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.68), 0 0 28px rgba(63, 182, 224, 0.08);
+}
+
+.kalman-dialog > header,
+.kalman-dialog > footer,
+.kalman-controls,
+.kalman-scenario-summary,
+.kalman-legend,
+.kalman-metrics {
+  padding-inline: 18px;
+}
+
+.kalman-dialog > header {
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line-strong);
+  background: rgba(4, 18, 27, 0.92);
+}
+
+.kalman-dialog > header small,
+.kalman-scenario-summary small {
+  color: #6fa5b7;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.1em;
+}
+
+.kalman-dialog > header h2 {
+  margin: 4px 0 0;
+  color: #e2f7ff;
+  font-size: 17px;
+  font-weight: 550;
+  letter-spacing: 0.04em;
+}
+
+.kalman-dialog > header button {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  background: rgba(12, 44, 56, 0.52);
+  cursor: pointer;
+}
+
+.kalman-warning {
+  min-height: 30px;
+  padding: 7px 18px;
+  color: #ffc857;
+  border-bottom: 1px solid rgba(255, 200, 87, 0.18);
+  background: rgba(255, 200, 87, 0.055);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  letter-spacing: 0.07em;
+}
+
+.kalman-controls {
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.kalman-mode-buttons {
+  min-width: 0;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+}
+
+.kalman-mode-buttons button,
+.kalman-controls input,
+.kalman-dialog > footer button {
+  min-height: 30px;
+  border: 1px solid var(--line-strong);
+  border-radius: 2px;
+  color: #8fb2bf;
+  background: rgba(10, 37, 49, 0.64);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+}
+
+.kalman-mode-buttons button {
+  padding-inline: 10px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kalman-mode-buttons button.active {
+  color: #071116;
+  border-color: var(--cyan);
+  background: var(--cyan);
+}
+
+.kalman-controls > label {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #668a98;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+}
+
+.kalman-controls input {
+  width: 116px;
+  padding-inline: 8px;
+}
+
+.kalman-scenario-summary {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+.kalman-scenario-summary > div:first-child {
+  min-width: 0;
+}
+
+.kalman-scenario-summary strong {
+  display: block;
+  margin-top: 3px;
+  color: #d8eef5;
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.kalman-scenario-summary p {
+  max-width: 720px;
+  margin: 3px 0 0;
+  color: #718f9b;
+  font-size: 9px;
+  line-height: 1.35;
+}
+
+.kalman-scenario-summary dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 6px;
+}
+
+.kalman-scenario-summary dl div {
+  min-width: 72px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  background: rgba(12, 39, 50, 0.42);
+}
+
+.kalman-scenario-summary dt,
+.kalman-scenario-summary dd {
+  margin: 0;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.kalman-scenario-summary dt {
+  color: #5d7c89;
+  font-size: 6px;
+}
+
+.kalman-scenario-summary dd {
+  margin-top: 3px;
+  color: #a8ccd8;
+  font-size: 8px;
+}
+
+.kalman-legend {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: #7898a5;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+}
+
+.kalman-legend span::before {
+  content: "";
+  width: 14px;
+  height: 2px;
+  margin-right: 5px;
+  display: inline-block;
+  vertical-align: middle;
+  background: currentColor;
+}
+
+.kalman-legend .observed { color: #9fb5bd; }
+.kalman-legend .truth { color: #d8edf4; }
+.kalman-legend .estimate { color: var(--cyan); }
+.kalman-legend .source { color: var(--yellow); }
+.kalman-legend .gated { color: var(--magenta); }
+
+.kalman-plot {
+  width: 100%;
+  height: 100%;
+  min-height: 250px;
+  padding: 0 12px;
+  overflow: visible;
+}
+
+.kalman-grid,
+.kalman-zero {
+  stroke: rgba(130, 184, 210, 0.12);
+  stroke-width: 1;
+}
+
+.kalman-gate {
+  stroke: rgba(255, 77, 190, 0.34);
+  stroke-width: 1;
+  stroke-dasharray: 5 5;
+}
+
+.kalman-axis-label,
+.kalman-axis-title,
+.kalman-time-label {
+  fill: #63808c;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+}
+
+.kalman-axis-title {
+  fill: #789ba8;
+  font-size: 7px;
+  letter-spacing: 0.08em;
+}
+
+.kalman-confidence {
+  fill: rgba(98, 217, 255, 0.13);
+  stroke: none;
+}
+
+.kalman-source-area {
+  fill: rgba(255, 200, 87, 0.16);
+  stroke: none;
+}
+
+.kalman-truth-line,
+.kalman-estimate-line,
+.kalman-residual-line,
+.kalman-innovation-line {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.kalman-truth-line {
+  stroke: rgba(216, 237, 244, 0.8);
+  stroke-width: 1.2;
+  stroke-dasharray: 5 4;
+}
+
+.kalman-estimate-line {
+  stroke: var(--cyan);
+  stroke-width: 2;
+}
+
+.kalman-residual-line {
+  stroke: rgba(255, 200, 87, 0.78);
+  stroke-width: 1;
+}
+
+.kalman-innovation-line {
+  stroke: #53e0cf;
+  stroke-width: 1.2;
+}
+
+.kalman-observation {
+  fill: rgba(193, 215, 223, 0.56);
+}
+
+.kalman-observation.gated,
+.kalman-gated-point {
+  fill: var(--magenta);
+  stroke: #ffd1eb;
+  stroke-width: 0.7;
+}
+
+.kalman-metrics {
+  min-height: 64px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 7px;
+  align-items: center;
+  border-top: 1px solid var(--line);
+  background: rgba(7, 25, 34, 0.66);
+}
+
+.kalman-metrics > div {
+  min-width: 0;
+  padding: 7px 9px;
+  border-left: 2px solid rgba(98, 217, 255, 0.32);
+  background: rgba(11, 42, 54, 0.42);
+}
+
+.kalman-metrics small,
+.kalman-metrics strong {
+  display: block;
+  font-family: var(--font-geist-mono), monospace;
+}
+
+.kalman-metrics small {
+  color: #5e7f8c;
+  font-size: 6px;
+}
+
+.kalman-metrics strong {
+  margin-top: 3px;
+  color: #b8dae5;
+  font-size: 9px;
+  font-weight: 550;
+}
+
+.kalman-dialog > footer {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-top: 1px solid var(--line-strong);
+  color: #718f9a;
+  background: rgba(4, 17, 25, 0.96);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  line-height: 1.35;
+}
+
+.kalman-dialog > footer button {
+  min-width: 72px;
+  padding-inline: 12px;
+  cursor: pointer;
+}
+
+@media (max-width: 800px) {
+  .kalman-dialog-backdrop { padding: 6px; }
+  .kalman-dialog {
+    width: calc(100vw - 12px);
+    height: calc(100dvh - 12px);
+    min-height: 0;
+  }
+  .kalman-controls,
+  .kalman-scenario-summary {
+    align-items: stretch;
+    flex-direction: column;
+    padding-block: 8px;
+  }
+  .kalman-controls > label { justify-content: space-between; }
+  .kalman-scenario-summary dl { grid-template-columns: repeat(2, 1fr); }
+  .kalman-legend { display: none; }
+  .kalman-metrics { grid-template-columns: repeat(3, 1fr); overflow-y: auto; }
+  .kalman-dialog > footer span { display: none; }
+  .kalman-dialog > footer { justify-content: flex-end; }
+}
+
 .bottom-panel::before {
   top: -1px;
   bottom: auto;

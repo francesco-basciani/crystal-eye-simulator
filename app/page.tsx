@@ -24,6 +24,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Body, Illumination } from "astronomy-engine";
 import { AppNav } from "./components/app-nav";
+import {
+  KalmanScenarioDialog,
+  type KalmanLiveSample,
+} from "./components/kalman-scenario-dialog";
 import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
 import {
   ECI_EPHEMERIS_INITIAL_SAMPLE,
@@ -68,6 +72,12 @@ type Sample = {
   observed: number;
   background: number;
   source: number;
+};
+
+type SignalSample = Sample & {
+  frameIndex: number;
+  simulationTimeSeconds: number;
+  exposureSeconds: number;
 };
 
 type EventRecord = {
@@ -145,6 +155,17 @@ type TestBurstDraft = {
 
 type CameraMode = "orbit" | "satellite";
 type OrbitScenarioMode = "canonical" | "parametric";
+
+function createBaselineSamples(background: number, count = 80): SignalSample[] {
+  return Array.from({ length: count }, (_, index) => ({
+    frameIndex: index - count,
+    simulationTimeSeconds: (index - count) * PIXEL_BACKGROUND_BIN_SECONDS,
+    exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS,
+    background,
+    source: 0,
+    observed: background,
+  }));
+}
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const TIME_WARP_PRESETS = [1, 50, 200, 500] as const;
@@ -3962,6 +3983,7 @@ export default function Home() {
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [detectorExpanded, setDetectorExpanded] = useState(false);
   const [historyView, setHistoryView] = useState<"events" | null>(null);
+  const [kalmanView, setKalmanView] = useState(false);
   const [testBurstDraft, setTestBurstDraft] = useState<TestBurstDraft>({
     raDeg: 0,
     decDeg: 0,
@@ -3977,12 +3999,8 @@ export default function Home() {
     useState<EciEphemerisProfile | null>(null);
   const [ephemerisError, setEphemerisError] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
-  const [samples, setSamples] = useState<Sample[]>(() =>
-    Array.from({ length: 80 }, () => ({
-      background: INITIAL_TELEMETRY.background,
-      source: 0,
-      observed: INITIAL_TELEMETRY.background,
-    })),
+  const [samples, setSamples] = useState<SignalSample[]>(() =>
+    createBaselineSamples(INITIAL_TELEMETRY.background),
   );
   const [photonRecordCount, setPhotonRecordCount] = useState(0);
   const [persistenceStatus, setPersistenceStatus] = useState<
@@ -4063,12 +4081,7 @@ export default function Home() {
         backgroundProfileRef.current = profile;
         setBackgroundProfile(profile);
         setBackgroundProfileError(null);
-        const baseline = {
-          background: profile.totalExpectedCountsPerBin,
-          source: 0,
-          observed: profile.totalExpectedCountsPerBin,
-        };
-        setSamples(Array.from({ length: 80 }, () => baseline));
+        setSamples(createBaselineSamples(profile.totalExpectedCountsPerBin));
         setEventLog((current) => [
           ...current,
           {
@@ -4302,14 +4315,15 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!detectorExpanded && !historyView) return;
+    if (!detectorExpanded && !historyView && !kalmanView) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setDetectorExpanded(false);
       if (event.key === "Escape") setHistoryView(null);
+      if (event.key === "Escape") setKalmanView(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [detectorExpanded, historyView]);
+  }, [detectorExpanded, historyView, kalmanView]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -4471,8 +4485,14 @@ export default function Home() {
       const detectorHits = detectorResponse.map((pixel) => pixel.hits);
       const detector = detectorResponse.map((pixel) => pixel.impact);
       const next = { observed, background, source };
+      const nextSignalSample: SignalSample = {
+        ...next,
+        frameIndex: photonBinRef.current + 1,
+        simulationTimeSeconds: elapsedRef.current,
+        exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS,
+      };
       photonBinRef.current += 1;
-      setSamples((current) => [...current.slice(-119), next]);
+      setSamples((current) => [...current.slice(-119), nextSignalSample]);
       const repository = photonRepositoryRef.current;
       if (repository && !persistenceFailedRef.current) {
         const simulatedDate = celestial.date.toISOString();
@@ -4879,6 +4899,7 @@ export default function Home() {
       mountedEarthAlbedoNoise,
     );
     const background = rateToExpectedCountsPerBin(composedBackgroundRate);
+    setSamples(createBaselineSamples(background));
     setTelemetry({
       ...INITIAL_TELEMETRY,
       observed: background,
@@ -4933,6 +4954,17 @@ export default function Home() {
     telemetry.sunSeparation <= effectiveMountFov / 2 && telemetry.sunNoise > 0.1;
   const mountedMoonInFov =
     telemetry.moonSeparation <= effectiveMountFov / 2 && telemetry.moonNoise > 0.1;
+  const kalmanLiveSamples = useMemo<readonly KalmanLiveSample[]>(
+    () =>
+      samples.map((sample) => ({
+        frameIndex: sample.frameIndex,
+        simulationTimeSeconds: sample.simulationTimeSeconds,
+        exposureSeconds: sample.exposureSeconds,
+        expectedBackgroundCounts: sample.background,
+        expectedSourceCounts: sample.source,
+      })),
+    [samples],
+  );
   const changeTimeWarp = useCallback((direction: -1 | 1) => {
     setSpeed((current) => {
       if (direction < 0) {
@@ -5229,6 +5261,18 @@ export default function Home() {
             <SignalChart data={samples} />
           </div>
 
+          <button
+            type="button"
+            className="kalman-analysis-launch"
+            onClick={() => setKalmanView(true)}
+          >
+            <span>
+              <small>KALMAN SCENARIOS · ASI BRIGHT GRB PRIMARY</small>
+              <strong>Synthetic engineering demonstrator — physical calibration pending.</strong>
+            </span>
+            <ChevronRight size={14} />
+          </button>
+
           <div
             className={`persistence-status ${persistenceStatus}`}
             role={persistenceStatus === "not-persisting" ? "alert" : "status"}
@@ -5440,6 +5484,13 @@ export default function Home() {
         <HistoryDialog
           events={eventLog}
           onClose={() => setHistoryView(null)}
+        />
+      )}
+
+      {kalmanView && (
+        <KalmanScenarioDialog
+          liveSamples={kalmanLiveSamples}
+          onClose={() => setKalmanView(false)}
         />
       )}
 
