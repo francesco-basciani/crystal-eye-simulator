@@ -4,6 +4,7 @@ import {
   composeModeBackgroundRate,
   composePixelSignalFrame,
   distributeNormalizedTotal,
+  distributeSupportedTotal,
   selectModeReferencePixelCounts,
   sumPixelComponents,
 } from "../app/lib/signal-composition.ts";
@@ -100,5 +101,20 @@ test("allocation fails closed for invalid totals, dimensions, and support", () =
   assert.throws(
     () => selectModeReferencePixelCounts("reference", null, 3),
     /requires one Rito count/,
+  );
+});
+
+test("a positive occulted component is zeroed without inventing pixel support", () => {
+  const occulted = distributeSupportedTotal(17.5, [0, -1, Number.NaN, 0]);
+  assert.deepEqual(occulted.values, [0, 0, 0, 0]);
+  assert.equal(occulted.allocatedTotal, 0);
+  assert.equal(occulted.unsupportedTotal, 17.5);
+
+  const visible = distributeSupportedTotal(17.5, [0, 1, 2, 0]);
+  assert.equal(visible.unsupportedTotal, 0);
+  assert.equal(visible.allocatedTotal, 17.5);
+  assert.ok(
+    Math.abs(visible.values.reduce((sum, value) => sum + value, 0) - 17.5) <
+      1e-12,
   );
 });

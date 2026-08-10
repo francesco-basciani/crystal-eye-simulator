@@ -98,6 +98,32 @@ export function distributeNormalizedTotal(
   return Object.freeze(allocated);
 }
 
+export function distributeSupportedTotal(
+  total: number,
+  weights: readonly number[],
+): Readonly<{
+  values: readonly number[];
+  allocatedTotal: number;
+  unsupportedTotal: number;
+}> {
+  requireNonNegativeFinite(total, "Component total");
+  const hasSupport = weights.some(
+    (weight) => Number.isFinite(weight) && weight > 0,
+  );
+  if (!hasSupport) {
+    return Object.freeze({
+      values: Object.freeze(weights.map(() => 0)),
+      allocatedTotal: 0,
+      unsupportedTotal: total,
+    });
+  }
+  return Object.freeze({
+    values: distributeNormalizedTotal(total, weights),
+    allocatedTotal: total,
+    unsupportedTotal: 0,
+  });
+}
+
 export function sumPixelComponents(
   ...components: readonly (readonly number[])[]
 ): readonly number[] {

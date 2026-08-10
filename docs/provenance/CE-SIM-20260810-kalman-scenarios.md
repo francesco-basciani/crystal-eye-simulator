@@ -392,3 +392,23 @@ Limits and open gates:
   generated it.
 - Quantitative, reproducibility, domain-expert and browser visual audits remain
   required before scientific-result or release claims.
+
+### Runtime correction — zero-support environmental components
+
+Observed failure: `distributeNormalizedTotal` rejected a positive aggregate
+component when every configured pixel weight was zero. This state can occur
+when the provisional aggregate environmental formula remains positive while
+the current FOV, mount visibility or thresholded Earth response provides no
+detector pixel support.
+
+Approved resolution: no fallback pixel or uniform allocation is invented. A
+positive component with zero geometric support produces an all-zero pixel
+vector, records its requested amount internally as unsupported, and contributes
+zero to the effective aggregate observation. Aggregate background/source values
+are now calculated from the reconciled pixel vectors before Poisson sampling,
+persistence and display. Thus aggregate and detector sums remain identical and
+an occulted component cannot crash the simulation or create unphysical counts.
+
+This is a visibility-consistency correction, not a calibration claim. The raw
+environmental amplitude laws remain unchanged and **PROVISIONAL**; when they
+have valid pixel support, their complete total is still allocated exactly.
