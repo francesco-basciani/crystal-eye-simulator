@@ -59,6 +59,11 @@ import {
 } from "./lib/photon-repository";
 import { createParametricOrbitOverride } from "./lib/orbital-overrides";
 import {
+  getExposedEarthAlbedoWeight,
+  getNadirExposureFraction,
+  isPixelCenterExposedToNadir,
+} from "./lib/earth-albedo-occlusion";
+import {
   PAYLOAD_PLACEMENT_STORAGE_KEY_V1,
   parseStoredPayloadPlacement,
   serializePayloadPlacement,
@@ -465,15 +470,32 @@ function getMountSkyVisibility(
   );
 }
 
-function getMountAlbedoTransmission(mountX: number, mountZ: number) {
-  const rimPixels = PIXEL_LAYOUT.filter(
-    (pixel) => pixel.ring === PIXEL_RING_COUNTS.length - 1,
+function getMountNadirExposure(
+  sphereSlot: number,
+  mountX: number,
+  mountZ: number,
+) {
+  const pixel = PIXEL_LAYOUT[sphereSlot];
+  return isPixelCenterExposedToNadir(
+    {
+      ring: pixel.ring,
+      outermostRing: PIXEL_RING_COUNTS.length - 1,
+      angleRadians: pixel.angle,
+    },
+    mountX,
+    mountZ,
   );
-  return (
-    rimPixels.reduce(
-      (sum, pixel) => sum + getMountEdgeExposure(pixel.index, mountX, mountZ),
-      0,
-    ) / rimPixels.length
+}
+
+function getMountAlbedoTransmission(mountX: number, mountZ: number) {
+  return getNadirExposureFraction(
+    PIXEL_LAYOUT.map((pixel) => ({
+      ring: pixel.ring,
+      outermostRing: PIXEL_RING_COUNTS.length - 1,
+      angleRadians: pixel.angle,
+    })),
+    mountX,
+    mountZ,
   );
 }
 
@@ -501,23 +523,17 @@ function getEarthAlbedoResponse(
   mountZ = 0,
 ) {
   const pixel = PIXEL_LAYOUT[sphereSlot];
-  const rimWeight = pixel.ring === PIXEL_RING_COUNTS.length - 1 ? 1 : 0;
-  if (rimWeight === 0 || illumination <= 0.01) return 0;
-  const delta = Math.atan2(
-    Math.sin(pixel.angle - azimuth),
-    Math.cos(pixel.angle - azimuth),
-  );
-  const directionalLobe = Math.max(0, Math.cos(delta)) ** 1.7;
-  const azimuthWeight = THREE.MathUtils.lerp(
-    0.42,
-    0.08 + directionalLobe * 0.92,
+  return getExposedEarthAlbedoWeight(
+    {
+      ring: pixel.ring,
+      outermostRing: PIXEL_RING_COUNTS.length - 1,
+      angleRadians: pixel.angle,
+    },
+    illumination,
+    azimuth,
     directional,
-  );
-  return (
-    rimWeight *
-    illumination *
-    azimuthWeight *
-    getMountEdgeExposure(sphereSlot, mountX, mountZ)
+    mountX,
+    mountZ,
   );
 }
 
@@ -528,19 +544,15 @@ function deterministicUnit(index: number, salt: number) {
 function isPixelLitByEarthAlbedo(
   sphereSlot: number,
   illumination: number,
-  azimuth: number,
-  directional: number,
+  _azimuth: number,
+  _directional: number,
   mountX = 0,
   mountZ = 0,
 ) {
-  return getEarthAlbedoResponse(
-    sphereSlot,
-    illumination,
-    azimuth,
-    directional,
-    mountX,
-    mountZ,
-  ) >= 0.12;
+  return (
+    illumination > 0.01 &&
+    getMountNadirExposure(sphereSlot, mountX, mountZ)
+  );
 }
 
 function getDirectionalPixelWeights(
@@ -651,7 +663,7 @@ function createDetectorExpectedResponse({
     ),
   );
   const earthWeights = Array.from({ length: pixelCount }, (_, pixelId) => {
-    const response = getEarthAlbedoResponse(
+    return getEarthAlbedoResponse(
       sphereSlots[pixelId],
       earthIllumination,
       earthAlbedoAzimuth,
@@ -659,7 +671,6 @@ function createDetectorExpectedResponse({
       mountX,
       mountZ,
     );
-    return response >= 0.12 ? response : 0;
   });
   const earthAllocation = distributeSupportedTotal(
     rateToExpectedCountsPerBin(earthRateCountsPerSecond),
@@ -988,7 +999,7 @@ const INITIAL_DETECTOR_HITS = PIXEL_LAYOUT.map((pixel) => {
     INITIAL_CELESTIAL.earthAlbedoAzimuth,
     INITIAL_CELESTIAL.earthAlbedoDirectional,
   );
-  return response >= 0.12
+  return response > 0
     ? Math.max(1, Math.round((response * INITIAL_CELESTIAL.earthAlbedoNoise) / 18))
     : 0;
 });
@@ -1997,7 +2008,7 @@ function GlobeScene({
           <Moon size={12} /> Moon {moonNoise > 0 ? `+${moonNoise.toFixed(0)} c/s` : "outside cone"}
         </span>
         <span className={earthAlbedoNoise > 1 ? "interfering earth" : ""}>
-          <CircleDot size={12} /> Earth albedo {earthAlbedoNoise > 1 ? `+${earthAlbedoNoise.toFixed(0)} c/s` : "minimum"}
+          <CircleDot size={12} /> Earth albedo {earthAlbedoNoise > 0.001 ? `+${earthAlbedoNoise.toFixed(1)} c/s` : "platform blocked"}
         </span>
       </div>
       <div className="drag-hint">
@@ -2652,16 +2663,14 @@ function DetectorMap({
           const isBurstHit =
             isActive &&
             burstPixelGroups.some((group) => group.includes(physicalPixelId));
-          const isEarthAlbedo =
-            isActive &&
-            isPixelLitByEarthAlbedo(
-              sphereSlots[physicalPixelId],
-              earthIllumination,
-              earthAlbedoAzimuth,
-              earthAlbedoDirectional,
-              mountX,
-              mountZ,
-            );
+          const isEarthAlbedo = isPixelLitByEarthAlbedo(
+            sphereSlots[physicalPixelId],
+            earthIllumination,
+            earthAlbedoAzimuth,
+            earthAlbedoDirectional,
+            mountX,
+            mountZ,
+          );
           return (
             <button
               key={pixel.index}
@@ -4041,6 +4050,7 @@ function PayloadPlacementPanel({
     return {
       effectiveFov: getMountEffectiveFov(mountX, mountZ),
       earthExposure,
+      exposedOuterPixels: Math.round(earthExposure * PIXEL_RING_COUNTS.at(-1)!),
       horizonVisibility,
     };
   }, [mountX, mountZ]);
@@ -4144,8 +4154,8 @@ function PayloadPlacementPanel({
                 <strong>{(placementStats.horizonVisibility * 100).toFixed(0)}%</strong>
               </div>
               <div>
-                <small>EARTH-LIGHT EXPOSURE</small>
-                <strong>{(placementStats.earthExposure * 100).toFixed(0)}%</strong>
+                <small>EXPOSED OUTER PIXELS</small>
+                <strong>{placementStats.exposedOuterPixels} / {PIXEL_RING_COUNTS.at(-1)}</strong>
               </div>
             </div>
 
@@ -4153,9 +4163,9 @@ function PayloadPlacementPanel({
               <span><b>Crystal Eye</b> Ø 30 cm dome + 30 cm base</span>
               <span><b>Satellite</b> 60 × 60 cm top surface</span>
               <p>
-                First-order geometric shadowing model. Edge and corner placements expose
-                more horizon-facing pixels while the satellite structure still blocks the
-                inward-facing sector.
+                PROVISIONAL binary nadir-ray model. Only an outer-ring pixel whose
+                projected center lies outside the opaque 60 × 60 cm platform is exposed;
+                no smooth leakage or partial pixel area is invented.
               </p>
             </div>
           </div>

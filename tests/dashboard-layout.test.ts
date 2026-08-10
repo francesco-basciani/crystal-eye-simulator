@@ -81,6 +81,18 @@ test("geometry separates orbit context, payload detail, and unscaled celestial d
   assert.match(pageSource, /saved locally in this browser/i);
 });
 
+test("Earth albedo UI uses one binary nadir-support identity in 3D and planar views", () => {
+  assert.match(pageSource, /function getMountNadirExposure/);
+  assert.match(pageSource, /getNadirExposureFraction/);
+  assert.match(pageSource, /getExposedEarthAlbedoWeight/);
+  assert.match(pageSource, /isPixelLitByEarthAlbedo/);
+  assert.match(pageSource, /crystalPixels\.forEach[\s\S]*?isPixelLitByEarthAlbedo/);
+  assert.match(pageSource, /function DetectorMap[\s\S]*?isPixelLitByEarthAlbedo/);
+  assert.doesNotMatch(pageSource, /return response >= 0\.12 \? response : 0/);
+  assert.match(pageSource, /EXPOSED OUTER PIXELS/);
+  assert.match(pageSource, /PROVISIONAL binary nadir-ray model/);
+});
+
 test("the vinext development overlay does not mask opaque script errors", () => {
   assert.match(viteConfig, /hmr:\s*\{\s*overlay:\s*false\s*\}/);
   assert.match(

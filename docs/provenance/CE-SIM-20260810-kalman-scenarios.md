@@ -599,3 +599,45 @@ model requires author selection plus domain validation of bus height, CE base
 and dome reference heights, permitted footprint overhang, pixel surface
 positions/areas, and the Earth-direction sampling domain. The Kalman estimator
 also remains unchanged under its separate author decision gate.
+
+### Author-approved binary nadir occlusion
+
+Task input: clean commit `bca5a00`. The author explicitly approved a bounded
+Earth-albedo rule: photons arrive vertically from nadir; only outermost-ring
+pixel centers are eligible; the opaque 60 × 60 cm satellite top blocks a pixel
+when its vertical ray intersects the platform. This approval supersedes the
+earlier Earth-shadow decision gate for this specific model only.
+
+Implementation constants retain the already displayed dimensions: platform
+half-size `30 cm` and Crystal Eye radius `15 cm`. For mount center
+`(30·mountX, 30·mountZ) cm`, an outer pixel center is projected to
+`center + 15·(cos(angle), sin(angle))`. The platform boundary is opaque and
+therefore blocked; exposure requires `|x| > 30 cm` or `|z| > 30 cm`. Rings 0–5
+are always blocked. There is no exponential clearance, minimum leakage,
+threshold, random sampling or smooth partial-area term in the Earth path.
+
+The aggregate provisional Earth rate is multiplied by the fraction of the 35
+outer centers that pass this same test. Per-pixel allocation uses precisely
+that exposed support; the existing illumination scalar and azimuthal lobe only
+redistribute the supported aggregate, after occlusion. Normalized allocation
+continues to reconcile per-pixel Earth counts to the effective aggregate.
+With the current 35-slot angular layout, center, positive-X edge, and
+positive-X/negative-Z corner positions expose respectively `0`, `18`, and `26`
+outer pixel centers. The asymmetric `18/17` split between opposite edges is a
+consequence of the odd 35-pixel sampling and its existing angular offset.
+
+The 3D crystal rendering, sensor Events view and planar detector map all resolve
+physical pixel IDs through the configured sphere-slot mapping and call the same
+binary support predicate. UI text reports `EXPOSED OUTER PIXELS`, labels the
+model **PROVISIONAL**, and states that it is a point-center nadir-ray model.
+
+The pre-existing exponential `getMountEdgeExposure` remains unchanged and is
+used only for sky-side horizon/FOV and GRB visibility. This separation avoids
+changing any sky/source response under the Earth-only approval. The Kalman
+estimator and every source/environment amplitude remain unchanged.
+
+Limits: each pixel is represented by one center point, the nadir direction is
+exactly vertical, platform boundary contact is fully opaque, partial pixel area
+and scattering are absent, and the 60 × 60/30 cm dimensions are author-provided
+model assumptions rather than domain-validated flight geometry. Scientific use
+still requires physics validation and final author approval.
