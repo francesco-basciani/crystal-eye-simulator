@@ -42,6 +42,7 @@ export type KalmanReferenceFrame = Readonly<{
   expectedBackgroundRateCountsPerSecond: number;
   expectedSourceRateCountsPerSecond: number;
   observedCounts: number;
+  activeBurstCount?: number;
 }>;
 
 export type KalmanFilterConfiguration = Readonly<{

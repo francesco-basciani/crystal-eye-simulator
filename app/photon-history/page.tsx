@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppNav } from "../components/app-nav";
+import { AdaptiveAnalysisPlot } from "../components/adaptive-background-panel";
+import { runAggregateBackgroundKalman } from "../lib/kalman-scenarios";
 import {
   openPhotonRepository,
   type PhotonCursor,
   type PhotonQueryResult,
+  type PhotonRecord,
   type PhotonRepository,
 } from "../lib/photon-repository";
 
@@ -26,6 +29,7 @@ export default function PhotonHistoryPage() {
   const [result, setResult] = useState<PhotonQueryResult>({ items: [], nextCursor: null, hasMore: false });
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
+  const [selectedRecordId, setSelectedRecordId] = useState<number | null>(null);
 
   const loadPage = useCallback(async (repository: PhotonRepository, pageIndex: number, cursor?: PhotonCursor) => {
     setStatus("loading");
@@ -37,6 +41,7 @@ export default function PhotonHistoryPage() {
         limit: PAGE_SIZE,
       });
       setResult(next);
+      setSelectedRecordId(next.items[0]?.id ?? null);
       setPage(pageIndex);
       setError(null);
       setStatus("ready");
@@ -96,6 +101,40 @@ export default function PhotonHistoryPage() {
     void loadPage(repository, nextPage, cursors[nextPage]);
   };
 
+  const selectedRecord = useMemo(
+    () => result.items.find((record) => record.id === selectedRecordId) ?? null,
+    [result.items, selectedRecordId],
+  );
+  const selectedPageIndex = selectedRecord
+    ? result.items.findIndex((record) => record.id === selectedRecord.id)
+    : -1;
+  const analysisRecords = useMemo(() => {
+    if (!selectedRecord) return [];
+    return result.items
+      .filter((record) => record.runId === selectedRecord.runId)
+      .sort((left, right) => left.bin - right.bin || left.id - right.id);
+  }, [result.items, selectedRecord]);
+  const analysisRun = useMemo(() => {
+    if (analysisRecords.length === 0 || !selectedRecord) return null;
+    return runAggregateBackgroundKalman(
+      analysisRecords.map((record) => ({
+        frameIndex: record.bin,
+        simulationTimeSeconds: record.bin * 0.2,
+        exposureSeconds: 0.2,
+        expectedBackgroundRateCountsPerSecond: record.background / 0.2,
+        expectedSourceRateCountsPerSecond: record.source / 0.2,
+        observedCounts: record.observed,
+        activeBurstCount: record.activeBursts,
+      })),
+      {
+        scenarioId: `persisted-run-${selectedRecord.runId}`,
+        scenarioSchemaVersion: selectedRecord.schemaVersion,
+        seed: selectedRecord.id,
+      },
+    );
+  }, [analysisRecords, selectedRecord]);
+  const selectPageRow = (record: PhotonRecord) => setSelectedRecordId(record.id);
+
   return (
     <main className="data-page">
       <header className="data-page-header">
@@ -127,11 +166,54 @@ export default function PhotonHistoryPage() {
       </div>
 
       <section className="data-table-panel" aria-busy={status === "loading"}>
+        {selectedRecord && analysisRun && (
+          <section className="history-analysis-inspector" aria-labelledby="history-analysis-title">
+            <header>
+              <div>
+                <small>PERSISTED PAGE RECONSTRUCTION · PROVISIONAL</small>
+                <strong id="history-analysis-title">Selected photon bin {selectedRecord.bin}</strong>
+              </div>
+              <div>
+                <button
+                  type="button"
+                  disabled={selectedPageIndex <= 0}
+                  onClick={() => setSelectedRecordId(result.items[selectedPageIndex - 1].id)}
+                >
+                  NEWER ROW
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedPageIndex < 0 || selectedPageIndex >= result.items.length - 1}
+                  onClick={() => setSelectedRecordId(result.items[selectedPageIndex + 1].id)}
+                >
+                  OLDER ROW
+                </button>
+              </div>
+            </header>
+            <div className="history-analysis-details">
+              <span><small>SIMULATED UTC</small><strong>{new Date(selectedRecord.simulatedAtMs).toISOString()}</strong></span>
+              <span><small>RUN / BIN</small><strong>{selectedRecord.runId.slice(0, 12)} / {selectedRecord.bin}</strong></span>
+              <span><small>BACKGROUND</small><strong>{selectedRecord.background.toFixed(2)}</strong></span>
+              <span><small>INJECTED SOURCE</small><strong>{selectedRecord.source.toFixed(2)}</strong></span>
+              <span><small>OBSERVED</small><strong>{selectedRecord.observed.toFixed(2)}</strong></span>
+              <span><small>ACTIVE GRB</small><strong>{selectedRecord.activeBursts}</strong></span>
+            </div>
+            <div className="history-analysis-plot">
+              <AdaptiveAnalysisPlot
+                points={analysisRun.points}
+                selectedFrameIndex={selectedRecord.bin}
+              />
+            </div>
+            <p>
+              Reconstructed from persisted rows for the selected run on this 100-row page. Yellow dots mark only bins with a recorded active injected GRB; environmental changes and Poisson samples never create event dots.
+            </p>
+          </section>
+        )}
         <table className="data-table photon-data-table">
           <caption>Persisted photon acquisition records</caption>
           <thead>
             <tr>
-              <th scope="col">ID</th><th scope="col">RUN</th><th scope="col">BIN</th>
+              <th scope="col">INSPECT</th><th scope="col">ID</th><th scope="col">RUN</th><th scope="col">BIN</th>
               <th scope="col">SIMULATED UTC</th><th scope="col">CAPTURED UTC</th>
               <th scope="col">BACKGROUND</th><th scope="col">SOURCE</th><th scope="col">OBSERVED</th>
               <th scope="col">SUN</th><th scope="col">MOON</th><th scope="col">EARTH ALBEDO</th>
@@ -140,7 +222,17 @@ export default function PhotonHistoryPage() {
           </thead>
           <tbody>
             {result.items.map((record) => (
-              <tr key={record.id}>
+              <tr key={record.id} className={record.id === selectedRecordId ? "selected" : ""}>
+                <td>
+                  <button
+                    type="button"
+                    className="history-inspect-button"
+                    aria-pressed={record.id === selectedRecordId}
+                    onClick={() => selectPageRow(record)}
+                  >
+                    VIEW
+                  </button>
+                </td>
                 <th scope="row">{record.id}</th>
                 <td title={record.runId}>{record.runId.slice(0, 12)}</td>
                 <td>{record.bin}</td>

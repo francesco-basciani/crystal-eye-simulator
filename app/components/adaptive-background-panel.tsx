@@ -17,6 +17,7 @@ export type AdaptiveAnalysisSample = Readonly<{
   expectedBackgroundCounts: number;
   expectedSourceCounts: number;
   observedCounts: number;
+  activeBurstCount: number;
 }>;
 
 const WIDTH = 680;
@@ -53,7 +54,13 @@ function linePath(
     .join(" ");
 }
 
-function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
+export function AdaptiveAnalysisPlot({
+  points,
+  selectedFrameIndex,
+}: {
+  points: readonly KalmanAnalysisPoint[];
+  selectedFrameIndex?: number;
+}) {
   const plotWidth = WIDTH - LEFT - RIGHT;
   const maximumRate = Math.max(
     1,
@@ -123,7 +130,7 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
       className="kalman-plot adaptive-analysis-plot"
       viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
       role="img"
-      aria-label="Observed samples, configured background reference, adaptive estimate and uncertainty, injected source interval, and normalized innovation"
+      aria-label="Continuous observed stream, configured background reference, adaptive estimate and uncertainty, injected GRB event dots, and normalized innovation"
     >
       <title>Adaptive background and transient analysis</title>
       {[0, 0.25, 0.5, 0.75, 1].map((fraction) => {
@@ -141,15 +148,35 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
       <path className="kalman-source-area" d={sourceArea} />
       <path className="kalman-truth-line" d={linePath(points, x, (point) => yRate(point.expectedBackgroundRateCountsPerSecond))} />
       <path className="kalman-estimate-line" d={linePath(points, x, (point) => yRate(point.estimatedBackgroundRateCountsPerSecond))} />
-      {points.map((point, index) => (
-        <circle
-          className={point.gated ? "kalman-observation gated" : "kalman-observation"}
-          key={point.frameIndex}
-          cx={x(point, index)}
-          cy={yRate(point.observedRateCountsPerSecond)}
-          r={point.gated ? 5 : 2.4}
-        />
-      ))}
+      <path className="kalman-observed-line" d={linePath(points, x, (point) => yRate(point.observedRateCountsPerSecond))} />
+      {points.map((point, index) =>
+        (point.activeBurstCount ?? 0) > 0 ? (
+          <circle
+            className="kalman-source-event-marker"
+            key={`source-event-${point.frameIndex}`}
+            cx={x(point, index)}
+            cy={yRate(
+              point.expectedBackgroundRateCountsPerSecond +
+                point.expectedSourceRateCountsPerSecond,
+            )}
+            r={4.2}
+          >
+            <title>{`Injected GRB active · frame ${point.frameIndex}`}</title>
+          </circle>
+        ) : null,
+      )}
+      {selectedFrameIndex !== undefined && points.map((point, index) =>
+        point.frameIndex === selectedFrameIndex ? (
+          <line
+            className="kalman-selected-frame"
+            key={`selected-${point.frameIndex}`}
+            x1={x(point, index)}
+            x2={x(point, index)}
+            y1={UPPER_TOP}
+            y2={LOWER_BOTTOM}
+          />
+        ) : null,
+      )}
       {[-4, 0, 4].map((innovation) => (
         <g key={innovation}>
           <line className={innovation === 0 ? "kalman-zero" : "kalman-gate"} x1={LEFT} x2={WIDTH - RIGHT} y1={yInnovation(innovation)} y2={yInnovation(innovation)} />
@@ -157,9 +184,6 @@ function AnalysisPlot({ points }: { points: readonly KalmanAnalysisPoint[] }) {
         </g>
       ))}
       <path className="kalman-innovation-line" d={linePath(points, x, (point) => yInnovation(point.normalizedInnovation))} />
-      {points.map((point, index) =>
-        point.gated ? <circle className="kalman-gated-point" key={`gate-${point.frameIndex}`} cx={x(point, index)} cy={yInnovation(point.normalizedInnovation)} r={5} /> : null,
-      )}
       <text className="kalman-axis-title" x={8} y={18}>RATE · COUNTS/S</text>
       <text className="kalman-axis-title" x={8} y={248}>NORMALIZED INNOVATION · ±4 GATE</text>
       <text className="kalman-time-label" x={LEFT} y={338}>{(points[0]?.simulationTimeSeconds ?? 0).toFixed(1)} s</text>
@@ -174,12 +198,14 @@ export function AdaptiveBackgroundPanel({
   seed,
   onSeedChange,
   onExpand,
+  historyHref,
 }: {
   samples: readonly AdaptiveAnalysisSample[];
   mode: "reference" | "simulation";
   seed: number;
   onSeedChange: (seed: number) => void;
   onExpand?: () => void;
+  historyHref?: string;
 }) {
   const run = useMemo(() => {
     const frames: KalmanReferenceFrame[] = samples.map((sample) => ({
@@ -192,6 +218,7 @@ export function AdaptiveBackgroundPanel({
       expectedSourceRateCountsPerSecond:
         sample.expectedSourceCounts / sample.exposureSeconds,
       observedCounts: sample.observedCounts,
+      activeBurstCount: sample.activeBurstCount,
     }));
     return runAggregateBackgroundKalman(frames, {
       scenarioId: mode === "simulation" ? "live-seeded-simulation-v1" : "live-reference-replay-v1",
@@ -227,13 +254,18 @@ export function AdaptiveBackgroundPanel({
               <Maximize2 size={13} />
             </button>
           )}
+          {historyHref && (
+            <a href={historyHref} aria-label="Open complete persisted photon and analysis history">
+              HISTORY
+            </a>
+          )}
         </div>
       </header>
       <div className="adaptive-analysis-warning">{KALMAN_DEMONSTRATOR_LABEL}</div>
       <div className="adaptive-analysis-legend">
-        <span>samples</span><span>{mode === "simulation" ? "environment reference" : "Rito + environment reference"}</span><span>estimate ±95%</span><span>injected source truth</span>
+        <span>observed stream</span><span>{mode === "simulation" ? "environment reference" : "Rito + environment reference"}</span><span>estimate ±95%</span><span>GRB dots + injected source truth</span>
       </div>
-      <AnalysisPlot points={run.points} />
+      <AdaptiveAnalysisPlot points={run.points} />
       <footer>
         <span>GATED <b>{run.metrics.gatedBinCount}</b> / {run.metrics.totalBinCount}</span>
         <span>SOURCE-WINDOW SIGNED EXCESS <b>{run.metrics.sourceIntervalResidualCounts.toFixed(1)}</b> counts</span>

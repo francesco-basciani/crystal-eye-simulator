@@ -412,3 +412,32 @@ an occulted component cannot crash the simulation or create unphysical counts.
 This is a visibility-consistency correction, not a calibration claim. The raw
 environmental amplitude laws remain unchanged and **PROVISIONAL**; when they
 have valid pixel support, their complete total is still allocated exactly.
+
+### Persisted analysis inspection and injected-event markers
+
+Author-approved UI requirement: graph event dots must identify only bins in
+which an injected GRB event was actually active. The live sample adapter now
+propagates `activeBursts.length`; baseline bins explicitly carry zero. The plot
+creates a yellow event dot only when `activeBurstCount > 0`. Neither Poisson
+deviations, normalized-innovation gates nor Sun/Moon/Earth background changes
+can create this marker. Environmental evolution remains represented by the
+continuous configured-background and estimator curves. Observed counts are
+also rendered as a continuous line; ordinary observation circles and circular
+gate markers were removed. Consequently, injected-GRB bins are the only
+circular marks in the analysis plot.
+
+The Adaptive Background Analysis header now links to the existing local
+`/photon-history/` page. No database migration or external service was added.
+The history page reuses the existing 100-row keyset page, filters it to the
+selected run, orders those records by acquisition bin, and replays the same
+aggregate estimator. Clicking `VIEW` selects a past record, displays its stored
+component values and UTC, and draws a vertical selection line. `NEWER ROW`,
+`OLDER ROW`, and the pre-existing page-level `NEWER`/`OLDER` controls provide
+backward navigation through persisted records.
+
+Reconstruction inputs are persisted schema-v1 fields: `runId`, `bin`,
+`background`, `source`, `observed`, component counts and `activeBursts`.
+Exposure remains the schema-v1 invariant `0.2 s`; estimator time is reconstructed
+as `bin × 0.2 s`. The displayed reconstruction is limited to records for the
+selected run present on the current 100-row page and is labeled **PROVISIONAL**.
+It is inspection of synthetic/configured history, not a GRB detection claim.

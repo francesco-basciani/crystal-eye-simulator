@@ -85,6 +85,7 @@ type SignalSample = Sample & {
   acquisitionTimeSeconds: number;
   simulationTimeSeconds: number;
   exposureSeconds: number;
+  activeBurstCount: number;
 };
 
 type EventRecord = {
@@ -183,6 +184,7 @@ function createBaselineSamples(background: number, count = 80): SignalSample[] {
     background,
     source: 0,
     observed: background,
+    activeBurstCount: 0,
   }));
 }
 
@@ -4668,6 +4670,7 @@ export default function Home() {
           (photonBinRef.current + 1) * PIXEL_BACKGROUND_BIN_SECONDS,
         simulationTimeSeconds: elapsedRef.current,
         exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS,
+        activeBurstCount: activeBursts.length,
       };
       photonBinRef.current += 1;
       setSamples((current) => [...current.slice(-119), nextSignalSample]);
@@ -5186,6 +5189,7 @@ export default function Home() {
         expectedBackgroundCounts: sample.background,
         expectedSourceCounts: sample.source,
         observedCounts: sample.observed,
+        activeBurstCount: sample.activeBurstCount,
       })),
     [samples],
   );
@@ -5543,6 +5547,7 @@ export default function Home() {
             seed={simulationSeed}
             onSeedChange={setSimulationSeed}
             onExpand={() => setWorkspaceFocus("analysis")}
+            historyHref={`${PUBLIC_BASE_PATH}/photon-history/`}
           />
 
           <div
