@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   getExposedEarthAlbedoWeight,
   getNadirExposureFraction,
+  getSubSatelliteSolarIncidence,
   isPixelCenterExposedToNadir,
   type NadirPixelGeometry,
 } from "../app/lib/earth-albedo-occlusion.ts";
@@ -24,6 +25,13 @@ const innerPixel: NadirPixelGeometry = {
   outermostRing: OUTERMOST_RING,
   angleRadians: 0,
 };
+
+test("local sub-satellite solar incidence is one at noon and zero at terminator or midnight", () => {
+  const surface: readonly [number, number, number] = [1, 0, 0];
+  assert.equal(getSubSatelliteSolarIncidence(surface, [1, 0, 0]), 1);
+  assert.equal(getSubSatelliteSolarIncidence(surface, [0, 1, 0]), 0);
+  assert.equal(getSubSatelliteSolarIncidence(surface, [-1, 0, 0]), 0);
+});
 
 function exposedSlots(mountX: number, mountZ: number) {
   return outerPixels
@@ -87,4 +95,29 @@ test("directional lobe redistributes only over geometric support and sums reconc
   );
   const centerAllocation = distributeSupportedTotal(0, centerWeights);
   assert.ok(centerAllocation.values.every((value) => value === 0));
+});
+
+test("nightside aggregate and every pixel stay zero for center edge and corner mounts", () => {
+  const nightsideIllumination = getSubSatelliteSolarIncidence(
+    [1, 0, 0],
+    [-1, 0, 0],
+  );
+  for (const [mountX, mountZ] of [[0, 0], [1, 0], [1, -1]] as const) {
+    const exposure = getNadirExposureFraction(outerPixels, mountX, mountZ);
+    const expectedAggregate = 17 * nightsideIllumination ** 1.35 * exposure;
+    const weights = outerPixels.map((pixel) =>
+      getExposedEarthAlbedoWeight(
+        pixel,
+        nightsideIllumination,
+        0,
+        1,
+        mountX,
+        mountZ,
+      ),
+    );
+    const allocation = distributeSupportedTotal(expectedAggregate, weights);
+    assert.equal(expectedAggregate, 0);
+    assert.equal(allocation.allocatedTotal, 0);
+    assert.ok(allocation.values.every((value) => value === 0));
+  }
 });

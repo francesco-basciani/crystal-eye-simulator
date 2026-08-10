@@ -641,3 +641,66 @@ exactly vertical, platform boundary contact is fully opaque, partial pixel area
 and scattering are absent, and the 60 × 60/30 cm dimensions are author-provided
 model assumptions rather than domain-validated flight geometry. Scientific use
 still requires physics validation and final author approval.
+
+### Nightside solar-incidence correction
+
+Task input: clean commit `8e9cb67`. Reported symptom: the Earth below the
+satellite appeared dark while exposed outer pixels still received Earth
+albedo. The previous scalar `(1 + dot) / 2` used a topocentric Sun/boresight dot
+and yields `0.5` at a terminator and nonzero values over much of the nightside.
+
+The corrected local illumination is the cosine incidence at the sub-satellite
+Earth point:
+
+`max(0, dot(satellite geocentric outward direction, geocentric Sun direction))`.
+
+Both directions are normalized and expressed in the same mapped geocentric
+frame. Noon, terminator and midnight therefore produce exactly `1`, `0` and
+`0`. The existing provisional aggregate law remains
+`85 × angularScale × incidence^1.35`; consequently a terminator/nightside frame
+has zero requested Earth total before platform occlusion. The same scalar is
+passed to per-pixel Earth weights and all 3D, Events, planar and status paths.
+The initial state, live timer and mode-aware reset all derive it through the
+same `getCelestialGeometry` function.
+
+Pixel visual activation is now based on an explicit excitation vector equal to
+the per-pixel sum of Sun, Moon, Earth and GRB contributions. Rito reference
+counts are deliberately excluded from excitation: they remain visible as the
+existing blue baseline in Reference Mode but do not create an elevated active
+glow. The 3D crystals, Events canvas and planar map use `excitation > 0` for
+active styling; base blue visibility is unchanged. Earth-specific styling also
+requires positive effective Earth illumination/support, and nightside status
+is explicitly labeled `zero local solar incidence` and `0 c/s`.
+
+Tests cover noon/terminator/midnight incidence; nightside center, edge and
+corner placements; zero aggregate and zero per-pixel Earth allocation; removal
+of the old formula; and the shared excitation-based UI identity. No Kalman,
+source amplitude, platform geometry or sky-side visibility parameter changed.
+The Earth amplitude and detector response remain **PROVISIONAL** pending domain
+validation.
+
+### 3D excitation-frame transition guard
+
+Browser QA after the nightside change reproduced repeated
+`TypeError: Cannot read properties of undefined (reading '0')` exceptions in
+the 3D crystal animation loop. The physical display was otherwise correct
+(`EARTH 0%`, nightside, `0 c/s`). Source inspection isolated the unsafe access
+to the newly added `detectorExcitationExpectedCounts[pixelId]`: during a
+development HMR/prop transition, the long-lived animation settings object could
+temporarily predate that field.
+
+The UI boundary now resolves detector intensity, total-response and excitation
+vectors before entering any 126-pixel loop. An absent vector is accepted only
+as a bootstrap/HMR transition and resolves to an immutable 126-zero frame.
+Present vectors must contain exactly 126 finite non-negative values; wrong
+length or invalid content throws a descriptive `RangeError` rather than hiding
+a structural identity defect. Initial telemetry explicitly constructs a
+126-value excitation frame. The Sensor Events and planar map adapters use the
+same resolver, while the 3D loop no longer directly indexes the possibly
+missing settings property.
+
+This correction changes no physical value: the fallback is a zero visual-
+excitation frame for one transitional render only, and the next valid telemetry
+frame replaces it. Tests verify the 126-zero transitional contract, fail-loud
+malformed vectors, explicit initial length, and absence of the unsafe direct
+3D access. Kalman and Earth-albedo calculations are unchanged.

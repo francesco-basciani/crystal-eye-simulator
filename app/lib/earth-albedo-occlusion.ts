@@ -7,6 +7,19 @@ export type NadirPixelGeometry = Readonly<{
   angleRadians: number;
 }>;
 
+export type UnitDirection = readonly [number, number, number];
+
+export function getSubSatelliteSolarIncidence(
+  surfaceOutwardDirection: UnitDirection,
+  geocentricSunDirection: UnitDirection,
+): number {
+  const dot =
+    surfaceOutwardDirection[0] * geocentricSunDirection[0] +
+    surfaceOutwardDirection[1] * geocentricSunDirection[1] +
+    surfaceOutwardDirection[2] * geocentricSunDirection[2];
+  return Math.max(0, Math.min(1, dot));
+}
+
 function requireNormalizedMountCoordinate(value: number, label: string) {
   if (!Number.isFinite(value) || value < -1 || value > 1) {
     throw new RangeError(`${label} must be finite and within [-1, 1].`);

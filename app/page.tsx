@@ -32,6 +32,10 @@ import {
 import { createSeededRandom, samplePoisson } from "./lib/kalman-scenarios";
 import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
 import {
+  createZeroDetectorFrame,
+  resolveDetectorFrameVector,
+} from "./lib/detector-frame";
+import {
   ECI_EPHEMERIS_INITIAL_SAMPLE,
   ECI_EPHEMERIS_START_MS,
   greenwichMeanSiderealTimeRadians,
@@ -51,6 +55,7 @@ import {
   composeModeBackgroundRate,
   composePixelSignalFrame,
   distributeSupportedTotal,
+  sumPixelComponents,
 } from "./lib/signal-composition";
 import {
   createPhotonRunId,
@@ -61,6 +66,7 @@ import { createParametricOrbitOverride } from "./lib/orbital-overrides";
 import {
   getExposedEarthAlbedoWeight,
   getNadirExposureFraction,
+  getSubSatelliteSolarIncidence,
   isPixelCenterExposedToNadir,
 } from "./lib/earth-albedo-occlusion";
 import {
@@ -118,6 +124,7 @@ type Telemetry = Sample & {
   burstPixelGroups: number[][];
   detector: number[];
   detectorHits: number[];
+  detectorExcitationExpectedCounts: number[];
   detectorBackgroundRates: number[];
   detectorBackgroundExpectedCounts: number[];
   simulatedDate: string;
@@ -718,9 +725,16 @@ function createDetectorExpectedResponse({
     }, 0);
     return THREE.MathUtils.clamp(Math.max(earthImpact, burstImpact), 0, 1);
   });
+  const detectorExcitationExpectedCounts = sumPixelComponents(
+    sunAllocation.values,
+    moonAllocation.values,
+    earthAllocation.values,
+    sourceAllocation.values,
+  );
 
   return {
     detectorHits: composedPixels.expected,
+    detectorExcitationExpectedCounts,
     detectorImpact,
     backgroundExpectedCounts: composedPixels.background,
     aggregateBackgroundExpectedCounts: composedPixels.background.reduce(
@@ -912,14 +926,9 @@ function getCelestialGeometry(
   const moonNoise = moonInFov
     ? 22 * angularResponse(moonSeparation) * (0.3 + 0.7 * moonIllumination.phase_fraction)
     : 0;
-  const sunBoresightDot =
-    sunDirection[0] * satelliteDirection[0] +
-    sunDirection[1] * satelliteDirection[1] +
-    sunDirection[2] * satelliteDirection[2];
-  const earthIllumination = THREE.MathUtils.clamp(
-    (1 + sunBoresightDot) / 2,
-    0,
-    1,
+  const earthIllumination = getSubSatelliteSolarIncidence(
+    satelliteDirection,
+    geocentricSunDirection,
   );
   const detectorOrientation = new THREE.Quaternion().setFromUnitVectors(
     new THREE.Vector3(0, 1, 0),
@@ -1018,6 +1027,7 @@ const INITIAL_TELEMETRY: Telemetry = {
   burstPixelGroups: [],
   detector: INITIAL_DETECTOR_HITS.map((hits) => (hits > 0 ? 0.55 : 0)),
   detectorHits: INITIAL_DETECTOR_HITS,
+  detectorExcitationExpectedCounts: createZeroDetectorFrame(),
   detectorBackgroundRates: PIXEL_LAYOUT.map(() => 0),
   detectorBackgroundExpectedCounts: PIXEL_LAYOUT.map(() => 0),
   simulatedDate: INITIAL_CELESTIAL.date.toISOString(),
@@ -1073,6 +1083,7 @@ function GlobeScene({
   earthAlbedoDirectional,
   detectorIntensity,
   detectorHits,
+  detectorExcitationExpectedCounts,
   mountX,
   mountZ,
   cameraMode,
@@ -1101,6 +1112,7 @@ function GlobeScene({
   earthAlbedoDirectional: number;
   detectorIntensity: number[];
   detectorHits: number[];
+  detectorExcitationExpectedCounts: number[];
   mountX: number;
   mountZ: number;
   cameraMode: CameraMode;
@@ -1129,6 +1141,7 @@ function GlobeScene({
     earthAlbedoDirectional,
     detectorIntensity,
     detectorHits,
+    detectorExcitationExpectedCounts,
     mountX,
     mountZ,
     cameraMode,
@@ -1156,6 +1169,7 @@ function GlobeScene({
       earthAlbedoDirectional,
       detectorIntensity,
       detectorHits,
+      detectorExcitationExpectedCounts,
       mountX,
       mountZ,
       cameraMode,
@@ -1181,6 +1195,7 @@ function GlobeScene({
     earthAlbedoDirectional,
     detectorIntensity,
     detectorHits,
+    detectorExcitationExpectedCounts,
     mountX,
     mountZ,
     cameraMode,
@@ -1793,12 +1808,25 @@ function GlobeScene({
         ? 0.55 + Math.sin(clock.elapsedTime * 8) * 0.25
         : 0;
 
+      const detectorIntensityFrame = resolveDetectorFrameVector(
+        settings.detectorIntensity,
+        "3D detector intensity",
+      );
+      const detectorHitsFrame = resolveDetectorFrameVector(
+        settings.detectorHits,
+        "3D detector total response",
+      );
+      const detectorExcitationFrame = resolveDetectorFrameVector(
+        settings.detectorExcitationExpectedCounts,
+        "3D detector excitation",
+      );
       crystalPixels.forEach((crystal, pixelId) => {
         const material = pixelMaterials[pixelId];
         const isSelected = pixelId === settings.selectedPixel;
-        const impact = settings.detectorIntensity[pixelId] ?? 0;
-        const hitCount = settings.detectorHits[pixelId] ?? 0;
-        const isFired = hitCount > 0;
+        const impact = detectorIntensityFrame[pixelId];
+        const hitCount = detectorHitsFrame[pixelId];
+        const excitationCount = detectorExcitationFrame[pixelId];
+        const isFired = excitationCount > 0;
         const isBurstPath =
           settings.burstPixelGroups.some((group) => group.includes(pixelId));
         const sphereSlot = configuredPixelSphereSlots[pixelId];
@@ -2007,8 +2035,8 @@ function GlobeScene({
         <span className={moonNoise > 0 ? "interfering moon" : ""}>
           <Moon size={12} /> Moon {moonNoise > 0 ? `+${moonNoise.toFixed(0)} c/s` : "outside cone"}
         </span>
-        <span className={earthAlbedoNoise > 1 ? "interfering earth" : ""}>
-          <CircleDot size={12} /> Earth albedo {earthAlbedoNoise > 0.001 ? `+${earthAlbedoNoise.toFixed(1)} c/s` : "platform blocked"}
+        <span className={earthAlbedoNoise > 0.001 ? "interfering earth" : ""}>
+          <CircleDot size={12} /> Earth albedo {earthAlbedoNoise > 0.001 ? `+${earthAlbedoNoise.toFixed(1)} c/s` : earthIllumination <= 0.01 ? "nightside" : "platform blocked"}
         </span>
       </div>
       <div className="drag-hint">
@@ -2159,7 +2187,7 @@ function SensorView({
   moonInFov,
   moonPhase,
   detector,
-  detectorHits,
+  detectorExcitationExpectedCounts,
   pixelConfiguration,
   selectedPixel,
   burstDirections,
@@ -2181,7 +2209,7 @@ function SensorView({
   moonInFov: boolean;
   moonPhase: number;
   detector: number[];
-  detectorHits: number[];
+  detectorExcitationExpectedCounts: number[];
   pixelConfiguration: PixelConfiguration;
   selectedPixel: number;
   burstDirections: number[];
@@ -2196,6 +2224,14 @@ function SensorView({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [mode, setMode] = useState<SensorViewMode>("mask");
+  const detectorFrame = resolveDetectorFrameVector(
+    detector,
+    "Sensor view detector intensity",
+  );
+  const detectorExcitationFrame = resolveDetectorFrameVector(
+    detectorExcitationExpectedCounts,
+    "Sensor view detector excitation",
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2282,7 +2318,7 @@ function SensorView({
       }
     }
 
-    if (earthAlbedoNoise > 1 && mode !== "events") {
+    if (earthAlbedoNoise > 0.001 && mode !== "events") {
       const lobeWidth = THREE.MathUtils.lerp(
         Math.PI * 0.92,
         Math.PI * 0.48,
@@ -2336,9 +2372,9 @@ function SensorView({
         )!;
         const sphereSlot = sphereSlots[pixel.index];
         const spherePixel = PIXEL_LAYOUT[sphereSlot];
-        const value = detector[pixel.index] ?? 0;
-        const hitCount = detectorHits[pixel.index] ?? 0;
-        const isFired = hitCount > 0;
+        const value = detectorFrame[pixel.index];
+        const excitationCount = detectorExcitationFrame[pixel.index];
+        const isFired = excitationCount > 0;
         const x = cx + Math.cos(spherePixel.angle) * spherePixel.radius * radius * 0.88;
         const y = cy + Math.sin(spherePixel.angle) * spherePixel.radius * radius * 0.88;
         const cellRadius = Math.max(
@@ -2499,8 +2535,8 @@ function SensorView({
     drawOutOfField(sun, "SUN", "#ffc857");
     drawOutOfField(moon, "MOON", "#b9ceff");
   }, [
-    detector,
-    detectorHits,
+    detectorFrame,
+    detectorExcitationFrame,
     burstDirections,
     burstPixelGroups,
     earthAlbedoAzimuth,
@@ -2575,13 +2611,13 @@ function SensorView({
       <div className="sensor-view-footer">
         <span className={sunInFov ? "active sun" : ""}><i /> Sun</span>
         <span className={moonInFov ? "active moon" : ""}><i /> Moon</span>
-        <span className={earthAlbedoNoise > 1 ? "active earth" : ""}><i /> Earth</span>
+        <span className={earthAlbedoNoise > 0.001 ? "active earth" : ""}><i /> Earth</span>
         <span className={burstDirections.length > 0 ? "active grb" : ""}>
           <i /> GRB ×{burstDirections.length}
         </span>
         <em>
           {mode === "events"
-            ? `${detectorHits.filter((hits) => hits > 0).length} PX ON`
+            ? `${detectorExcitationFrame.filter((counts) => counts > 0).length} PX EXCITED`
             : mode === "geometry"
               ? "orbit context + enlarged payload"
               : "reconstruction · non-RGB"}
@@ -2594,6 +2630,7 @@ function SensorView({
 function DetectorMap({
   values,
   hits,
+  excitationExpectedCounts,
   backgroundRates,
   backgroundExpectedCounts,
   grbActive,
@@ -2609,6 +2646,7 @@ function DetectorMap({
 }: {
   values: number[];
   hits: number[];
+  excitationExpectedCounts: number[];
   backgroundRates: number[];
   backgroundExpectedCounts: number[];
   grbActive: boolean;
@@ -2622,6 +2660,10 @@ function DetectorMap({
   mountZ: number;
   onSelect: (index: number) => void;
 }) {
+  const excitationFrame = resolveDetectorFrameVector(
+    excitationExpectedCounts,
+    "Planar detector excitation",
+  );
   const backgroundRateRange = useMemo(() => {
     const validRates = backgroundRates.filter(Number.isFinite);
     return {
@@ -2650,6 +2692,7 @@ function DetectorMap({
           const physicalPixelId = configuredPixel.pixelId;
           const value = values[physicalPixelId] ?? 0;
           const hitCount = hits[physicalPixelId] ?? 0;
+          const excitationCount = excitationFrame[physicalPixelId];
           const backgroundRate = backgroundRates[physicalPixelId] ?? 0;
           const backgroundExpectedCount =
             backgroundExpectedCounts[physicalPixelId] ?? 0;
@@ -2659,7 +2702,7 @@ function DetectorMap({
             backgroundSpan > 0
               ? (backgroundRate - backgroundRateRange.minimum) / backgroundSpan
               : 0;
-          const isActive = hitCount > 0;
+          const isActive = excitationCount > 0;
           const isBurstHit =
             isActive &&
             burstPixelGroups.some((group) => group.includes(physicalPixelId));
@@ -4874,6 +4917,9 @@ export default function Home() {
         burstPixelGroups,
         detector: [...detector],
         detectorHits: [...detectorHits],
+        detectorExcitationExpectedCounts: [
+          ...detectorResponse.detectorExcitationExpectedCounts,
+        ],
         detectorBackgroundRates: [...detectorResponse.backgroundRates],
         detectorBackgroundExpectedCounts: [
           ...detectorResponse.backgroundExpectedCounts,
@@ -5250,6 +5296,9 @@ export default function Home() {
       observed: background,
       background,
       detectorHits: [...detectorHits],
+      detectorExcitationExpectedCounts: [
+        ...detectorResponse.detectorExcitationExpectedCounts,
+      ],
       detector: [...detectorResponse.detectorImpact],
       detectorBackgroundRates: [...detectorResponse.backgroundRates],
       detectorBackgroundExpectedCounts: [
@@ -5600,7 +5649,9 @@ export default function Home() {
               moonInFov={mountedMoonInFov}
               moonPhase={telemetry.moonPhase}
               detector={telemetry.detector}
-              detectorHits={telemetry.detectorHits}
+              detectorExcitationExpectedCounts={
+                telemetry.detectorExcitationExpectedCounts
+              }
               pixelConfiguration={pixelConfiguration}
               selectedPixel={selectedPixel}
               burstDirections={telemetry.burstDirections}
@@ -5637,13 +5688,13 @@ export default function Home() {
                 <span><small>MOON · {(telemetry.moonPhase * 100).toFixed(0)}% illum.</small><strong>{telemetry.moonSeparation.toFixed(1)}° · {(telemetry.moonDistanceKm / 1000).toFixed(0)}k km</strong></span>
                 <em>{mountedMoonInFov ? `+${telemetry.moonNoise.toFixed(0)} c/s` : "OUT"}</em>
               </div>
-              <div className={telemetry.earthAlbedoNoise > 1 ? "in-fov earth" : ""}>
+              <div className={telemetry.earthAlbedoNoise > 0.001 ? "in-fov earth" : ""}>
                 <CircleDot size={16} />
                 <span>
                   <small>EARTH · {(telemetry.earthIllumination * 100).toFixed(0)}% illuminated</small>
-                  <strong>albedo on peripheral pixels</strong>
+                  <strong>{telemetry.earthIllumination <= 0.01 ? "nightside · zero local solar incidence" : "albedo on exposed outer pixels"}</strong>
                 </span>
-                <em>+{telemetry.earthAlbedoNoise.toFixed(0)} c/s</em>
+                <em>{telemetry.earthAlbedoNoise > 0.001 ? `+${telemetry.earthAlbedoNoise.toFixed(1)} c/s` : "0 c/s"}</em>
               </div>
             </div>
             <p>
@@ -5677,6 +5728,9 @@ export default function Home() {
             earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
             detectorIntensity={telemetry.detector}
             detectorHits={telemetry.detectorHits}
+            detectorExcitationExpectedCounts={
+              telemetry.detectorExcitationExpectedCounts
+            }
             mountX={mountX}
             mountZ={mountZ}
             cameraMode={cameraMode}
@@ -5790,6 +5844,9 @@ export default function Home() {
             <DetectorMap
               values={telemetry.detector}
               hits={telemetry.detectorHits}
+              excitationExpectedCounts={
+                telemetry.detectorExcitationExpectedCounts
+              }
               backgroundRates={telemetry.detectorBackgroundRates}
               backgroundExpectedCounts={
                 telemetry.detectorBackgroundExpectedCounts

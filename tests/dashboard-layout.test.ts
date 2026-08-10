@@ -91,6 +91,18 @@ test("Earth albedo UI uses one binary nadir-support identity in 3D and planar vi
   assert.doesNotMatch(pageSource, /return response >= 0\.12 \? response : 0/);
   assert.match(pageSource, /EXPOSED OUTER PIXELS/);
   assert.match(pageSource, /PROVISIONAL binary nadir-ray model/);
+  assert.match(pageSource, /getSubSatelliteSolarIncidence\([\s\S]*?satelliteDirection,[\s\S]*?geocentricSunDirection/);
+  assert.doesNotMatch(pageSource, /\(1 \+ sunBoresightDot\) \/ 2/);
+  assert.match(pageSource, /detectorExcitationExpectedCounts/);
+  assert.match(pageSource, /const isFired = excitationCount > 0/);
+  assert.match(pageSource, /const isActive = excitationCount > 0/);
+  assert.match(pageSource, /nightside · zero local solar incidence/);
+  assert.match(pageSource, /detectorExcitationExpectedCounts: createZeroDetectorFrame\(\)/);
+  assert.match(pageSource, /const detectorExcitationFrame = resolveDetectorFrameVector/);
+  assert.doesNotMatch(
+    pageSource,
+    /settings\.detectorExcitationExpectedCounts\[pixelId\]/,
+  );
 });
 
 test("the vinext development overlay does not mask opaque script errors", () => {
