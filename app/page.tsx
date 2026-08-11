@@ -26,17 +26,19 @@ import * as THREE from "three";
 import { Body, Illumination } from "astronomy-engine";
 import { AppNav } from "./components/app-nav";
 import {
-  ADAPTIVE_ANALYSIS_VISIBLE_BIN_COUNT,
-  AdaptiveBackgroundPanel,
-  type AdaptiveAnalysisSample,
-} from "./components/adaptive-background-panel";
+  SKY_ENERGY_VISIBLE_FRAME_COUNT,
+  SkyEnergyAnalysisPanel,
+  type SkyEnergyAnalysisSample,
+} from "./components/sky-energy-analysis-panel";
 import {
   createSeededRandom,
-  runAggregateBackgroundKalman,
   samplePoisson,
-  type KalmanFilterState,
-  type KalmanReferenceFrame,
 } from "./lib/kalman-scenarios";
+import {
+  allocateAggregateObservationByPixel,
+  createCountCubeFrame,
+  type CountCubeFrameV1,
+} from "./lib/sky-energy-analysis";
 import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
 import {
   createZeroDetectorFrame,
@@ -111,11 +113,11 @@ type SignalSample = Sample & {
   activeBurstCount: number;
   activeBurstIds: readonly number[];
   startedBurstIds: readonly number[];
+  skyEnergyFrame?: CountCubeFrameV1;
 };
 
-type AdaptiveAnalysisWindow = Readonly<{
+type SkyEnergyAnalysisWindow = Readonly<{
   samples: readonly SignalSample[];
-  initialFilterState?: KalmanFilterState;
 }>;
 
 type EventRecord = {
@@ -205,64 +207,16 @@ const AUTOMATIC_GRB_GAP_RANGE_BINS = 61;
 const AUTOMATIC_GRB_MINIMUM_DURATION_SECONDS = 0.8;
 const AUTOMATIC_GRB_DURATION_RANGE_SECONDS = 1.6;
 
-function createBaselineSamples(background: number, count = 80): SignalSample[] {
-  return Array.from({ length: count }, (_, index) => ({
-    frameIndex: index - count,
-    acquisitionTimeSeconds:
-      (index - count) * PIXEL_BACKGROUND_BIN_SECONDS,
-    simulationTimeSeconds: (index - count) * PIXEL_BACKGROUND_BIN_SECONDS,
-    exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS,
-    background,
-    source: 0,
-    observed: background,
-    activeBurstCount: 0,
-    activeBurstIds: [],
-    startedBurstIds: [],
-  }));
+function createSkyEnergyAnalysisWindow(): SkyEnergyAnalysisWindow {
+  return { samples: [] };
 }
 
-function signalSampleToKalmanFrame(sample: SignalSample): KalmanReferenceFrame {
-  return {
-    frameIndex: sample.frameIndex,
-    simulationTimeSeconds: sample.acquisitionTimeSeconds,
-    exposureSeconds: sample.exposureSeconds,
-    expectedBackgroundRateCountsPerSecond:
-      sample.background / sample.exposureSeconds,
-    expectedSourceRateCountsPerSecond: sample.source / sample.exposureSeconds,
-    observedCounts: sample.observed,
-    activeBurstCount: sample.activeBurstCount,
-    startedBurstIds: sample.startedBurstIds.map((id) => `burst-${id}`),
-  };
-}
-
-function createAdaptiveAnalysisWindow(background: number): AdaptiveAnalysisWindow {
-  return { samples: createBaselineSamples(background) };
-}
-
-function appendAdaptiveAnalysisSample(
-  current: AdaptiveAnalysisWindow,
+function appendSkyEnergyAnalysisSample(
+  current: SkyEnergyAnalysisWindow,
   nextSample: SignalSample,
-): AdaptiveAnalysisWindow {
-  const overflow = Math.max(
-    0,
-    current.samples.length + 1 - ADAPTIVE_ANALYSIS_VISIBLE_BIN_COUNT,
-  );
-  const dropped = current.samples.slice(0, overflow);
-  const kept = current.samples.slice(overflow);
-  const carriedState = dropped.length > 0
-    ? runAggregateBackgroundKalman(
-        dropped.map(signalSampleToKalmanFrame),
-        {
-          scenarioId: "live-adaptive-carry-v1",
-          scenarioSchemaVersion: 1,
-          seed: 1,
-          initialState: current.initialFilterState,
-        },
-      ).finalState
-    : current.initialFilterState;
+): SkyEnergyAnalysisWindow {
   return {
-    samples: [...kept, nextSample],
-    ...(carriedState ? { initialFilterState: carriedState } : {}),
+    samples: [...current.samples, nextSample].slice(-SKY_ENERGY_VISIBLE_FRAME_COUNT),
   };
 }
 
@@ -4325,9 +4279,9 @@ export default function Home() {
     useState<EciEphemerisProfile | null>(null);
   const [ephemerisError, setEphemerisError] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
-  const [adaptiveAnalysisWindow, setAdaptiveAnalysisWindow] =
-    useState<AdaptiveAnalysisWindow>(() =>
-      createAdaptiveAnalysisWindow(INITIAL_TELEMETRY.background),
+  const [skyEnergyAnalysisWindow, setSkyEnergyAnalysisWindow] =
+    useState<SkyEnergyAnalysisWindow>(() =>
+      createSkyEnergyAnalysisWindow(),
     );
   const [photonRecordCount, setPhotonRecordCount] = useState(0);
   const [persistenceStatus, setPersistenceStatus] = useState<
@@ -4417,8 +4371,8 @@ export default function Home() {
         setBackgroundProfile(profile);
         setBackgroundProfileError(null);
         if (settingsRef.current.simulatorMode === "reference") {
-          setAdaptiveAnalysisWindow(
-            createAdaptiveAnalysisWindow(profile.totalExpectedCountsPerBin),
+          setSkyEnergyAnalysisWindow(
+            createSkyEnergyAnalysisWindow(),
           );
         }
         setEventLog((current) => [
@@ -4921,20 +4875,42 @@ export default function Home() {
       const effectiveMoonRate = effectiveMoonCounts / PIXEL_BACKGROUND_BIN_SECONDS;
       const effectiveEarthRate = effectiveEarthCounts / PIXEL_BACKGROUND_BIN_SECONDS;
       const next = { observed, background, source };
+      const nextFrameIndex = photonBinRef.current + 1;
+      const observedAllocation = allocateAggregateObservationByPixel({
+        mode: settings.simulatorMode,
+        aggregateObservedCounts: observed,
+        expectedByPixel: detectorResponse.detectorHits,
+        seed: settings.simulationSeed,
+        frameIndex: nextFrameIndex,
+      });
+      const skyEnergyFrame = createCountCubeFrame({
+        frameIndex: nextFrameIndex,
+        acquisitionTimeSeconds:
+          nextFrameIndex * PIXEL_BACKGROUND_BIN_SECONDS,
+        simulatedAt: celestial.date.toISOString(),
+        exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS,
+        observedByPixel: observedAllocation.values,
+        expectedBackgroundByPixel: detectorResponse.backgroundExpectedCounts,
+        sourceExpectedByPixel: detectorResponse.componentExpectedCounts.source,
+        detectorNormals: getConfiguredPixelNormals(currentPixelConfiguration),
+        sceneRadialBoresight: celestial.satelliteDirection,
+        observationProvenance: observedAllocation.provenance,
+      });
       const nextSignalSample: SignalSample = {
         ...next,
-        frameIndex: photonBinRef.current + 1,
+        frameIndex: nextFrameIndex,
         acquisitionTimeSeconds:
-          (photonBinRef.current + 1) * PIXEL_BACKGROUND_BIN_SECONDS,
+          nextFrameIndex * PIXEL_BACKGROUND_BIN_SECONDS,
         simulationTimeSeconds: elapsedRef.current,
         exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS,
         activeBurstCount: activeBursts.length,
         activeBurstIds,
         startedBurstIds,
+        skyEnergyFrame,
       };
       photonBinRef.current += 1;
-      setAdaptiveAnalysisWindow((current) =>
-        appendAdaptiveAnalysisSample(current, nextSignalSample),
+      setSkyEnergyAnalysisWindow((current) =>
+        appendSkyEnergyAnalysisSample(current, nextSignalSample),
       );
       const repository = photonRepositoryRef.current;
       if (repository && !persistenceFailedRef.current) {
@@ -5352,7 +5328,7 @@ export default function Home() {
         (sum, counts) => sum + counts,
         0,
       ) / PIXEL_BACKGROUND_BIN_SECONDS;
-    setAdaptiveAnalysisWindow(createAdaptiveAnalysisWindow(background));
+    setSkyEnergyAnalysisWindow(createSkyEnergyAnalysisWindow());
     setTelemetry({
       ...INITIAL_TELEMETRY,
       observed: background,
@@ -5462,20 +5438,12 @@ export default function Home() {
     telemetry.sunSeparation <= effectiveMountFov / 2 && telemetry.sunNoise > 0.1;
   const mountedMoonInFov =
     telemetry.moonSeparation <= effectiveMountFov / 2 && telemetry.moonNoise > 0.1;
-  const adaptiveAnalysisSamples = useMemo<readonly AdaptiveAnalysisSample[]>(
+  const skyEnergyAnalysisSamples = useMemo<readonly SkyEnergyAnalysisSample[]>(
     () =>
-      adaptiveAnalysisWindow.samples.map((sample) => ({
-        frameIndex: sample.frameIndex,
-        acquisitionTimeSeconds: sample.acquisitionTimeSeconds,
-        simulationTimeSeconds: sample.simulationTimeSeconds,
-        exposureSeconds: sample.exposureSeconds,
-        expectedBackgroundCounts: sample.background,
-        expectedSourceCounts: sample.source,
-        observedCounts: sample.observed,
-        activeBurstCount: sample.activeBurstCount,
-        startedBurstIds: sample.startedBurstIds.map((id) => `burst-${id}`),
-      })),
-    [adaptiveAnalysisWindow.samples],
+      skyEnergyAnalysisWindow.samples.flatMap((sample) =>
+        sample.skyEnergyFrame ? [sample.skyEnergyFrame] : [],
+      ),
+    [skyEnergyAnalysisWindow.samples],
   );
   const changeTimeWarp = useCallback((direction: -1 | 1) => {
     setSpeed((current) => {
@@ -5843,9 +5811,8 @@ export default function Home() {
             </span>
           </a>
 
-          <AdaptiveBackgroundPanel
-            samples={adaptiveAnalysisSamples}
-            initialFilterState={adaptiveAnalysisWindow.initialFilterState}
+          <SkyEnergyAnalysisPanel
+            samples={skyEnergyAnalysisSamples}
             mode={simulatorMode}
             seed={simulationSeed}
             onSeedChange={setSimulationSeed}

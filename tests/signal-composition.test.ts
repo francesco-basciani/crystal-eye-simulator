@@ -91,6 +91,22 @@ test("pixel frame totals reconcile and Simulation ignores supplied Rito pixels",
   assert.equal(simulation.expected.reduce((sum, value) => sum + value, 0), 34);
   assert.equal(reference.background.reduce((sum, value) => sum + value, 0), 619);
   assert.equal(reference.expected.reduce((sum, value) => sum + value, 0), 634);
+  for (const frame of [simulation, reference]) {
+    const componentBackgroundTotal = [
+      frame.components.rito,
+      frame.components.sun,
+      frame.components.moon,
+      frame.components.earth,
+    ].reduce(
+      (total, component) =>
+        total + component.reduce((sum, value) => sum + value, 0),
+      0,
+    );
+    assert.equal(
+      frame.background.reduce((sum, value) => sum + value, 0),
+      componentBackgroundTotal,
+    );
+  }
 });
 
 test("allocation fails closed for invalid totals, dimensions, and support", () => {

@@ -6,6 +6,10 @@ const adaptiveSource = readFileSync(
   new URL("../app/components/adaptive-background-panel.tsx", import.meta.url),
   "utf8",
 );
+const skyEnergySource = readFileSync(
+  new URL("../app/components/sky-energy-analysis-panel.tsx", import.meta.url),
+  "utf8",
+);
 const historySource = readFileSync(
   new URL("../app/photon-history/page.tsx", import.meta.url),
   "utf8",
@@ -19,7 +23,7 @@ const styles = readFileSync(
   "utf8",
 );
 
-test("adaptive event dots are driven only by recorded injected GRB starts", () => {
+test("legacy adaptive plot remains isolated while live Sky/Energy uses existing GRB truth", () => {
   const markerStart = adaptiveSource.indexOf('className="kalman-source-event-marker"');
   assert.ok(markerStart > 0);
   const markerConditionStart = adaptiveSource.lastIndexOf(
@@ -41,26 +45,27 @@ test("adaptive event dots are driven only by recorded injected GRB starts", () =
   assert.match(pageSource, /activeBurstCount: activeBursts\.length/);
   assert.match(pageSource, /startedBurstIds = activeBursts[\s\S]*?burst\.ageTicks === 0/);
   assert.match(pageSource, /startedBurstIds,/);
-  assert.match(pageSource, /activeBurstCount: sample\.activeBurstCount/);
-  assert.match(pageSource, /startedBurstIds: sample\.startedBurstIds/);
+  assert.match(pageSource, /sourceExpectedByPixel: detectorResponse\.componentExpectedCounts\.source/);
+  assert.match(pageSource, /detectorNormals: getConfiguredPixelNormals\(currentPixelConfiguration\)/);
   assert.match(adaptiveSource, /points\.slice\(-ADAPTIVE_ANALYSIS_VISIBLE_BIN_COUNT\)/);
-  assert.match(pageSource, /appendAdaptiveAnalysisSample/);
-  assert.match(pageSource, /initialFilterState=\{adaptiveAnalysisWindow\.initialFilterState\}/);
+  assert.match(pageSource, /appendSkyEnergyAnalysisSample/);
+  assert.match(pageSource, /samples=\{skyEnergyAnalysisSamples\}/);
   assert.doesNotMatch(pageSource, /current\.slice\(-119\)/);
 });
 
 test("the persisted history supports row selection and current-page reconstruction", () => {
   assert.match(historySource, /setSelectedRecordId/);
   assert.match(historySource, /result\.items[\s\S]*?sort\(\(left, right\) => left\.bin - right\.bin/);
-  assert.match(historySource, /runAggregateBackgroundKalman/);
-  assert.match(historySource, /activeBurstCount: record\.activeBursts/);
-  assert.match(historySource, /deriveBurstStartsByRecord/);
+  assert.match(historySource, /AggregateEnergyHistoryPlot/);
+  assert.doesNotMatch(historySource, /runAggregateBackgroundKalman|AdaptiveAnalysisPlot/);
   assert.match(historySource, /selectedFrameIndex=\{selectedRecord\.bin\}/);
   assert.match(historySource, /NEWER ROW/);
   assert.match(historySource, /OLDER ROW/);
-  assert.match(historySource, /Each yellow dot marks one injected GRB start/);
+  assert.match(historySource, /Schema-v1 history has no per-pixel or energy-resolved observations/);
+  assert.match(historySource, /no CountCube, sky localization, or calibrated energy claim/);
   assert.match(historySource, /ANALYSIS RECONSTRUCTION UNAVAILABLE/);
   assert.match(historySource, /Persisted rows remain available below/);
   assert.match(historySource, /Number\.isFinite\(observedRate\)/);
-  assert.match(adaptiveSource, /complete persisted photon and analysis history/);
+  assert.match(skyEnergySource, /Open persisted photon and analysis history/);
+  assert.match(skyEnergySource, /Legacy aggregate integrated-count history/);
 });

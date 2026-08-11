@@ -11,12 +11,12 @@ const viteConfig = readFileSync(
   new URL("../vite.config.ts", import.meta.url),
   "utf8",
 );
-const adaptiveAnalysisSource = readFileSync(
-  new URL("../app/components/adaptive-background-panel.tsx", import.meta.url),
+const skyEnergyAnalysisSource = readFileSync(
+  new URL("../app/components/sky-energy-analysis-panel.tsx", import.meta.url),
   "utf8",
 );
 
-test("adaptive analysis belongs to the right-hand Photon Stream panel", () => {
+test("Sky and Energy Analysis belongs to the right-hand Photon Stream panel", () => {
   const leftPanelStart = pageSource.indexOf(
     'className="control-panel left-panel"',
   );
@@ -35,7 +35,8 @@ test("adaptive analysis belongs to the right-hand Photon Stream panel", () => {
     pageSource.slice(leftPanelStart, simulationStageStart),
     /<SignalChart data=\{samples\}/,
   );
-  assert.match(pageSource.slice(rightPanelStart, rightPanelEnd), /PHOTON STREAM[\s\S]*<AdaptiveBackgroundPanel/);
+  assert.match(pageSource.slice(rightPanelStart, rightPanelEnd), /PHOTON STREAM[\s\S]*<SkyEnergyAnalysisPanel/);
+  assert.doesNotMatch(pageSource.slice(rightPanelStart, rightPanelEnd), /<AdaptiveBackgroundPanel/);
 });
 
 test("the right-hand planar map preserves the configurator aspect and geometry", () => {
@@ -146,7 +147,7 @@ test("Reference and Simulation modes keep analysis inline and simulation explici
   );
   const rightPanelEnd = pageSource.indexOf("</aside>", rightPanelStart);
   const rightPanel = pageSource.slice(rightPanelStart, rightPanelEnd);
-  assert.match(rightPanel, /<AdaptiveBackgroundPanel/);
+  assert.match(rightPanel, /<SkyEnergyAnalysisPanel/);
   assert.match(pageSource, /START SIMULATION/);
   assert.match(pageSource, /STOP SIMULATION/);
   assert.match(pageSource, /REFERENCE REPLAY/);
@@ -157,17 +158,20 @@ test("Reference and Simulation modes keep analysis inline and simulation explici
   assert.match(pageSource, /nextAutomaticBurstBinRef/);
   assert.match(pageSource, /origin: "automatic"/);
   assert.match(pageSource, /disabled=\{simulatorMode !== "simulation"\}/);
-  assert.match(adaptiveAnalysisSource, /Adaptive Background Analysis/);
-  assert.match(adaptiveAnalysisSource, /normalizedInnovation/);
-  assert.doesNotMatch(adaptiveAnalysisSource, /sourceResidualRateCountsPerSecond/);
-  assert.match(adaptiveAnalysisSource, /sample\.acquisitionTimeSeconds/);
-  assert.match(adaptiveAnalysisSource, /acquisition time/);
-  assert.match(adaptiveAnalysisSource, /injected GRB start dots/);
-  assert.match(adaptiveAnalysisSource, /KALMAN_DEMONSTRATOR_LABEL/);
+  assert.match(skyEnergyAnalysisSource, /Sky &amp; Energy Analysis/);
+  assert.match(skyEnergyAnalysisSource, /runSequentialResidualBaseline/);
+  assert.match(skyEnergyAnalysisSource, /INTEGRATED EXISTING COUNTS/);
+  assert.match(skyEnergyAnalysisSource, /6-BAND SYNTHETIC/);
+  assert.match(skyEnergyAnalysisSource, /NOT TELEMETRY/);
+  assert.match(skyEnergyAnalysisSource, /existing RA\/Dec footprint/);
+  assert.match(skyEnergyAnalysisSource, /Rito reference \+ existing environment expected/);
+  assert.match(skyEnergyAnalysisSource, /existing physical environment expected · Rito excluded/);
+  assert.match(pageSource, /expectedBackgroundByPixel: detectorResponse\.backgroundExpectedCounts/);
+  assert.doesNotMatch(pageSource, /AdaptiveBackgroundPanel/);
   assert.doesNotMatch(pageSource, /KALMAN SCENARIOS|ASI/);
-  assert.doesNotMatch(adaptiveAnalysisSource, /KALMAN SCENARIOS|ASI/);
+  assert.doesNotMatch(skyEnergyAnalysisSource, /KALMAN SCENARIOS|ASI/);
   assert.match(styles, /\.adaptive-analysis-panel\s*\{/);
-  assert.match(adaptiveAnalysisSource, /center \* 0\.25/);
+  assert.match(styles, /\.sky-energy-map\s*\{/);
   assert.match(pageSource, /AUTOMATIC_GRB_INITIAL_DELAY_BINS = 50/);
   assert.match(pageSource, /AUTOMATIC_GRB_MINIMUM_GAP_BINS = 90/);
   assert.match(pageSource, /AUTOMATIC_GRB_GAP_RANGE_BINS = 61/);

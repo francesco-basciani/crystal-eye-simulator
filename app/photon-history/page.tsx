@@ -2,10 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppNav } from "../components/app-nav";
-import { AdaptiveAnalysisPlot } from "../components/adaptive-background-panel";
-import { runAggregateBackgroundKalman } from "../lib/kalman-scenarios";
+import { AggregateEnergyHistoryPlot } from "../components/sky-energy-analysis-panel";
 import {
-  deriveBurstStartsByRecord,
   openPhotonRepository,
   type PhotonCursor,
   type PhotonQueryResult,
@@ -120,11 +118,10 @@ export default function PhotonHistoryPage() {
   }, [result.items, selectedRecord]);
   const analysisReconstruction = useMemo(() => {
     if (analysisRecords.length === 0 || !selectedRecord) {
-      return { run: null, error: null };
+      return { points: null, error: null };
     }
     try {
-      const burstStartsByRecord = deriveBurstStartsByRecord(analysisRecords);
-      const frames = analysisRecords.map((record) => {
+      const points = analysisRecords.map((record) => {
         const backgroundRate = record.background / 0.2;
         const sourceRate = record.source / 0.2;
         const observedRate = record.observed / 0.2;
@@ -142,30 +139,23 @@ export default function PhotonHistoryPage() {
           simulationTimeSeconds: record.bin * 0.2,
           exposureSeconds: 0.2,
           expectedBackgroundRateCountsPerSecond: backgroundRate,
-          expectedSourceRateCountsPerSecond: sourceRate,
-          observedCounts: record.observed,
-          activeBurstCount: record.activeBursts,
-          startedBurstIds: burstStartsByRecord.get(record.id) ?? [],
+          observedRateCountsPerSecond: observedRate,
         };
       });
       return {
-        run: runAggregateBackgroundKalman(frames, {
-          scenarioId: `persisted-run-${selectedRecord.runId}`,
-          scenarioSchemaVersion: selectedRecord.schemaVersion,
-          seed: selectedRecord.id,
-        }),
+        points,
         error: null,
       };
     } catch (reason: unknown) {
       return {
-        run: null,
+        points: null,
         error: reason instanceof Error
           ? reason.message
           : "Unknown persisted-analysis reconstruction error.",
       };
     }
   }, [analysisRecords, selectedRecord]);
-  const analysisRun = analysisReconstruction.run;
+  const analysisPoints = analysisReconstruction.points;
   const selectPageRow = (record: PhotonRecord) => setSelectedRecordId(record.id);
 
   return (
@@ -205,7 +195,7 @@ export default function PhotonHistoryPage() {
             {" · "}Persisted rows remain available below.
           </div>
         )}
-        {selectedRecord && analysisRun && (
+        {selectedRecord && analysisPoints && (
           <section className="history-analysis-inspector" aria-labelledby="history-analysis-title">
             <header>
               <div>
@@ -215,7 +205,7 @@ export default function PhotonHistoryPage() {
                     ? " · LEGACY ROW NORMALIZED"
                     : ""}
                 </small>
-                <strong id="history-analysis-title">Selected photon bin {selectedRecord.bin}</strong>
+                <strong id="history-analysis-title">Sky &amp; Energy · selected photon bin {selectedRecord.bin}</strong>
               </div>
               <div>
                 <button
@@ -243,13 +233,13 @@ export default function PhotonHistoryPage() {
               <span><small>ACTIVE GRB</small><strong>{selectedRecord.activeBursts}</strong></span>
             </div>
             <div className="history-analysis-plot">
-              <AdaptiveAnalysisPlot
-                points={analysisRun.points}
+              <AggregateEnergyHistoryPlot
+                points={analysisPoints}
                 selectedFrameIndex={selectedRecord.bin}
               />
             </div>
             <p>
-              Reconstructed from persisted rows for the selected run on this 100-row page. Each yellow dot marks one injected GRB start; environmental changes and Poisson samples never create event dots. Legacy pages infer starts only from an increase in the recorded active-event count, so an event already active at the page boundary is not marked.
+              Integrated-count reconstruction from persisted aggregate rows for the selected run on this 100-row page. Schema-v1 history has no per-pixel or energy-resolved observations, so no CountCube, sky localization, or calibrated energy claim is reconstructed here.
             </p>
           </section>
         )}

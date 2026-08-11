@@ -241,6 +241,119 @@ button {
   font-weight: 600;
 }
 
+.sky-energy-analysis-panel {
+  grid-template-rows: auto auto auto auto auto minmax(150px, 1fr) auto auto auto;
+}
+
+.sky-energy-controls,
+.sky-energy-band-selector {
+  padding: 4px 8px;
+  display: flex;
+  gap: 4px;
+}
+
+.sky-energy-controls button,
+.sky-energy-band-selector button {
+  min-height: 22px;
+  flex: 1;
+  border: 1px solid var(--line-strong);
+  color: #789ba8;
+  background: rgba(7, 28, 38, 0.82);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+  cursor: pointer;
+}
+
+.sky-energy-controls button.active,
+.sky-energy-band-selector button.active,
+.sky-energy-controls button:focus-visible,
+.sky-energy-band-selector button:focus-visible {
+  color: #061116;
+  border-color: var(--cyan);
+  outline: 0;
+  background: var(--cyan);
+}
+
+.adaptive-analysis-warning.allocation {
+  color: #82d9f2;
+  background: rgba(51, 180, 220, 0.07);
+}
+
+.sky-energy-scenarios {
+  padding: 4px 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.sky-energy-scenarios span {
+  min-width: 0;
+  padding: 4px;
+  border: 1px solid rgba(111, 156, 172, 0.18);
+  color: #6f909d;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+}
+
+.sky-energy-scenarios span.active {
+  border-color: rgba(255, 200, 87, 0.5);
+  color: var(--yellow);
+}
+
+.sky-energy-scenarios b,
+.sky-energy-scenarios small {
+  display: block;
+}
+
+.sky-energy-scenarios small {
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  line-height: 1.25;
+}
+
+.sky-energy-map {
+  min-height: 150px;
+  margin: 4px 8px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  background:
+    linear-gradient(rgba(94, 145, 162, 0.11) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(94, 145, 162, 0.11) 1px, transparent 1px),
+    rgba(3, 16, 24, 0.9);
+  background-size: 25% 25%;
+}
+
+.sky-energy-map > span {
+  width: 7px;
+  height: 7px;
+  position: absolute;
+  translate: -50% -50%;
+  border: 1px solid rgba(225, 245, 250, 0.45);
+  border-radius: 50%;
+}
+
+.sky-energy-map > p,
+.sky-energy-conventions {
+  margin: 0;
+  color: #668792;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 6px;
+  line-height: 1.35;
+}
+
+.sky-energy-map > p {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+.sky-energy-conventions {
+  padding: 5px 8px;
+  border-top: 1px solid var(--line);
+}
+
 .random-grb-mini:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -5408,6 +5521,10 @@ button {
 .workspace.focus-analysis .adaptive-analysis-plot {
   min-height: min(500px, calc(100dvh - 190px));
   height: 100%;
+}
+
+.workspace.focus-analysis .sky-energy-map {
+  min-height: min(430px, calc(100dvh - 330px));
 }
 
 @media (max-width: 900px) {
