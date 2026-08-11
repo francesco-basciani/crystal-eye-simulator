@@ -3,8 +3,6 @@ import test from "node:test";
 import {
   PHOTON_STORE_NAME,
   PhotonRepository,
-  deriveBurstStartsByRecord,
-  normalizeStoredPhotonRecord,
   openPhotonRepository,
   type PhotonRecord,
   type PhotonRecordInput,
@@ -36,11 +34,6 @@ class FakeDatabase {
   records: PhotonRecord[] = [];
   nextId = 1;
   closed = false;
-  private readonly missingSimulatedAtIndex: boolean;
-
-  constructor(missingSimulatedAtIndex = false) {
-    this.missingSimulatedAtIndex = missingSimulatedAtIndex;
-  }
 
   close() {
     this.closed = true;
@@ -94,35 +87,8 @@ class FakeDatabase {
         });
         return request;
       },
-      openCursor: () => {
-        let index = 0;
-        const request: Record<string, unknown> = {
-          result: null,
-          error: null,
-          onsuccess: null,
-          onerror: null,
-        };
-        const emit = () => {
-          const value = this.records[index];
-          request.result = value
-            ? {
-                value,
-                primaryKey: value.id,
-                continue: () => { index += 1; queueMicrotask(emit); },
-              }
-            : null;
-          (request.onsuccess as (() => void) | null)?.();
-        };
-        queueMicrotask(emit);
-        return request;
-      },
       index: (name: string) => {
         assert.equal(name, "bySimulatedAt");
-        if (this.missingSimulatedAtIndex) {
-          const reason = new Error("The specified index was not found.");
-          reason.name = "NotFoundError";
-          throw reason;
-        }
         return {
           openCursor: (range: FakeRange, direction: string) => {
             assert.equal(direction, "prev");
@@ -184,8 +150,6 @@ function input(runId: string, bin: number, simulatedAtMs: number): PhotonRecordI
     moon: 0.5,
     earthAlbedo: 0.25,
     activeBursts: 0,
-    activeBurstIds: [],
-    startedBurstIds: [],
     hitPixels: 4,
   };
 }
@@ -222,83 +186,6 @@ test("reverse compound keyset paging is inclusive and has no gaps or duplicates"
   );
 });
 
-test("schema-v1 history without the timestamp index falls back to a normalized store scan", async () => {
-  const database = new FakeDatabase(true);
-  const repository = new PhotonRepository(database as unknown as IDBDatabase, fakeKeyRange);
-  database.records = [
-    { ...input("run-a", 1, 1_000), id: 1 },
-    {
-      id: 2,
-      runId: "legacy-run",
-      bin: 2,
-      simulatedDate: new Date(2_000).toISOString(),
-      capturedAtMs: 2_500,
-      background: 7,
-      observed: 9,
-    } as unknown as PhotonRecord,
-    { ...input("run-a", 3, 3_000), id: 3 },
-  ];
-
-  const first = await repository.query({ limit: 2 });
-  assert.deepEqual(first.items.map((record) => record.id), [3, 2]);
-  assert.equal(first.hasMore, true);
-  assert.ok(first.items[1].normalizationWarnings?.includes("simulatedAtMs:derived"));
-
-  const second = await repository.query({ cursor: first.nextCursor!, limit: 2 });
-  assert.deepEqual(second.items.map((record) => record.id), [1]);
-  assert.equal(second.hasMore, false);
-});
-
 test("unavailable IndexedDB fails explicitly", async () => {
   await assert.rejects(openPhotonRepository(undefined), /unavailable/);
-});
-
-test("legacy persisted rows are normalized without changing valid schema-v1 rows", () => {
-  const valid = { ...input("run-a", 4, 4_000), id: 9 };
-  assert.deepEqual(normalizeStoredPhotonRecord(valid), valid);
-
-  const legacy = normalizeStoredPhotonRecord({
-    id: 12,
-    simulatedAtMs: 8_000,
-    capturedAtMs: 1e300,
-    background: 8,
-    observed: Number.NaN,
-  });
-  assert.equal(legacy.runId, "legacy-12");
-  assert.equal(legacy.bin, 12);
-  assert.equal(legacy.source, 0);
-  assert.equal(legacy.observed, 8);
-  assert.equal(legacy.activeBursts, 0);
-  assert.equal(legacy.capturedAtMs, 8_000);
-  assert.equal(legacy.simulatedDate, new Date(8_000).toISOString());
-  assert.ok(legacy.normalizationWarnings?.includes("runId"));
-  assert.ok(legacy.normalizationWarnings?.includes("observed"));
-});
-
-test("burst identity metadata is preserved without a schema migration", () => {
-  const record = normalizeStoredPhotonRecord({
-    ...input("run-a", 5, 5_000),
-    id: 10,
-    activeBursts: 2,
-    activeBurstIds: [7, 8],
-    startedBurstIds: [8],
-  });
-  assert.deepEqual(record.activeBurstIds, [7, 8]);
-  assert.deepEqual(record.startedBurstIds, [8]);
-  assert.equal(record.normalizationWarnings, undefined);
-});
-
-test("history derives conservative onset markers for legacy records", () => {
-  const records = [
-    normalizeStoredPhotonRecord({ ...input("legacy-run", 1, 1_000), id: 1, activeBursts: 1, activeBurstIds: undefined, startedBurstIds: undefined }),
-    normalizeStoredPhotonRecord({ ...input("legacy-run", 2, 2_000), id: 2, activeBursts: 1, activeBurstIds: undefined, startedBurstIds: undefined }),
-    normalizeStoredPhotonRecord({ ...input("legacy-run", 3, 3_000), id: 3, activeBursts: 2, activeBurstIds: undefined, startedBurstIds: undefined }),
-    normalizeStoredPhotonRecord({ ...input("run-new", 1, 4_000), id: 4, activeBursts: 1, activeBurstIds: [42], startedBurstIds: [42] }),
-  ];
-  const starts = deriveBurstStartsByRecord(records);
-  assert.deepEqual(starts.get(1), []);
-  assert.deepEqual(starts.get(2), []);
-  assert.equal(starts.get(3)?.length, 1);
-  assert.match(starts.get(3)?.[0] ?? "", /^legacy-legacy-run-3-/);
-  assert.deepEqual(starts.get(4), ["burst-42"]);
 });
