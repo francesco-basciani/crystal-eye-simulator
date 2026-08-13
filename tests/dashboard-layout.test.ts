@@ -11,6 +11,10 @@ const viteConfig = readFileSync(
   new URL("../vite.config.ts", import.meta.url),
   "utf8",
 );
+const analysisPanelSource = readFileSync(
+  new URL("../app/components/adaptive-analysis-panel.tsx", import.meta.url),
+  "utf8",
+);
 
 test("adaptive analysis and reconstruction belong beside the visible 3D stage", () => {
   const leftPanelStart = pageSource.indexOf(
@@ -76,6 +80,22 @@ test("analysis wiring preserves exposure, separates time warp, and avoids detect
   assert.match(pageSource, /samplePoisson\(expectedCounts, observationRandomRef\.current\)/);
   assert.match(pageSource, /pixelBaseline: detectorLocalizationBaseline/);
   assert.doesNotMatch(pageSource, /confidence ellipse|TRANSIENT DETECTED|GRB candidate/);
+});
+
+test("mode-B composition, excitation glow, and persisted placement are wired consistently", () => {
+  assert.match(pageSource, /createDetectorExpectedResponse/);
+  assert.match(pageSource, /aggregateBackgroundExpectedCounts/);
+  assert.match(pageSource, /configuredBackgroundCounts: background/);
+  assert.match(pageSource, /detectorExcitationExpectedCounts/);
+  assert.match(pageSource, /const isFired = detectorExcitationFrame\[pixelId\] > 0/);
+  assert.match(pageSource, /const isActive = excitationCount > 0/);
+  assert.match(pageSource, /PAYLOAD_PLACEMENT_STORAGE_KEY_V1/);
+  assert.match(pageSource, /parseStoredPayloadPlacement/);
+  assert.match(pageSource, /serializePayloadPlacement/);
+  assert.match(pageSource, /saved locally/i);
+  assert.match(pageSource, /EXPOSED OUTER PIXELS/);
+  assert.match(analysisPanelSource, /VISIBLE SUN\/MOON\/EARTH ONLY · RITO EXCLUDED/);
+  assert.match(analysisPanelSource, /RITO \+ VISIBLE SUN\/MOON\/EARTH/);
 });
 
 test("the vinext development overlay does not mask opaque script errors", () => {

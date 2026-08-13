@@ -89,14 +89,14 @@ export function AdaptiveAnalysisPanel({
       </header>
       <div className="analysis-provenance">
         {mode === "simulation"
-          ? `SEEDED POISSON OBSERVATIONS · SEPARATE RNG · SEED ${seed}`
-          : "DETERMINISTIC CONFIGURED REFERENCE REPLAY"}
+          ? `SEEDED POISSON · VISIBLE SUN/MOON/EARTH ONLY · RITO EXCLUDED · SEPARATE RNG · SEED ${seed}`
+          : "DETERMINISTIC REFERENCE · RITO + VISIBLE SUN/MOON/EARTH"}
         {" · "}KNOWN INJECTED SOURCE BINS SKIP FILTER UPDATE
       </div>
       <div className="analysis-oracle-warning">SOURCE-CONDITIONED ORACLE · NOT A BLIND DETECTOR · NOT FLIGHT TELEMETRY</div>
       <div className="analysis-legend">
         <span className="observed">{mode === "simulation" ? "seeded Poisson stream" : "deterministic stream"}</span>
-        <span className="configured">configured background</span>
+        <span className="configured">{mode === "simulation" ? "visible environment background" : "Rito + visible environment"}</span>
         <span className="estimate">cyan estimate ±1σ</span>
         <span className="onset">one marker per burst onset</span>
       </div>
@@ -137,7 +137,7 @@ export function AdaptiveAnalysisPanel({
         ) : (
           <div className="reconstruction-unavailable">UNAVAILABLE · {reconstruction.reason.replaceAll("-", " ").toUpperCase()}</div>
         )}
-        <p>Engineering reconstruction under current radial-attitude/minimum-rotation convention. Sun and Moon are not allocated in the derived per-pixel display. No confidence ellipse. Simultaneous bursts are unresolved.</p>
+        <p>Engineering reconstruction under current radial-attitude/minimum-rotation convention. Sun, Moon, Earth, and GRB use the derived per-pixel support; Rito remains background-only. No confidence ellipse. Simultaneous bursts are unresolved.</p>
       </section>
     </section>
   );
