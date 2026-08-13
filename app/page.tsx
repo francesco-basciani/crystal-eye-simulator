@@ -24,6 +24,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { Body, Illumination } from "astronomy-engine";
 import { AppNav } from "./components/app-nav";
+import {
+  AdaptiveAnalysisPanel,
+  type ReconstructionDisplay,
+} from "./components/adaptive-analysis-panel";
+import {
+  advanceScalarOffsetKalman,
+  createObservationRandom,
+  initializeScalarOffsetKalman,
+  samplePoisson,
+  type AnalysisPoint,
+  type ScalarOffsetKalmanState,
+} from "./lib/source-conditioned-kalman";
+import {
+  reconstructBurstDirection,
+  type BurstDirectionReconstruction,
+} from "./lib/burst-direction-reconstruction";
+import { scoreDirectionAgainstTruth } from "./lib/burst-direction-truth-score";
 import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
 import {
   ECI_EPHEMERIS_INITIAL_SAMPLE,
@@ -145,6 +162,7 @@ type TestBurstDraft = {
 
 type CameraMode = "orbit" | "satellite";
 type OrbitScenarioMode = "canonical" | "parametric";
+type SimulatorMode = "reference" | "simulation";
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 const TIME_WARP_PRESETS = [1, 50, 200, 500] as const;
@@ -156,6 +174,7 @@ const MIN_ORBIT_INCLINATION_DEG = 0;
 const MAX_ORBIT_INCLINATION_DEG = 60;
 const MIN_TIME_WARP = 1;
 const MAX_TIME_WARP = 500;
+const DEFAULT_OBSERVATION_SEED = 0x4345_2001;
 const PIXEL_RING_COUNTS = [1, 6, 12, 18, 24, 30, 35] as const;
 const GRAY_CLUSTER_COUNT = 6;
 const GRAY_CLUSTER_SIZE = 16;
@@ -1754,121 +1773,6 @@ function GlobeScene({
       </div>
     </div>
   );
-}
-
-function SignalChart({ data }: { data: Sample[] }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-    const ratio = Math.min(window.devicePixelRatio, 2);
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = Math.max(1, Math.round(rect.width * ratio));
-    canvas.height = Math.max(1, Math.round(rect.height * ratio));
-    context.scale(ratio, ratio);
-    const width = rect.width;
-    const height = rect.height;
-    context.clearRect(0, 0, width, height);
-
-    context.strokeStyle = "rgba(126, 170, 194, 0.12)";
-    context.lineWidth = 1;
-    for (let row = 1; row < 4; row += 1) {
-      const y = (height / 4) * row;
-      context.beginPath();
-      context.moveTo(0, y);
-      context.lineTo(width, y);
-      context.stroke();
-    }
-
-    const max = Math.max(520, ...data.map((point) => point.observed)) * 1.08;
-    const drawSeries = (
-      getValue: (point: Sample) => number,
-      color: string,
-      lineWidth: number,
-      fill?: string,
-    ) => {
-      context.beginPath();
-      data.forEach((point, index) => {
-        const x = (index / Math.max(1, data.length - 1)) * width;
-        const y = height - (getValue(point) / max) * (height - 8) - 4;
-        if (index === 0) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      });
-      if (fill) {
-        context.lineTo(width, height);
-        context.lineTo(0, height);
-        context.closePath();
-        context.fillStyle = fill;
-        context.fill();
-        context.beginPath();
-        data.forEach((point, index) => {
-          const x = (index / Math.max(1, data.length - 1)) * width;
-          const y = height - (getValue(point) / max) * (height - 8) - 4;
-          if (index === 0) context.moveTo(x, y);
-          else context.lineTo(x, y);
-        });
-      }
-      context.strokeStyle = color;
-      context.lineWidth = lineWidth;
-      context.stroke();
-    };
-
-    drawSeries(
-      (point) => point.observed,
-      "#62d9ff",
-      1.35,
-      "rgba(52, 181, 223, 0.07)",
-    );
-    drawSeries(
-      (point) => point.background,
-      "rgba(190, 209, 217, 0.88)",
-      1.15,
-    );
-
-    let index = 0;
-    while (index < data.length) {
-      while (index < data.length && data[index].source <= 0) index += 1;
-      const start = index;
-      while (index < data.length && data[index].source > 0) index += 1;
-      const end = index - 1;
-      if (start > end) continue;
-
-      context.beginPath();
-      for (let pointIndex = start; pointIndex <= end; pointIndex += 1) {
-        const point = data[pointIndex];
-        const x = (pointIndex / Math.max(1, data.length - 1)) * width;
-        const y = height - (point.observed / max) * (height - 8) - 4;
-        if (pointIndex === start) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      }
-      for (let pointIndex = end; pointIndex >= start; pointIndex -= 1) {
-        const point = data[pointIndex];
-        const x = (pointIndex / Math.max(1, data.length - 1)) * width;
-        const y = height - (point.background / max) * (height - 8) - 4;
-        context.lineTo(x, y);
-      }
-      context.closePath();
-      context.fillStyle = "rgba(255, 200, 87, 0.18)";
-      context.fill();
-
-      context.beginPath();
-      for (let pointIndex = start; pointIndex <= end; pointIndex += 1) {
-        const point = data[pointIndex];
-        const x = (pointIndex / Math.max(1, data.length - 1)) * width;
-        const y = height - (point.observed / max) * (height - 8) - 4;
-        if (pointIndex === start) context.moveTo(x, y);
-        else context.lineTo(x, y);
-      }
-      context.strokeStyle = "#ffc857";
-      context.lineWidth = 2;
-      context.stroke();
-    }
-  }, [data]);
-
-  return <canvas ref={canvasRef} className="signal-canvas" aria-label="Photon count time series" />;
 }
 
 function HistoryDialog({
@@ -3962,6 +3866,8 @@ export default function Home() {
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [detectorExpanded, setDetectorExpanded] = useState(false);
   const [historyView, setHistoryView] = useState<"events" | null>(null);
+  const [simulatorMode, setSimulatorMode] =
+    useState<SimulatorMode>("reference");
   const [testBurstDraft, setTestBurstDraft] = useState<TestBurstDraft>({
     raDeg: 0,
     decDeg: 0,
@@ -3977,13 +3883,12 @@ export default function Home() {
     useState<EciEphemerisProfile | null>(null);
   const [ephemerisError, setEphemerisError] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY);
-  const [samples, setSamples] = useState<Sample[]>(() =>
-    Array.from({ length: 80 }, () => ({
-      background: INITIAL_TELEMETRY.background,
-      source: 0,
-      observed: INITIAL_TELEMETRY.background,
-    })),
-  );
+  const [analysisPoints, setAnalysisPoints] = useState<AnalysisPoint[]>([]);
+  const [reconstructionDisplay, setReconstructionDisplay] =
+    useState<ReconstructionDisplay>({
+      status: "unavailable",
+      reason: "awaiting-source",
+    });
   const [photonRecordCount, setPhotonRecordCount] = useState(0);
   const [persistenceStatus, setPersistenceStatus] = useState<
     "initializing" | "persisting" | "not-persisting"
@@ -4009,6 +3914,17 @@ export default function Home() {
   const nextBurstIdRef = useRef(1);
   const totalRef = useRef(0);
   const capturedRef = useRef(0);
+  const observationRandomRef = useRef(
+    createObservationRandom(DEFAULT_OBSERVATION_SEED),
+  );
+  const filterStateRef = useRef<ScalarOffsetKalmanState | null>(null);
+  const reconstructionPeakRef = useRef<Readonly<{
+    burstId: number;
+    reconstruction: BurstDirectionReconstruction;
+    truthRaDeg: number;
+    truthDecDeg: number;
+  }> | null>(null);
+  const unresolvedBurstIdsRef = useRef<Set<number>>(new Set());
   const pixelConfigurationRef = useRef(DEFAULT_PIXEL_CONFIGURATION);
   const backgroundProfileRef = useRef<PixelBackgroundProfile | null>(null);
   const ephemerisProfileRef = useRef<EciEphemerisProfile | null>(null);
@@ -4021,6 +3937,7 @@ export default function Home() {
     orbitInclinationDeg,
     mountX,
     mountZ,
+    simulatorMode,
   });
 
   useEffect(() => {
@@ -4063,12 +3980,6 @@ export default function Home() {
         backgroundProfileRef.current = profile;
         setBackgroundProfile(profile);
         setBackgroundProfileError(null);
-        const baseline = {
-          background: profile.totalExpectedCountsPerBin,
-          source: 0,
-          observed: profile.totalExpectedCountsPerBin,
-        };
-        setSamples(Array.from({ length: 80 }, () => baseline));
         setEventLog((current) => [
           ...current,
           {
@@ -4198,6 +4109,7 @@ export default function Home() {
       orbitInclinationDeg,
       mountX,
       mountZ,
+      simulatorMode,
     };
   }, [
     speed,
@@ -4208,6 +4120,7 @@ export default function Home() {
     orbitInclinationDeg,
     mountX,
     mountZ,
+    simulatorMode,
   ]);
 
   useEffect(() => {
@@ -4383,6 +4296,7 @@ export default function Home() {
       const activeBursts = activeBurstsRef.current.filter(
         (burst) => burst.ticksRemaining > 0,
       );
+      const startedBursts = activeBursts.filter((burst) => burst.ageTicks === 0);
       const burstDirections = activeBursts.map((burst) => burst.pixelId);
       const burstPixelGroups = activeBursts.map((burst) => burst.pixelIds);
       const isGRB = activeBursts.length > 0;
@@ -4398,7 +4312,10 @@ export default function Home() {
           0,
         ),
       );
-      const observed = background + source;
+      const expectedCounts = background + source;
+      const observed = settings.simulatorMode === "simulation"
+        ? samplePoisson(expectedCounts, observationRandomRef.current)
+        : expectedCounts;
       totalRef.current += observed;
       capturedRef.current += source;
       const currentPixelConfiguration = pixelConfigurationRef.current;
@@ -4406,6 +4323,10 @@ export default function Home() {
       const detectorResponse: { hits: number; impact: number }[] = Array.from(
         { length: PIXEL_LAYOUT.length },
         () => ({ hits: 0, impact: 0 }),
+      );
+      const detectorLocalizationBaseline = Array.from(
+        { length: PIXEL_LAYOUT.length },
+        () => 0,
       );
       currentPixelConfiguration.pixels.forEach((configuredPixel) => {
         const pixelId = configuredPixel.pixelId;
@@ -4430,6 +4351,7 @@ export default function Home() {
               )
             : 0
         );
+        const localizationBaseline = hits;
         let impact = 0;
         if (albedoResponse >= 0.12) {
           impact = Math.max(
@@ -4467,12 +4389,92 @@ export default function Home() {
           hits,
           impact: THREE.MathUtils.clamp(impact, 0, 1),
         };
+        detectorLocalizationBaseline[pixelId] = localizationBaseline;
       });
       const detectorHits = detectorResponse.map((pixel) => pixel.hits);
       const detector = detectorResponse.map((pixel) => pixel.impact);
+      const frameIndex = photonBinRef.current + 1;
+      const filterFrame = {
+        frameIndex,
+        acquisitionTimeSeconds: frameIndex * PIXEL_BACKGROUND_BIN_SECONDS,
+        exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS,
+        configuredBackgroundCounts: background,
+        observedCounts: observed,
+        knownInjectedSource: activeBursts.length > 0,
+        startedBurstIds: startedBursts.map((burst) => burst.id),
+      };
+      const initialFilterState = filterStateRef.current ??
+        initializeScalarOffsetKalman(background);
+      const filterResult = advanceScalarOffsetKalman(
+        initialFilterState,
+        filterFrame,
+      );
+      filterStateRef.current = filterResult.state;
+      setAnalysisPoints((current) =>
+        [...current, filterResult.point].slice(-120),
+      );
+
+      if (activeBursts.length > 1) {
+        activeBursts.forEach((burst) => unresolvedBurstIdsRef.current.add(burst.id));
+        reconstructionPeakRef.current = null;
+        setReconstructionDisplay({
+          status: "unavailable",
+          reason: "simultaneous-unresolved",
+        });
+      } else if (activeBursts.length === 1) {
+        const burst = activeBursts[0];
+        if (unresolvedBurstIdsRef.current.has(burst.id)) {
+          setReconstructionDisplay({
+            status: "unavailable",
+            reason: "simultaneous-unresolved",
+          });
+        } else {
+        const candidate = reconstructBurstDirection({
+          pixelValues: detectorHits,
+          pixelBaseline: detectorLocalizationBaseline,
+          detectorNormals: getConfiguredPixelNormals(currentPixelConfiguration),
+          radialBoresight: celestial.satelliteDirection,
+          frameIndex,
+          acquisitionTimeSeconds: frameIndex * PIXEL_BACKGROUND_BIN_SECONDS,
+        });
+        if (candidate.status === "available") {
+          const previousPeak = reconstructionPeakRef.current;
+          if (
+            !previousPeak ||
+            previousPeak.burstId !== burst.id ||
+            candidate.positiveExcessCounts >
+              previousPeak.reconstruction.positiveExcessCounts
+          ) {
+            reconstructionPeakRef.current = {
+              burstId: burst.id,
+              reconstruction: candidate,
+              truthRaDeg: burst.raDeg,
+              truthDecDeg: burst.decDeg,
+            };
+          }
+          const peak = reconstructionPeakRef.current!;
+          setReconstructionDisplay({
+            status: "available",
+            burstId: peak.burstId,
+            reconstruction: peak.reconstruction,
+            truthAngularErrorDeg: scoreDirectionAgainstTruth(
+              peak.reconstruction,
+              { raDeg: peak.truthRaDeg, decDeg: peak.truthDecDeg },
+            ),
+          });
+        } else {
+          setReconstructionDisplay({
+            status: "unavailable",
+            reason: candidate.reason === "zero-positive-excess" ||
+              candidate.reason === "degenerate-centroid"
+              ? candidate.reason
+              : "invalid-input",
+          });
+        }
+        }
+      }
       const next = { observed, background, source };
       photonBinRef.current += 1;
-      setSamples((current) => [...current.slice(-119), next]);
       const repository = photonRepositoryRef.current;
       if (repository && !persistenceFailedRef.current) {
         const simulatedDate = celestial.date.toISOString();
@@ -4805,6 +4807,15 @@ export default function Home() {
     activeBurstsRef.current = [];
     nextBurstIdRef.current = 1;
     photonBinRef.current = 0;
+    observationRandomRef.current = createObservationRandom(DEFAULT_OBSERVATION_SEED);
+    filterStateRef.current = null;
+    reconstructionPeakRef.current = null;
+    unresolvedBurstIdsRef.current = new Set();
+    setAnalysisPoints([]);
+    setReconstructionDisplay({
+      status: "unavailable",
+      reason: "awaiting-source",
+    });
     photonRunIdRef.current = createPhotonRunId();
     setEpochMs(ephemeris.startMs);
     setEphemerisError(null);
@@ -5186,7 +5197,7 @@ export default function Home() {
                 : "PARAMETRIC SATELLITE SCENARIO · ECI CELESTIAL TIMELINE"}
             </span>
             <h2>
-              {orbitScenarioMode === "canonical" ? "Earth · source satellite replay" : "Earth · LEO override"}
+              {simulatorMode === "simulation" ? "Simulation Mode" : "Reference Replay"}
               <em>
                 {orbitScenarioMode === "canonical"
                   ? ` ${telemetry.altitudeKm.toFixed(1)} km`
@@ -5196,7 +5207,7 @@ export default function Home() {
           </div>
           <div className={`grb-alert ${telemetry.grbActive ? "visible" : ""}`}>
             <Zap size={18} />
-            <div><small>TRANSIENT DETECTED</small><strong>GRB candidate · {telemetry.significance.toFixed(2)}σ</strong></div>
+            <div><small>SYNTHETIC SOURCE ACTIVE</small><strong>Injected source truth · not a detection claim</strong></div>
           </div>
           <div className="orbit-readout">
             <span>ECI TIMELINE {((telemetry.phase / (Math.PI * 2)) * 100).toFixed(1)}%</span>
@@ -5218,16 +5229,17 @@ export default function Home() {
             </span>
           </a>
 
-          <div className="chart-card photon-stream-chart">
-            <div className="chart-header">
-              <div>
-                <small>LIGHT CURVE</small>
-                <strong>Observed counts = background + GRB excess</strong>
-              </div>
-              <span>0.2 s bins · deterministic</span>
-            </div>
-            <SignalChart data={samples} />
-          </div>
+          <AdaptiveAnalysisPanel
+            points={analysisPoints}
+            mode={simulatorMode}
+            seed={DEFAULT_OBSERVATION_SEED}
+            onModeChange={(mode) => {
+              settingsRef.current.simulatorMode = mode;
+              setSimulatorMode(mode);
+              resetSimulation();
+            }}
+            reconstruction={reconstructionDisplay}
+          />
 
           <div
             className={`persistence-status ${persistenceStatus}`}

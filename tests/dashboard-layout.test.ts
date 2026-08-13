@@ -12,7 +12,7 @@ const viteConfig = readFileSync(
   "utf8",
 );
 
-test("the photon light curve belongs to the right-hand Photon Stream panel", () => {
+test("adaptive analysis and reconstruction belong beside the visible 3D stage", () => {
   const leftPanelStart = pageSource.indexOf(
     '<aside className="control-panel left-panel">',
   );
@@ -29,12 +29,15 @@ test("the photon light curve belongs to the right-hand Photon Stream panel", () 
   assert.ok(rightPanelStart >= 0 && rightPanelEnd > rightPanelStart);
   assert.doesNotMatch(
     pageSource.slice(leftPanelStart, simulationStageStart),
-    /<SignalChart data=\{samples\}/,
+    /<AdaptiveAnalysisPanel/,
   );
   assert.match(
     pageSource.slice(rightPanelStart, rightPanelEnd),
-    /PHOTON STREAM[\s\S]*photon-stream-chart[\s\S]*<SignalChart data=\{samples\}/,
+    /PHOTON STREAM[\s\S]*<AdaptiveAnalysisPanel/,
   );
+  assert.doesNotMatch(pageSource, /<SignalChart|TRANSIENT DETECTED|GRB candidate/);
+  assert.match(pageSource, /SYNTHETIC SOURCE ACTIVE/);
+  assert.match(pageSource, /simulatorMode === "simulation" \? "Simulation Mode" : "Reference Replay"/);
 });
 
 test("the right-hand planar map preserves the configurator aspect and geometry", () => {
@@ -50,10 +53,8 @@ test("the right-hand planar map preserves the configurator aspect and geometry",
     styles,
     /\.right-panel \.detector-map\.projection-unfolded \.detector-pixel\s*\{[\s\S]*?width:\s*5\.2%;/,
   );
-  assert.match(
-    styles,
-    /@media \(max-height: 900px\) and \(min-width: 901px\)[\s\S]*?\.right-panel > \.photon-stream-chart \.signal-canvas\s*\{\s*height:\s*38px;/,
-  );
+  assert.match(styles, /\.adaptive-analysis-panel\s*\{/);
+  assert.match(styles, /\.burst-reconstruction-panel\s*\{/);
   assert.match(
     styles,
     /@media \(max-height: 900px\) and \(min-width: 901px\)[\s\S]*?\.right-panel \.burst-inline-panel\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*3px 7px;/,
@@ -64,6 +65,17 @@ test("the right-hand planar map preserves the configurator aspect and geometry",
     pageSource,
     /"--pixel-rotation": `\$\{configuredPixel\.rotationDeg\}deg`/,
   );
+});
+
+test("analysis wiring preserves exposure, separates time warp, and avoids detection claims", () => {
+  assert.match(pageSource, /exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS/);
+  assert.match(pageSource, /acquisitionTimeSeconds: frameIndex \* PIXEL_BACKGROUND_BIN_SECONDS/);
+  assert.match(pageSource, /const dt = 0\.2 \* settings\.speed/);
+  assert.match(pageSource, /knownInjectedSource: activeBursts\.length > 0/);
+  assert.match(pageSource, /startedBurstIds: startedBursts\.map\(\(burst\) => burst\.id\)/);
+  assert.match(pageSource, /samplePoisson\(expectedCounts, observationRandomRef\.current\)/);
+  assert.match(pageSource, /pixelBaseline: detectorLocalizationBaseline/);
+  assert.doesNotMatch(pageSource, /confidence ellipse|TRANSIENT DETECTED|GRB candidate/);
 });
 
 test("the vinext development overlay does not mask opaque script errors", () => {
