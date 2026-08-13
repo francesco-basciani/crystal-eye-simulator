@@ -224,6 +224,36 @@ button {
   cursor: pointer;
 }
 
+.acquisition-mode-button {
+  min-width: 138px;
+  height: 36px;
+  margin-right: 10px;
+  padding: 0 15px;
+  flex: 0 0 auto;
+  border: 1px solid #ffc857;
+  border-radius: 3px;
+  color: #171006;
+  background: #ffc857;
+  box-shadow: 0 0 18px rgba(255, 200, 87, 0.24);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+  cursor: pointer;
+}
+
+.acquisition-mode-button.simulation {
+  color: #ffc857;
+  background: rgba(255, 200, 87, 0.08);
+  box-shadow: inset 0 0 16px rgba(255, 200, 87, 0.08);
+}
+
+.acquisition-mode-button:hover,
+.acquisition-mode-button:focus-visible {
+  outline: 2px solid rgba(255, 232, 178, 0.8);
+  outline-offset: 2px;
+}
+
 .placement-settings-button:hover {
   color: var(--cyan);
   border-color: rgba(98, 217, 255, 0.5);
@@ -4709,6 +4739,13 @@ button {
     margin-right: 7px;
   }
 
+  .acquisition-mode-button {
+    min-width: 126px;
+    margin-right: 6px;
+    padding-inline: 10px;
+    font-size: 8px;
+  }
+
   .workspace {
     grid-template-columns: 250px minmax(360px, 1fr) 292px;
   }
@@ -4775,6 +4812,10 @@ button {
     flex-wrap: wrap;
   }
 
+  .mission-status {
+    margin-left: auto;
+  }
+
   .header-metric {
     display: none;
   }
@@ -4824,6 +4865,17 @@ button {
 }
 
 @media (max-width: 620px) {
+
+  .mission-status {
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 7px;
+  }
+
+  .acquisition-mode-button {
+    min-width: 150px;
+  }
   .data-page-header,
   .data-toolbar,
   .data-pager {

@@ -5152,6 +5152,11 @@ export default function Home() {
   const setPhysicalTimeWarp = useCallback((value: number) => {
     setSpeed(Math.round(THREE.MathUtils.clamp(value, MIN_TIME_WARP, MAX_TIME_WARP)));
   }, []);
+  const changeSimulatorMode = useCallback((mode: SimulatorMode) => {
+    settingsRef.current.simulatorMode = mode;
+    setSimulatorMode(mode);
+    resetSimulation();
+  }, [resetSimulation]);
   const selectedConfiguredPixel = getPixelByPhysicalId(
     pixelConfiguration,
     selectedPixel,
@@ -5172,6 +5177,18 @@ export default function Home() {
         </div>
         <AppNav current="/" />
         <div className="mission-status">
+          <button
+            type="button"
+            className={`acquisition-mode-button ${simulatorMode}`}
+            aria-pressed={simulatorMode === "simulation"}
+            onClick={() => changeSimulatorMode(
+              simulatorMode === "simulation" ? "reference" : "simulation",
+            )}
+          >
+            {simulatorMode === "simulation"
+              ? "STOP SIMULATION"
+              : "START SIMULATION"}
+          </button>
           <button
             type="button"
             className="placement-settings-button"
@@ -5437,11 +5454,7 @@ export default function Home() {
             points={analysisPoints}
             mode={simulatorMode}
             seed={DEFAULT_OBSERVATION_SEED}
-            onModeChange={(mode) => {
-              settingsRef.current.simulatorMode = mode;
-              setSimulatorMode(mode);
-              resetSimulation();
-            }}
+            onModeChange={changeSimulatorMode}
             reconstruction={reconstructionDisplay}
           />
 

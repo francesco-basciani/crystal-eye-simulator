@@ -98,6 +98,23 @@ test("mode-B composition, excitation glow, and persisted placement are wired con
   assert.match(analysisPanelSource, /RITO \+ VISIBLE SUN\/MOON\/EARTH/);
 });
 
+test("topbar simulation control is prominent and shares the panel mode transition", () => {
+  assert.match(pageSource, /className={`acquisition-mode-button \$\{simulatorMode\}`}/);
+  assert.match(pageSource, /"STOP SIMULATION"[\s\S]*"START SIMULATION"/);
+  assert.match(pageSource, /const changeSimulatorMode = useCallback/);
+  assert.match(pageSource, /settingsRef\.current\.simulatorMode = mode;[\s\S]*setSimulatorMode\(mode\);[\s\S]*resetSimulation\(\);/);
+  assert.match(pageSource, /onModeChange={changeSimulatorMode}/);
+  assert.doesNotMatch(
+    pageSource.slice(
+      pageSource.indexOf("const changeSimulatorMode"),
+      pageSource.indexOf("const selectedConfiguredPixel"),
+    ),
+    /setPaused/,
+  );
+  assert.match(styles, /\.acquisition-mode-button\s*\{[\s\S]*background:\s*#ffc857;/);
+  assert.match(styles, /@media \(max-width: 620px\)[\s\S]*\.acquisition-mode-button/);
+});
+
 test("the vinext development overlay does not mask opaque script errors", () => {
   assert.match(viteConfig, /hmr:\s*\{\s*overlay:\s*false\s*\}/);
   assert.match(
