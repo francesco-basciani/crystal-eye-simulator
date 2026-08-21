@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  EARTH_ALBEDO_ILLUMINATION_THRESHOLD,
   getExposedEarthAlbedoWeight,
   getNadirExposureFraction,
   getSubSatelliteSolarIncidence,
@@ -40,4 +41,47 @@ test("nightside and inner pixels have no Earth support", () => {
     ));
   }
   assert.equal(getExposedEarthAlbedoWeight(inner, 1, 0, 1, 1, -1), 0);
+  assert.equal(
+    getExposedEarthAlbedoWeight(
+      outer[0],
+      EARTH_ALBEDO_ILLUMINATION_THRESHOLD,
+      0,
+      1,
+      1,
+      0,
+    ),
+    0,
+  );
+});
+
+test("sunlit Earth reaches a mount-dependent subset of the outer crown only", () => {
+  const supportedSlots = (mountX: number, mountZ: number) =>
+    outer
+      .map((pixel, slot) => ({
+        slot,
+        weight: getExposedEarthAlbedoWeight(
+          pixel,
+          0.8,
+          Math.PI / 5,
+          0.9,
+          mountX,
+          mountZ,
+        ),
+      }))
+      .filter(({ weight }) => weight > 0)
+      .map(({ slot }) => slot);
+
+  const centered = supportedSlots(0, 0);
+  const edge = supportedSlots(1, 0);
+  const oppositeEdge = supportedSlots(-1, 0);
+  const corner = supportedSlots(1, -1);
+
+  assert.deepEqual(centered, []);
+  assert.ok(edge.length > 0 && edge.length < outer.length);
+  assert.ok(corner.length > edge.length && corner.length < outer.length);
+  assert.notDeepEqual(edge, oppositeEdge);
+  assert.equal(
+    getExposedEarthAlbedoWeight(inner, 0.8, 0, 0.9, 1, -1),
+    0,
+  );
 });

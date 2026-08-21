@@ -20,7 +20,14 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as THREE from "three";
 import { Body, Illumination } from "astronomy-engine";
 import { AppNav } from "./components/app-nav";
@@ -42,14 +49,29 @@ import {
 } from "./lib/burst-direction-reconstruction";
 import { scoreDirectionAgainstTruth } from "./lib/burst-direction-truth-score";
 import {
+  buildBurstPixelReadouts,
+  openBurstEventRepository,
+  type BurstDetectionRecord,
+  type BurstEventRepository,
+} from "./lib/burst-event-repository";
+import {
   createZeroDetectorFrame,
   resolveDetectorFrameVector,
 } from "./lib/detector-frame";
+import { getDetectorVisualResponse } from "./lib/detector-visual-response";
 import {
+  createV2R8CandidateDetectorGeometry,
+  getV2R8CandidateNormals,
+  getV2R8CosineIncidence,
+  rankV2R8PixelsForDirection,
+  type DetectorGeometryV2R8Candidate,
+  type DetectorVector3,
+} from "./lib/detector-geometry-v2r8";
+import {
+  EARTH_ALBEDO_ILLUMINATION_THRESHOLD,
   getExposedEarthAlbedoWeight,
   getNadirExposureFraction,
   getSubSatelliteSolarIncidence,
-  isPixelCenterExposedToNadir,
 } from "./lib/earth-albedo-occlusion";
 import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
 import {
@@ -58,7 +80,6 @@ import {
   greenwichMeanSiderealTimeRadians,
   loadEciEphemerisProfile,
   sampleEciEphemeris,
-  slerpUnitDirection,
   type EciEphemerisProfile,
   type EciEphemerisSample,
 } from "./lib/eci-ephemeris";
@@ -83,15 +104,31 @@ import {
   composePixelSignalFrame,
   distributeSupportedTotal,
 } from "./lib/signal-composition";
+import { getModeReplayStartMs } from "./lib/simulation-timeline";
+import {
+  MOON_DIRECTION_RADIUS_SCALE,
+  SATELLITE_ORBIT_RADIUS_SCALE,
+  SUN_DIRECTION_RADIUS_SCALE,
+  projectEciDirectionToGeometryEllipse,
+} from "./lib/system-geometry-projection";
+import {
+  advanceAutomaticBurstSchedule,
+  createAutomaticBurstSchedule,
+  nextAutomaticBurstRandomState,
+  shouldInjectAutomaticBurst,
+  type AutomaticBurstSchedule,
+} from "./lib/simulation-burst-scheduler";
 import {
   DEFAULT_PIXEL_CONFIGURATION,
   PIXEL_CONFIGURATION_STORAGE_KEY_V1,
   PIXEL_CONFIGURATION_STORAGE_KEY_V2,
   PIXEL_CONFIGURATION_STORAGE_KEY_V3,
   PIXEL_CONFIGURATION_STORAGE_KEY_V4,
+  PIXEL_CONFIGURATION_STORAGE_KEY_V5,
   getPixelByPhysicalId,
   hasCanonicalPixelIdBijection,
   migrateStoredPixelConfigurationToAuthoritativeIds,
+  migrateStoredPixelConfigurationToCanonicalV5,
   migrateStoredPixelConfigurationToPhotoGeometry,
   normalizePixelConfiguration,
   swapPhysicalPixelIds,
@@ -119,11 +156,13 @@ type Telemetry = Sample & {
   captured: number;
   significance: number;
   grbActive: boolean;
+  activeBurstIds: number[];
   burstDirections: number[];
   burstPixelGroups: number[][];
   detector: number[];
   detectorHits: number[];
   detectorExcitationExpectedCounts: number[];
+  detectorEarthExpectedCounts: number[];
   detectorBackgroundRates: number[];
   detectorBackgroundExpectedCounts: number[];
   simulatedDate: string;
@@ -165,8 +204,10 @@ type BurstEvent = {
   pixelIds: number[];
   transmission: number;
   intensity: number;
+  durationSeconds: number;
   raDeg: number;
   decDeg: number;
+  localDirection: DetectorVector3;
   ageTicks: number;
   ticksRemaining: number;
 };
@@ -376,47 +417,56 @@ function getConfiguredPixelSphereSlots(
   return getConfiguredPixelProjection(configuration).sphereSlotByPhysicalPixelId;
 }
 
-function getConfiguredPixelDistance(
-  configuration: PixelConfiguration,
-  pixelId: number,
-  sourcePixelId: number,
-) {
-  const pixel = getPixelByPhysicalId(configuration, pixelId);
-  const source = getPixelByPhysicalId(configuration, sourcePixelId);
-  if (!pixel || !source) return Number.POSITIVE_INFINITY;
-  return Math.hypot(pixel.x - source.x, pixel.y - source.y);
-}
+const physicalSphereSlotCache = new WeakMap<
+  DetectorGeometryV2R8Candidate,
+  readonly number[]
+>();
 
-function getConfiguredBurstIncidence(
-  configuration: PixelConfiguration,
-  pixelId: number,
-  sourcePixelId: number,
-) {
-  const distance = getConfiguredPixelDistance(
-    configuration,
-    pixelId,
-    sourcePixelId,
+function getV2R8CandidateSphereSlots(
+  geometry: DetectorGeometryV2R8Candidate,
+): readonly number[] {
+  const cached = physicalSphereSlotCache.get(geometry);
+  if (cached) return cached;
+  const candidates = geometry.modules.flatMap((detectorModule) =>
+    PIXEL_NORMALS.map((normal, sphereSlot) => ({
+      pixelId: detectorModule.pixelId,
+      sphereSlot,
+      cost: 1 - (
+        detectorModule.normal[0] * normal[0] +
+        detectorModule.normal[1] * normal[1] +
+        detectorModule.normal[2] * normal[2]
+      ),
+    })),
+  ).sort((a, b) =>
+    a.cost - b.cost || a.pixelId - b.pixelId || a.sphereSlot - b.sphereSlot
   );
-  return 1 / (1 + (distance / 8.5) ** 2);
+  const slots = Array.from({ length: geometry.modules.length }, () => -1);
+  const usedSlots = new Set<number>();
+  for (const candidate of candidates) {
+    if (slots[candidate.pixelId] !== -1 || usedSlots.has(candidate.sphereSlot)) {
+      continue;
+    }
+    slots[candidate.pixelId] = candidate.sphereSlot;
+    usedSlots.add(candidate.sphereSlot);
+  }
+  if (slots.some((slot) => slot < 0)) {
+    throw new Error("V2R8 candidate projection could not produce a 126-slot bijection.");
+  }
+  const frozen = Object.freeze(slots);
+  physicalSphereSlotCache.set(geometry, frozen);
+  return frozen;
 }
 
 function getBurstFootprint(
-  configuration: PixelConfiguration,
-  sourcePixelId: number,
+  geometry: DetectorGeometryV2R8Candidate,
+  localSourceDirection: DetectorVector3,
   pixelCount: number,
 ) {
-  return configuration.pixels
-    .map((pixel) => ({
-      pixelId: pixel.pixelId,
-      distance: getConfiguredPixelDistance(
-        configuration,
-        pixel.pixelId,
-        sourcePixelId,
-      ),
-    }))
-    .sort((a, b) => a.distance - b.distance || a.pixelId - b.pixelId)
-    .slice(0, THREE.MathUtils.clamp(pixelCount, 1, PIXEL_LAYOUT.length))
-    .map(({ pixelId }) => pixelId);
+  return rankV2R8PixelsForDirection(
+    geometry,
+    localSourceDirection,
+    THREE.MathUtils.clamp(pixelCount, 1, PIXEL_LAYOUT.length),
+  );
 }
 
 function getMountEdgeExposure(
@@ -449,23 +499,6 @@ function getMountSkyVisibility(
     1,
     getMountEdgeExposure(sphereSlot, mountX, mountZ),
     horizonWeight,
-  );
-}
-
-function getMountNadirExposure(
-  sphereSlot: number,
-  mountX: number,
-  mountZ: number,
-) {
-  const pixel = PIXEL_LAYOUT[sphereSlot];
-  return isPixelCenterExposedToNadir(
-    {
-      ring: pixel.ring,
-      outermostRing: PIXEL_RING_COUNTS.length - 1,
-      angleRadians: pixel.angle,
-    },
-    mountX,
-    mountZ,
   );
 }
 
@@ -523,21 +556,11 @@ function deterministicUnit(index: number, salt: number) {
   return Math.abs(Math.sin(index * 91.713 + salt * 47.117) * 43758.5453) % 1;
 }
 
-function isPixelLitByEarthAlbedo(
-  sphereSlot: number,
-  illumination: number,
-  _azimuth: number,
-  _directional: number,
-  mountX = 0,
-  mountZ = 0,
-) {
-  return illumination > 0.01 && getMountNadirExposure(sphereSlot, mountX, mountZ);
-}
-
 function getDirectionalPixelWeights(
   direction: [number, number, number],
   boresight: [number, number, number],
-  configuration: PixelConfiguration,
+  geometry: DetectorGeometryV2R8Candidate,
+  sphereSlots: readonly number[],
   mountX: number,
   mountZ: number,
 ) {
@@ -546,8 +569,7 @@ function getDirectionalPixelWeights(
     .invert();
   const localDirection = new THREE.Vector3().fromArray(direction)
     .applyQuaternion(inverseOrientation).normalize();
-  const normals = getConfiguredPixelNormals(configuration);
-  const sphereSlots = getConfiguredPixelSphereSlots(configuration);
+  const normals = getV2R8CandidateNormals(geometry);
   return normals.map((normal, pixelId) => Math.max(
     0,
     normal[0] * localDirection.x + normal[1] * localDirection.y + normal[2] * localDirection.z,
@@ -592,15 +614,33 @@ function createDetectorExpectedResponse({
   if (mode === "reference" && !pixelBackground) {
     throw new Error("Reference Mode requires the Rito pixel background profile.");
   }
+  if (!pixelBackground) {
+    throw new Error("V2R8 candidate geometry requires the validated pixel angular profile.");
+  }
   const pixelCount = configuration.pixels.length;
-  const sphereSlots = getConfiguredPixelSphereSlots(configuration);
+  const physicalGeometry = createV2R8CandidateDetectorGeometry(pixelBackground.records);
+  const sphereSlots = getV2R8CandidateSphereSlots(physicalGeometry);
   const sunAllocation = distributeSupportedTotal(
     rateToExpectedCountsPerBin(sunRateCountsPerSecond),
-    getDirectionalPixelWeights(sunDirection, boresight, configuration, mountX, mountZ),
+    getDirectionalPixelWeights(
+      sunDirection,
+      boresight,
+      physicalGeometry,
+      sphereSlots,
+      mountX,
+      mountZ,
+    ),
   );
   const moonAllocation = distributeSupportedTotal(
     rateToExpectedCountsPerBin(moonRateCountsPerSecond),
-    getDirectionalPixelWeights(moonDirection, boresight, configuration, mountX, mountZ),
+    getDirectionalPixelWeights(
+      moonDirection,
+      boresight,
+      physicalGeometry,
+      sphereSlots,
+      mountX,
+      mountZ,
+    ),
   );
   const earthWeights = Array.from({ length: pixelCount }, (_, pixelId) =>
     getEarthAlbedoResponse(
@@ -622,7 +662,11 @@ function createDetectorExpectedResponse({
       Math.exp(-burst.ageTicks / 5.5);
     burst.pixelIds.forEach((pixelId) => {
       burstWeights[pixelId] += componentWeight *
-        getConfiguredBurstIncidence(configuration, pixelId, burst.pixelId) ** 2.2;
+        getV2R8CosineIncidence(
+          physicalGeometry,
+          pixelId,
+          burst.localDirection,
+        ) ** 2.2;
     });
   });
   const sourceAllocation = distributeSupportedTotal(aggregateSourceCounts, burstWeights);
@@ -641,7 +685,11 @@ function createDetectorExpectedResponse({
     const burstImpact = activeBursts.reduce((maximum, burst) => {
       if (!burst.pixelIds.includes(pixelId)) return maximum;
       return Math.max(maximum, (burst.intensity / 100) *
-        getConfiguredBurstIncidence(configuration, pixelId, burst.pixelId) ** 2.2 *
+        getV2R8CosineIncidence(
+          physicalGeometry,
+          pixelId,
+          burst.localDirection,
+        ) ** 2.2 *
         Math.exp(-Math.max(0, burst.ageTicks - 1) / 5));
     }, 0);
     const excitationImpact = maximumExcitation > 0
@@ -656,6 +704,7 @@ function createDetectorExpectedResponse({
   return {
     detectorHits: composed.expected,
     detectorExcitationExpectedCounts: composed.excitation,
+    detectorEarthExpectedCounts: [...earthAllocation.values],
     detectorImpact,
     backgroundExpectedCounts: composed.background,
     aggregateBackgroundExpectedCounts: composed.aggregateBackgroundCounts,
@@ -669,6 +718,7 @@ const BURST_DURATION_TICKS = 15;
 const DIRECT_SUN_BACKGROUND_RATE = 260;
 const EARTH_RADIUS_KM = 6371;
 const DISPLAY_INTERPOLATION_MS = 220;
+const DETECTOR_VISUAL_TRANSITION_MS = 120;
 const EFFECTIVE_FOV_DEG = 130;
 const EFFECTIVE_HALF_ANGLE_DEG = EFFECTIVE_FOV_DEG / 2;
 const BASE_PIXEL_COLOR = "#1739b8";
@@ -707,9 +757,12 @@ function getImpactColor(value: number) {
     .getHexString()}`;
 }
 
-function getBackgroundBlueColor(value: number) {
-  return `#${new THREE.Color("#102d91")
-    .lerp(new THREE.Color("#2389cf"), THREE.MathUtils.clamp(value, 0, 1))
+function getEarthAlbedoVisualColor(normalizedEarth: number) {
+  return `#${new THREE.Color(BASE_PIXEL_COLOR)
+    .lerp(
+      new THREE.Color("#72e5ff"),
+      0.48 + THREE.MathUtils.clamp(normalizedEarth, 0, 1) * 0.42,
+    )
     .getHexString()}`;
 }
 
@@ -717,7 +770,10 @@ const IMPACT_THREE_COLORS = Array.from(
   { length: 101 },
   (_, index) => new THREE.Color(getImpactColor(index / 100)),
 );
-const WHITE_THREE_COLOR = new THREE.Color(0xffffff);
+const EARTH_ALBEDO_THREE_COLORS = Array.from(
+  { length: 101 },
+  (_, index) => new THREE.Color(getEarthAlbedoVisualColor(index / 100)),
+);
 
 function equatorialToSceneDirection(raDeg: number, decDeg: number) {
   const rightAscension = THREE.MathUtils.degToRad(
@@ -849,8 +905,9 @@ function getCelestialGeometry(
   const earthAlbedoAzimuth =
     earthAlbedoDirectional > 1e-4 ? Math.atan2(localSun.z, localSun.x) : 0;
   const earthAngularScale = (EARTH_RADIUS_KM / satelliteRadiusKm) ** 2;
-  const earthAlbedoNoise =
-    85 * earthAngularScale * earthIllumination ** 1.35;
+  const earthAlbedoNoise = earthIllumination > EARTH_ALBEDO_ILLUMINATION_THRESHOLD
+    ? 85 * earthAngularScale * earthIllumination ** 1.35
+    : 0;
 
   return {
     date,
@@ -927,11 +984,13 @@ const INITIAL_TELEMETRY: Telemetry = {
   captured: 0,
   significance: 0,
   grbActive: false,
+  activeBurstIds: [],
   burstDirections: [],
   burstPixelGroups: [],
   detector: INITIAL_DETECTOR_HITS.map((hits) => (hits > 0 ? 0.55 : 0)),
   detectorHits: INITIAL_DETECTOR_HITS,
   detectorExcitationExpectedCounts: createZeroDetectorFrame(),
+  detectorEarthExpectedCounts: createZeroDetectorFrame(),
   detectorBackgroundRates: PIXEL_LAYOUT.map(() => 0),
   detectorBackgroundExpectedCounts: PIXEL_LAYOUT.map(() => 0),
   simulatedDate: INITIAL_CELESTIAL.date.toISOString(),
@@ -965,6 +1024,33 @@ function formatTime(seconds: number) {
   return [hours, minutes, secs].map((value) => String(value).padStart(2, "0")).join(":");
 }
 
+function slerpThreeUnitVectorInto(
+  output: THREE.Vector3,
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  fraction: number,
+) {
+  const dot = THREE.MathUtils.clamp(start.dot(end), -1, 1);
+  if (fraction <= 0 || dot > 1 - 1e-12) {
+    return output.copy(start);
+  }
+  if (fraction >= 1) {
+    return output.copy(end);
+  }
+  if (dot < -1 + 1e-12) {
+    return output.copy(start).lerp(end, fraction).normalize();
+  }
+  const angle = Math.acos(dot);
+  const sine = Math.sin(angle);
+  const startWeight = Math.sin((1 - fraction) * angle) / sine;
+  const endWeight = Math.sin(fraction * angle) / sine;
+  return output.set(
+    start.x * startWeight + end.x * endWeight,
+    start.y * startWeight + end.y * endWeight,
+    start.z * startWeight + end.z * endWeight,
+  );
+}
+
 function GlobeScene({
   altitude,
   scenarioMode,
@@ -974,6 +1060,7 @@ function GlobeScene({
   burstDirections,
   burstPixelGroups,
   pixelConfiguration,
+  physicalGeometry,
   selectedPixel,
   satelliteDirection,
   geocentricSunDirection,
@@ -987,6 +1074,7 @@ function GlobeScene({
   detectorIntensity,
   detectorHits,
   detectorExcitationExpectedCounts,
+  detectorEarthExpectedCounts,
   mountX,
   mountZ,
   cameraMode,
@@ -1002,6 +1090,7 @@ function GlobeScene({
   burstDirections: number[];
   burstPixelGroups: number[][];
   pixelConfiguration: PixelConfiguration;
+  physicalGeometry: DetectorGeometryV2R8Candidate | null;
   selectedPixel: number;
   satelliteDirection: [number, number, number];
   geocentricSunDirection: [number, number, number];
@@ -1015,6 +1104,7 @@ function GlobeScene({
   detectorIntensity: number[];
   detectorHits: number[];
   detectorExcitationExpectedCounts: number[];
+  detectorEarthExpectedCounts: number[];
   mountX: number;
   mountZ: number;
   cameraMode: CameraMode;
@@ -1031,6 +1121,7 @@ function GlobeScene({
     burstDirections,
     burstPixelGroups,
     pixelConfiguration,
+    physicalGeometry,
     selectedPixel,
     satelliteDirection,
     sunDirection: geocentricSunDirection,
@@ -1044,6 +1135,7 @@ function GlobeScene({
     detectorIntensity,
     detectorHits,
     detectorExcitationExpectedCounts,
+    detectorEarthExpectedCounts,
     mountX,
     mountZ,
     cameraMode,
@@ -1059,6 +1151,7 @@ function GlobeScene({
       burstDirections,
       burstPixelGroups,
       pixelConfiguration,
+      physicalGeometry,
       selectedPixel,
       satelliteDirection,
       sunDirection: geocentricSunDirection,
@@ -1072,6 +1165,7 @@ function GlobeScene({
       detectorIntensity,
       detectorHits,
       detectorExcitationExpectedCounts,
+      detectorEarthExpectedCounts,
       mountX,
       mountZ,
       cameraMode,
@@ -1085,6 +1179,7 @@ function GlobeScene({
     burstDirections,
     burstPixelGroups,
     pixelConfiguration,
+    physicalGeometry,
     selectedPixel,
     satelliteDirection,
     geocentricSunDirection,
@@ -1098,6 +1193,7 @@ function GlobeScene({
     detectorIntensity,
     detectorHits,
     detectorExcitationExpectedCounts,
+    detectorEarthExpectedCounts,
     mountX,
     mountZ,
     cameraMode,
@@ -1359,13 +1455,14 @@ function GlobeScene({
       roughness: 0.48,
     });
     const detectorShellMaterial = new THREE.MeshStandardMaterial({
-      color: 0x102e39,
-      emissive: 0x06333c,
-      emissiveIntensity: 0.8,
-      metalness: 0.3,
-      roughness: 0.35,
+      color: 0x01040a,
+      emissive: 0x01040a,
+      emissiveIntensity: 0.08,
+      metalness: 0.05,
+      roughness: 0.72,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.46,
+      depthWrite: false,
     });
     const bus = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.22, 0.3), busMaterial);
     satelliteGroup.add(bus);
@@ -1398,23 +1495,29 @@ function GlobeScene({
       false,
       Math.PI / 10,
     );
+    const pixelSideMaterial = new THREE.MeshBasicMaterial({
+      color: 0x01040c,
+      toneMapped: false,
+    });
     const pixelMaterials = PIXEL_LAYOUT.map(() =>
-      new THREE.MeshStandardMaterial({
-        color: 0x1739b8,
-        emissive: 0x0b247d,
-        emissiveIntensity: 0.9,
-        metalness: 0.18,
-        roughness: 0.3,
+      new THREE.MeshBasicMaterial({
+        color: BASE_PIXEL_COLOR,
+        toneMapped: false,
       }),
     );
+    const targetPixelColors = pixelMaterials.map((material) =>
+      material.color.clone()
+    );
+    const targetPixelScale = new Float32Array(PIXEL_LAYOUT.length).fill(1);
+    const pixelVisualTransitionStartedAt = new Float64Array(PIXEL_LAYOUT.length);
+    const earthActivePixelState = new Uint8Array(PIXEL_LAYOUT.length);
+    const animatingPixelIds = new Set<number>();
     const upAxis = new THREE.Vector3(0, 1, 0);
-    let configuredPixelNormals = getConfiguredPixelNormals(
-      settingsRef.current.pixelConfiguration,
-    );
-    let configuredPixelSphereSlots = getConfiguredPixelSphereSlots(
-      settingsRef.current.pixelConfiguration,
-    );
+    let configuredPixelNormals = settingsRef.current.physicalGeometry
+      ? [...getV2R8CandidateNormals(settingsRef.current.physicalGeometry)]
+      : getConfiguredPixelNormals(settingsRef.current.pixelConfiguration);
     let appliedPixelConfiguration = settingsRef.current.pixelConfiguration;
+    let appliedPhysicalGeometry = settingsRef.current.physicalGeometry;
     const crystalPixels = PIXEL_LAYOUT.map((pixel) => {
       const configuredPixel = getPixelByPhysicalId(
         settingsRef.current.pixelConfiguration,
@@ -1427,7 +1530,11 @@ function GlobeScene({
         configuredPixel.isPentagon
           ? pentagonPixelGeometry
           : hexPixelGeometry,
-        pixelMaterials[pixel.index],
+        [
+          pixelSideMaterial,
+          pixelMaterials[pixel.index],
+          pixelSideMaterial,
+        ],
       );
       crystal.position.copy(normal).multiplyScalar(0.173);
       crystal.quaternion
@@ -1444,6 +1551,29 @@ function GlobeScene({
       pixelGroup.add(crystal);
       return crystal;
     });
+    const earthAlbedoCuePositions = new Float32Array(PIXEL_LAYOUT.length * 3);
+    const earthAlbedoCueGeometry = new THREE.BufferGeometry();
+    earthAlbedoCueGeometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(earthAlbedoCuePositions, 3),
+    );
+    earthAlbedoCueGeometry.setDrawRange(0, 0);
+    const earthAlbedoCueMaterial = new THREE.PointsMaterial({
+      color: 0x74e4ff,
+      size: 0.024,
+      transparent: true,
+      opacity: 0.84,
+      blending: THREE.AdditiveBlending,
+      depthTest: true,
+      depthWrite: false,
+      sizeAttenuation: true,
+    });
+    const earthAlbedoCue = new THREE.Points(
+      earthAlbedoCueGeometry,
+      earthAlbedoCueMaterial,
+    );
+    earthAlbedoCue.renderOrder = 4;
+    pixelGroup.add(earthAlbedoCue);
     const base = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.035, 32), darkMaterial);
     base.position.y = 0.13;
     payloadMountGroup.add(base);
@@ -1585,19 +1715,25 @@ function GlobeScene({
     let renderedAltitude = settingsRef.current.altitude;
     let startAltitude = renderedAltitude;
     let targetAltitude = renderedAltitude;
+    let appliedDetectorIntensity: number[] | null = null;
+    let appliedDetectorHits: number[] | null = null;
+    let appliedDetectorExcitation: number[] | null = null;
+    let appliedDetectorEarth: number[] | null = null;
+    let appliedBurstPixelGroups: number[][] | null = null;
+    let appliedSelectedPixel = -1;
     let displayTransitionStartedAt = performance.now();
     let animationFrame = 0;
     const animate = () => {
       animationFrame = requestAnimationFrame(animate);
       const delta = Math.min(clock.getDelta(), 0.05);
       const settings = settingsRef.current;
-      if (appliedPixelConfiguration !== settings.pixelConfiguration) {
-        configuredPixelNormals = getConfiguredPixelNormals(
-          settings.pixelConfiguration,
-        );
-        configuredPixelSphereSlots = getConfiguredPixelSphereSlots(
-          settings.pixelConfiguration,
-        );
+      if (
+        appliedPixelConfiguration !== settings.pixelConfiguration ||
+        appliedPhysicalGeometry !== settings.physicalGeometry
+      ) {
+        configuredPixelNormals = settings.physicalGeometry
+          ? [...getV2R8CandidateNormals(settings.physicalGeometry)]
+          : getConfiguredPixelNormals(settings.pixelConfiguration);
         crystalPixels.forEach((crystal, pixelId) => {
           const configuredPixel = getPixelByPhysicalId(
             settings.pixelConfiguration,
@@ -1623,6 +1759,7 @@ function GlobeScene({
             : hexPixelGeometry;
         });
         appliedPixelConfiguration = settings.pixelConfiguration;
+        appliedPhysicalGeometry = settings.physicalGeometry;
       }
       const now = performance.now();
       if (settings.simulatedTimestampMs !== targetTimestampMs) {
@@ -1643,26 +1780,23 @@ function GlobeScene({
         0,
         1,
       );
-      renderedSatelliteDirection.fromArray(
-        slerpUnitDirection(
-          startSatelliteDirection.toArray() as [number, number, number],
-          targetSatelliteDirection.toArray() as [number, number, number],
-          displayFraction,
-        ),
+      slerpThreeUnitVectorInto(
+        renderedSatelliteDirection,
+        startSatelliteDirection,
+        targetSatelliteDirection,
+        displayFraction,
       );
-      renderedSunDirection.fromArray(
-        slerpUnitDirection(
-          startSunDirection.toArray() as [number, number, number],
-          targetSunDirection.toArray() as [number, number, number],
-          displayFraction,
-        ),
+      slerpThreeUnitVectorInto(
+        renderedSunDirection,
+        startSunDirection,
+        targetSunDirection,
+        displayFraction,
       );
-      renderedMoonDirection.fromArray(
-        slerpUnitDirection(
-          startMoonDirection.toArray() as [number, number, number],
-          targetMoonDirection.toArray() as [number, number, number],
-          displayFraction,
-        ),
+      slerpThreeUnitVectorInto(
+        renderedMoonDirection,
+        startMoonDirection,
+        targetMoonDirection,
+        displayFraction,
       );
       renderedTimestampMs = THREE.MathUtils.lerp(
         startTimestampMs,
@@ -1710,113 +1844,178 @@ function GlobeScene({
         ? 0.55 + Math.sin(clock.elapsedTime * 8) * 0.25
         : 0;
 
-      const detectorIntensityFrame = resolveDetectorFrameVector(
-        settings.detectorIntensity,
-        "3D detector intensity",
-      );
-      const detectorHitsFrame = resolveDetectorFrameVector(
-        settings.detectorHits,
-        "3D detector response",
-      );
-      const detectorExcitationFrame = resolveDetectorFrameVector(
-        settings.detectorExcitationExpectedCounts,
-        "3D detector excitation",
-      );
-      crystalPixels.forEach((crystal, pixelId) => {
-        const material = pixelMaterials[pixelId];
-        const isSelected = pixelId === settings.selectedPixel;
-        const impact = detectorIntensityFrame[pixelId];
-        const hitCount = detectorHitsFrame[pixelId];
-        const isFired = detectorExcitationFrame[pixelId] > 0;
-        const isBurstPath =
-          settings.burstPixelGroups.some((group) => group.includes(pixelId));
-        const sphereSlot = configuredPixelSphereSlots[pixelId];
-        const albedoResponse = getEarthAlbedoResponse(
-          sphereSlot,
-          settings.earthIllumination,
-          settings.earthAlbedoAzimuth,
-          settings.earthAlbedoDirectional,
-          settings.mountX,
-          settings.mountZ,
+      if (
+        appliedDetectorIntensity !== settings.detectorIntensity ||
+        appliedDetectorHits !== settings.detectorHits ||
+        appliedDetectorExcitation !== settings.detectorExcitationExpectedCounts ||
+        appliedDetectorEarth !== settings.detectorEarthExpectedCounts ||
+        appliedBurstPixelGroups !== settings.burstPixelGroups ||
+        appliedSelectedPixel !== settings.selectedPixel
+      ) {
+        const detectorIntensityFrame = resolveDetectorFrameVector(
+          settings.detectorIntensity,
+          "3D detector intensity",
         );
-        const isEarthPath =
-          isPixelLitByEarthAlbedo(
-            sphereSlot,
-            settings.earthIllumination,
-            settings.earthAlbedoAzimuth,
-            settings.earthAlbedoDirectional,
-            settings.mountX,
-            settings.mountZ,
+        const detectorHitsFrame = resolveDetectorFrameVector(
+          settings.detectorHits,
+          "3D detector response",
+        );
+        const detectorExcitationFrame = resolveDetectorFrameVector(
+          settings.detectorExcitationExpectedCounts,
+          "3D detector excitation",
+        );
+        const detectorEarthFrame = resolveDetectorFrameVector(
+          settings.detectorEarthExpectedCounts,
+          "3D Earth albedo response",
+        );
+        const maximumEarthExpectedCount = Math.max(0, ...detectorEarthFrame);
+        let earthAlbedoCueCount = 0;
+        crystalPixels.forEach((crystal, pixelId) => {
+          const material = pixelMaterials[pixelId];
+          const impact = detectorIntensityFrame[pixelId];
+          const hitCount = detectorHitsFrame[pixelId];
+          const isFired = detectorExcitationFrame[pixelId] > 0;
+          const earthExpectedCount = detectorEarthFrame[pixelId];
+          const visualResponse = getDetectorVisualResponse(
+            impact,
+            detectorExcitationFrame[pixelId],
+            earthExpectedCount,
+            maximumEarthExpectedCount,
           );
-        const isOverlap = isFired && isBurstPath && isEarthPath;
-        const impactColor =
-          IMPACT_THREE_COLORS[Math.round(THREE.MathUtils.clamp(impact, 0, 1) * 100)];
-        material.color.copy(impactColor);
-        if (isSelected && !isFired) {
-          material.color.lerp(WHITE_THREE_COLOR, 0.32);
+          const earthImpact = visualResponse.normalizedEarth;
+          const isEarthPath = earthExpectedCount > 0;
+          const earthJustCleared =
+            earthActivePixelState[pixelId] === 1 && !isEarthPath;
+          earthActivePixelState[pixelId] = isEarthPath ? 1 : 0;
+          const impactColor = visualResponse.earthOnly
+            ? EARTH_ALBEDO_THREE_COLORS[Math.round(earthImpact * 100)]
+            : IMPACT_THREE_COLORS[Math.round(visualResponse.impact * 100)];
+          const targetColor = targetPixelColors[pixelId];
+          const previousTargetRed = targetColor.r;
+          const previousTargetGreen = targetColor.g;
+          const previousTargetBlue = targetColor.b;
+          targetColor.copy(impactColor);
+          const nextScale = visualResponse.earthOnly
+            ? 1.035
+            : isFired
+              ? 1.06 + Math.min(3, hitCount) * 0.018
+              : 1;
+          const targetChanged =
+            Math.abs(targetColor.r - previousTargetRed) > 0.004 ||
+            Math.abs(targetColor.g - previousTargetGreen) > 0.004 ||
+            Math.abs(targetColor.b - previousTargetBlue) > 0.004 ||
+            Math.abs(nextScale - targetPixelScale[pixelId]) > 0.002;
+          targetPixelScale[pixelId] = nextScale;
+          if (earthJustCleared) {
+            material.color.copy(targetColor);
+            crystal.scale.setScalar(nextScale);
+            animatingPixelIds.delete(pixelId);
+          } else if (targetChanged) {
+            pixelVisualTransitionStartedAt[pixelId] = now;
+            animatingPixelIds.add(pixelId);
+          }
+          if (isEarthPath) {
+            const offset = earthAlbedoCueCount * 3;
+            earthAlbedoCuePositions[offset] = crystal.position.x * 1.08;
+            earthAlbedoCuePositions[offset + 1] = crystal.position.y * 1.08;
+            earthAlbedoCuePositions[offset + 2] = crystal.position.z * 1.08;
+            earthAlbedoCueCount += 1;
+          }
+        });
+        earthAlbedoCueGeometry.setDrawRange(0, earthAlbedoCueCount);
+        earthAlbedoCueGeometry.attributes.position.needsUpdate =
+          earthAlbedoCueCount > 0;
+        earthAlbedoCue.visible = earthAlbedoCueCount > 0;
+        appliedDetectorIntensity = settings.detectorIntensity;
+        appliedDetectorHits = settings.detectorHits;
+        appliedDetectorExcitation = settings.detectorExcitationExpectedCounts;
+        appliedDetectorEarth = settings.detectorEarthExpectedCounts;
+        appliedBurstPixelGroups = settings.burstPixelGroups;
+        appliedSelectedPixel = settings.selectedPixel;
+      }
+
+      if (animatingPixelIds.size > 0) {
+        const materialEase = 1 - Math.exp(-delta * 11);
+        for (const pixelId of animatingPixelIds) {
+          const material = pixelMaterials[pixelId];
+          const crystal = crystalPixels[pixelId];
+          const targetColor = targetPixelColors[pixelId];
+          const targetScale = targetPixelScale[pixelId];
+          const transitionComplete =
+            now - pixelVisualTransitionStartedAt[pixelId] >=
+              DETECTOR_VISUAL_TRANSITION_MS;
+          if (transitionComplete) {
+            material.color.copy(targetColor);
+            crystal.scale.setScalar(targetScale);
+            animatingPixelIds.delete(pixelId);
+            continue;
+          }
+          material.color.lerp(targetColor, materialEase);
+          const scale = THREE.MathUtils.lerp(
+            crystal.scale.x,
+            targetScale,
+            materialEase,
+          );
+          crystal.scale.setScalar(scale);
+          const remaining = Math.max(
+            Math.abs(material.color.r - targetColor.r),
+            Math.abs(material.color.g - targetColor.g),
+            Math.abs(material.color.b - targetColor.b),
+            Math.abs(scale - targetScale),
+          );
+          if (remaining < 0.003) {
+            material.color.copy(targetColor);
+            crystal.scale.setScalar(targetScale);
+            animatingPixelIds.delete(pixelId);
+          }
         }
-        material.emissive.copy(impactColor).multiplyScalar(
-          isFired ? 0.5 : isSelected ? 0.34 : 0.28,
-        );
-        material.emissiveIntensity = isFired
-          ? isOverlap
-            ? 2.65
-            : isBurstPath
-            ? 1.8 + Math.min(4, hitCount) * 0.28
-            : isEarthPath
-              ? 0.8 + albedoResponse * 1.4 + Math.min(4, hitCount) * 0.22
-              : 0.9 + Math.min(4, hitCount) * 0.22
-          : isSelected
-            ? 0.9
-            : 0.72;
-        crystal.scale.setScalar(
-          isFired ? 1.06 + Math.min(3, hitCount) * 0.018 : isSelected ? 1.035 : 1,
-        );
-      });
+      }
 
       particles.visible = settings.burstDirections.length > 0;
-      for (let index = 0; index < particleCount; index += 1) {
-        if (!settings.paused && particles.visible) {
-          particleLife[index] -= delta * 0.55;
-          if (particleLife[index] <= 0) particleLife[index] = 1;
+      if (particles.visible) {
+        for (let index = 0; index < particleCount; index += 1) {
+          if (!settings.paused) {
+            particleLife[index] -= delta * 0.55;
+            if (particleLife[index] <= 0) particleLife[index] = 1;
+          }
+          const life = particleLife[index];
+          const directionPixel =
+            settings.burstDirections[index % settings.burstDirections.length] ??
+            settings.selectedPixel;
+          burstWorldDirection
+            .fromArray(configuredPixelNormals[directionPixel])
+            .applyQuaternion(satelliteWorldQuaternion)
+            .normalize();
+          const spread = 0.32;
+          const travel = 0.12 + life * 4.8;
+          transverseOffset.set(
+            particleSeed[index * 3],
+            particleSeed[index * 3 + 1],
+            particleSeed[index * 3 + 2],
+          );
+          transverseOffset.addScaledVector(
+            burstWorldDirection,
+            -transverseOffset.dot(burstWorldDirection),
+          );
+          particlePositions[index * 3] =
+            satWorld.x +
+            burstWorldDirection.x * travel +
+            transverseOffset.x * spread * life;
+          particlePositions[index * 3 + 1] =
+            satWorld.y +
+            burstWorldDirection.y * travel +
+            transverseOffset.y * spread * life;
+          particlePositions[index * 3 + 2] =
+            satWorld.z +
+            burstWorldDirection.z * travel +
+            transverseOffset.z * spread * life;
+          particleColors[index * 3] = magenta.r;
+          particleColors[index * 3 + 1] = magenta.g;
+          particleColors[index * 3 + 2] = magenta.b;
         }
-        const life = particleLife[index];
-        const directionPixel =
-          settings.burstDirections[index % Math.max(1, settings.burstDirections.length)] ??
-          settings.selectedPixel;
-        burstWorldDirection
-          .fromArray(configuredPixelNormals[directionPixel])
-          .applyQuaternion(satelliteWorldQuaternion)
-          .normalize();
-        const spread = 0.32;
-        const travel = 0.12 + life * 4.8;
-        transverseOffset.set(
-          particleSeed[index * 3],
-          particleSeed[index * 3 + 1],
-          particleSeed[index * 3 + 2],
-        );
-        transverseOffset.addScaledVector(
-          burstWorldDirection,
-          -transverseOffset.dot(burstWorldDirection),
-        );
-        particlePositions[index * 3] =
-          satWorld.x +
-          burstWorldDirection.x * travel +
-          transverseOffset.x * spread * life;
-        particlePositions[index * 3 + 1] =
-          satWorld.y +
-          burstWorldDirection.y * travel +
-          transverseOffset.y * spread * life;
-        particlePositions[index * 3 + 2] =
-          satWorld.z +
-          burstWorldDirection.z * travel +
-          transverseOffset.z * spread * life;
-        particleColors[index * 3] = magenta.r;
-        particleColors[index * 3 + 1] = magenta.g;
-        particleColors[index * 3 + 2] = magenta.b;
+        particleGeometry.attributes.position.needsUpdate = true;
+        particleGeometry.attributes.color.needsUpdate = true;
       }
-      particleGeometry.attributes.position.needsUpdate = true;
-      particleGeometry.attributes.color.needsUpdate = true;
 
       const zoomFraction = settings.systemZoom / 100;
       const distance = THREE.MathUtils.lerp(12.8, 5.1, zoomFraction);
@@ -1868,7 +2067,10 @@ function GlobeScene({
       starGeometry.dispose();
       hexPixelGeometry.dispose();
       pentagonPixelGeometry.dispose();
+      earthAlbedoCueGeometry.dispose();
+      earthAlbedoCueMaterial.dispose();
       pixelMaterials.forEach((material) => material.dispose());
+      pixelSideMaterial.dispose();
       detectorShellMaterial.dispose();
       sunLabel.material.dispose();
       sunLabel.texture.dispose();
@@ -2082,7 +2284,9 @@ function SensorView({
   moonPhase,
   detector,
   detectorExcitationExpectedCounts,
+  detectorEarthExpectedCounts,
   pixelConfiguration,
+  physicalGeometry,
   selectedPixel,
   burstDirections,
   burstPixelGroups,
@@ -2104,7 +2308,9 @@ function SensorView({
   moonPhase: number;
   detector: number[];
   detectorExcitationExpectedCounts: number[];
+  detectorEarthExpectedCounts: number[];
   pixelConfiguration: PixelConfiguration;
+  physicalGeometry: DetectorGeometryV2R8Candidate | null;
   selectedPixel: number;
   burstDirections: number[];
   burstPixelGroups: number[][];
@@ -2123,6 +2329,11 @@ function SensorView({
     detectorExcitationExpectedCounts,
     "Sensor detector excitation",
   );
+  const earthExpectedFrame = resolveDetectorFrameVector(
+    detectorEarthExpectedCounts,
+    "Sensor Earth albedo response",
+  );
+  const maximumEarthExpectedCount = Math.max(0, ...earthExpectedFrame);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2140,7 +2351,9 @@ function SensorView({
     const cx = width / 2;
     const cy = height / 2;
     const radius = Math.max(20, Math.min(width, height) * 0.43);
-    const sphereSlots = getConfiguredPixelSphereSlots(pixelConfiguration);
+    const sphereSlots = physicalGeometry
+      ? getV2R8CandidateSphereSlots(physicalGeometry)
+      : getConfiguredPixelSphereSlots(pixelConfiguration);
     const boresight = satelliteDirection;
     const right = normalizeVector(boresight[2], 0, -boresight[0]);
     const up = normalizeVector(
@@ -2274,15 +2487,13 @@ function SensorView({
         const isSelected = pixel.index === selectedPixel;
         const isOnBurstFootprint =
           burstPixelGroups.some((group) => group.includes(pixel.index));
-        const isOnEarthAlbedo =
-          isPixelLitByEarthAlbedo(
-            sphereSlot,
-            earthIllumination,
-            earthAlbedoAzimuth,
-            earthAlbedoDirectional,
-            mountX,
-            mountZ,
-          );
+        const isOnEarthAlbedo = earthExpectedFrame[pixel.index] > 0;
+        const visualResponse = getDetectorVisualResponse(
+          value,
+          excitationFrame[pixel.index],
+          earthExpectedFrame[pixel.index],
+          maximumEarthExpectedCount,
+        );
         const isOverlap = isFired && isOnBurstFootprint && isOnEarthAlbedo;
         context.beginPath();
         const sideCount = configuredPixel.isPentagon ? 5 : 6;
@@ -2303,8 +2514,8 @@ function SensorView({
             ? `rgba(242, 225, 255, ${0.58 + value * 0.42})`
             : isOnBurstFootprint
             ? `rgba(255, 77, 190, ${0.5 + value * 0.5})`
-            : isOnEarthAlbedo
-              ? `rgba(112, 215, 255, ${0.42 + value * 0.58})`
+            : visualResponse.earthOnly
+              ? `rgba(112, 215, 255, ${0.3 + visualResponse.impact * 0.5})`
               : `rgba(91, 239, 218, ${0.42 + value * 0.58})`;
         context.fill();
         context.strokeStyle = isSelected ? "#ffc857" : "rgba(159, 224, 245, 0.16)";
@@ -2427,6 +2638,7 @@ function SensorView({
   }, [
     detectorFrame,
     excitationFrame,
+    earthExpectedFrame,
     burstDirections,
     burstPixelGroups,
     earthAlbedoAzimuth,
@@ -2434,6 +2646,7 @@ function SensorView({
     earthAlbedoNoise,
     earthIllumination,
     effectiveFov,
+    maximumEarthExpectedCount,
     mode,
     moonDirection,
     moonPhase,
@@ -2441,6 +2654,7 @@ function SensorView({
     mountX,
     mountZ,
     pixelConfiguration,
+    physicalGeometry,
     satelliteDirection,
     selectedPixel,
     sunDirection,
@@ -2521,52 +2735,38 @@ function DetectorMap({
   values,
   hits,
   excitationExpectedCounts,
+  earthExpectedCounts,
   backgroundRates,
   backgroundExpectedCounts,
   grbActive,
   burstPixelGroups,
   pixelConfiguration,
   selectedPixelId,
-  earthIllumination,
-  earthAlbedoAzimuth,
-  earthAlbedoDirectional,
-  mountX,
-  mountZ,
   onSelect,
 }: {
   values: number[];
   hits: number[];
   excitationExpectedCounts: number[];
+  earthExpectedCounts: number[];
   backgroundRates: number[];
   backgroundExpectedCounts: number[];
   grbActive: boolean;
   burstPixelGroups: number[][];
   pixelConfiguration: PixelConfiguration;
   selectedPixelId: number;
-  earthIllumination: number;
-  earthAlbedoAzimuth: number;
-  earthAlbedoDirectional: number;
-  mountX: number;
-  mountZ: number;
   onSelect: (index: number) => void;
 }) {
   const excitationFrame = resolveDetectorFrameVector(
     excitationExpectedCounts,
     "Planar detector excitation",
   );
-  const backgroundRateRange = useMemo(() => {
-    const validRates = backgroundRates.filter(Number.isFinite);
-    return {
-      minimum: validRates.length > 0 ? Math.min(...validRates) : 0,
-      maximum: validRates.length > 0 ? Math.max(...validRates) : 0,
-    };
-  }, [backgroundRates]);
+  const earthExpectedFrame = resolveDetectorFrameVector(
+    earthExpectedCounts,
+    "Planar Earth albedo response",
+  );
+  const maximumEarthExpectedCount = Math.max(0, ...earthExpectedFrame);
   const pentagonPixelIndices = useMemo(
     () => getPentagonPixelIndices(pixelConfiguration),
-    [pixelConfiguration],
-  );
-  const sphereSlots = useMemo(
-    () => getConfiguredPixelSphereSlots(pixelConfiguration),
     [pixelConfiguration],
   );
   return (
@@ -2586,24 +2786,17 @@ function DetectorMap({
           const backgroundRate = backgroundRates[physicalPixelId] ?? 0;
           const backgroundExpectedCount =
             backgroundExpectedCounts[physicalPixelId] ?? 0;
-          const backgroundSpan =
-            backgroundRateRange.maximum - backgroundRateRange.minimum;
-          const normalizedBackgroundRate =
-            backgroundSpan > 0
-              ? (backgroundRate - backgroundRateRange.minimum) / backgroundSpan
-              : 0;
           const isActive = excitationCount > 0;
           const isBurstHit =
             isActive &&
             burstPixelGroups.some((group) => group.includes(physicalPixelId));
-          const isEarthAlbedo = isPixelLitByEarthAlbedo(
-              sphereSlots[physicalPixelId],
-              earthIllumination,
-              earthAlbedoAzimuth,
-              earthAlbedoDirectional,
-              mountX,
-              mountZ,
-            );
+          const isEarthAlbedo = earthExpectedFrame[physicalPixelId] > 0;
+          const visualResponse = getDetectorVisualResponse(
+            value,
+            excitationCount,
+            earthExpectedFrame[physicalPixelId],
+            maximumEarthExpectedCount,
+          );
           return (
             <button
               key={pixel.index}
@@ -2611,7 +2804,11 @@ function DetectorMap({
               className={`detector-pixel ${isActive ? "is-active" : ""} ${
                 isBurstHit ? "is-burst-hit" : ""
               } ${
-                isEarthAlbedo ? "is-albedo" : ""
+                visualResponse.earthOnly ? "is-albedo-only" : ""
+              } ${
+                isEarthAlbedo && !visualResponse.earthOnly
+                  ? "has-albedo-overlap"
+                  : ""
               } ${
                 isBurstHit && isEarthAlbedo ? "is-overlap" : ""
               } ${
@@ -2624,14 +2821,14 @@ function DetectorMap({
               style={{
                 "--heat": Math.min(
                   1,
-                  isActive
-                    ? value
-                    : 0.08 + normalizedBackgroundRate * 0.12,
+                  isActive ? visualResponse.impact : 0,
                 ).toFixed(4),
                 "--impact-color":
                   isActive
-                    ? getImpactColor(value)
-                    : getBackgroundBlueColor(normalizedBackgroundRate),
+                    ? visualResponse.earthOnly
+                      ? getEarthAlbedoVisualColor(visualResponse.normalizedEarth)
+                      : getImpactColor(visualResponse.impact)
+                    : BASE_PIXEL_COLOR,
                 "--pixel-x": `${configuredPixel.x}%`,
                 "--pixel-y": `${configuredPixel.y}%`,
                 "--pixel-rotation": `${configuredPixel.rotationDeg}deg`,
@@ -2739,19 +2936,33 @@ function SystemGeometryCanvas({
       const width = rect.width;
       const height = rect.height;
       const cx = width * 0.5;
-      const cy = height * 0.52;
-      const orbitX = width * 0.29;
-      const orbitY = height * 0.34;
-      const earthRadius = Math.min(width, height) * 0.115;
-      const projectDirection = (direction: [number, number, number]) => {
-        const length = Math.hypot(direction[0], direction[2]) || 1;
-        return [direction[0] / length, direction[2] / length] as const;
-      };
-      const sun = projectDirection(sunDirection);
-      const moon = projectDirection(moonDirection);
-      const satellite = projectDirection(satelliteDirection);
-      const satelliteX = cx + satellite[0] * orbitX;
-      const satelliteY = cy + satellite[1] * orbitY;
+      const cy = height * 0.57;
+      const diagramScale = Math.min(width, height);
+      const orbitX = diagramScale * 0.27;
+      const orbitY = diagramScale * 0.27;
+      const earthRadius = diagramScale * 0.1;
+      const geometryCenter = { x: cx, y: cy };
+      const geometryOrbitRadius = { x: orbitX, y: orbitY };
+      const satellitePoint = projectEciDirectionToGeometryEllipse(
+        satelliteDirection,
+        geometryCenter,
+        geometryOrbitRadius,
+        SATELLITE_ORBIT_RADIUS_SCALE,
+      );
+      const sunPoint = projectEciDirectionToGeometryEllipse(
+        sunDirection,
+        geometryCenter,
+        geometryOrbitRadius,
+        SUN_DIRECTION_RADIUS_SCALE,
+      );
+      const moonPoint = projectEciDirectionToGeometryEllipse(
+        moonDirection,
+        geometryCenter,
+        geometryOrbitRadius,
+        MOON_DIRECTION_RADIUS_SCALE,
+      );
+      const satelliteX = satellitePoint.x;
+      const satelliteY = satellitePoint.y;
       const radialAngle = Math.atan2(satelliteY - cy, satelliteX - cx);
 
       context.clearRect(0, 0, width, height);
@@ -2769,15 +2980,28 @@ function SystemGeometryCanvas({
       context.stroke();
       context.setLineDash([]);
 
+      context.strokeStyle = "rgba(155, 180, 195, 0.12)";
+      context.setLineDash([2, 7]);
+      context.beginPath();
+      context.ellipse(
+        cx,
+        cy,
+        orbitX * SUN_DIRECTION_RADIUS_SCALE,
+        orbitY * SUN_DIRECTION_RADIUS_SCALE,
+        0,
+        0,
+        Math.PI * 2,
+      );
+      context.stroke();
+      context.setLineDash([]);
+
       const drawCelestialVector = (
-        direction: readonly [number, number],
-        distance: number,
+        point: Readonly<{ x: number; y: number }>,
         color: string,
         label: string,
         radius: number,
       ) => {
-        const x = cx + direction[0] * distance;
-        const y = cy + direction[1] * distance * 0.72;
+        const { x, y } = point;
         context.strokeStyle = color;
         context.globalAlpha = 0.38;
         context.setLineDash([3, 5]);
@@ -2797,11 +3021,22 @@ function SystemGeometryCanvas({
         context.fillText(label, x, y - radius - 5);
       };
 
-      drawCelestialVector(sun, Math.min(width, height) * 0.53, "#ffc857", "SUN", 6);
-      drawCelestialVector(moon, Math.min(width, height) * 0.43, "#b9ceff", "MOON", 4);
+      drawCelestialVector(
+        sunPoint,
+        "#ffc857",
+        sunPoint.outOfPlane ? "SUN · OUT OF X–Z PLANE" : "SUN · DIRECTION TO 1 AU",
+        6,
+      );
+      drawCelestialVector(
+        moonPoint,
+        "#b9ceff",
+        moonPoint.outOfPlane ? "MOON · OUT OF X–Z PLANE" : "MOON · DIRECTION TO ~384,000 KM",
+        4,
+      );
 
-      const dayOffsetX = sun[0] * earthRadius * 0.38;
-      const dayOffsetY = sun[1] * earthRadius * 0.38;
+      const sunPlanarLength = Math.hypot(sunDirection[0], sunDirection[2]) || 1;
+      const dayOffsetX = sunDirection[0] / sunPlanarLength * earthRadius * 0.38;
+      const dayOffsetY = sunDirection[2] / sunPlanarLength * earthRadius * 0.38;
       const earthGradient = context.createRadialGradient(
         cx + dayOffsetX,
         cy + dayOffsetY,
@@ -2861,7 +3096,11 @@ function SystemGeometryCanvas({
       context.fillText("CRYSTAL EYE", satelliteX, satelliteY - 9);
       context.fillStyle = "rgba(119, 155, 169, 0.75)";
       context.textAlign = "left";
-      context.fillText("TOP-DOWN GEOMETRY · NOT TO SCALE", 8, height - 7);
+      context.fillText(
+        "ECI X–Z DIRECTION SCHEMATIC · RADIAL DISTANCES NOT TO SCALE",
+        8,
+        14,
+      );
 
       const insetSize = Math.min(62, width * 0.25);
       const insetLeft = width - insetSize - 7;
@@ -3592,22 +3831,22 @@ function PixelConfigurationEditor({
                 <div className="pixel-geometry-stage tacs-stage">
                   <div className="pixel-geometry-shape geometry-tacs" />
                   <span>
-                    <strong>T-ACS<sub>0</sub></strong>
-                    <small>UPPER FRUSTUM · CH 0–1</small>
+                    <strong>UPPER ACD</strong>
+                    <small>ANTICOINCIDENCE · RESPONSE DATA UNAVAILABLE</small>
                   </span>
                 </div>
                 <div className="pixel-geometry-stage up-stage">
                   <div className="pixel-geometry-shape geometry-up" />
                   <span>
-                    <strong>UP<sub>0</sub></strong>
-                    <small>MIDDLE FRUSTUM · CH 2–4</small>
+                    <strong>UP · GAGG</strong>
+                    <small>UPPER CRYSTAL · AGGREGATE COMPATIBILITY ONLY</small>
                   </span>
                 </div>
                 <div className="pixel-geometry-stage down-stage">
                   <div className="pixel-geometry-shape geometry-down" />
                   <span>
-                    <strong>DOWN<sub>0</sub></strong>
-                    <small>LOWER FRUSTUM · CH 5–7</small>
+                    <strong>DOWN · LYSO</strong>
+                    <small>LOWER CRYSTAL · AGGREGATE COMPATIBILITY ONLY</small>
                   </span>
                 </div>
               </div>
@@ -4079,6 +4318,12 @@ export default function Home() {
   });
   const [backgroundProfile, setBackgroundProfile] =
     useState<PixelBackgroundProfile | null>(null);
+  const physicalGeometry = useMemo(
+    () => backgroundProfile
+      ? createV2R8CandidateDetectorGeometry(backgroundProfile.records)
+      : null,
+    [backgroundProfile],
+  );
   const [backgroundProfileError, setBackgroundProfileError] =
     useState<string | null>(null);
   const [ephemerisProfile, setEphemerisProfile] =
@@ -4096,6 +4341,11 @@ export default function Home() {
     "initializing" | "persisting" | "not-persisting"
   >("initializing");
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
+  const [latestBurstDetection, setLatestBurstDetection] =
+    useState<BurstDetectionRecord | null>(null);
+  const [burstNotificationVisible, setBurstNotificationVisible] =
+    useState(false);
+  const [burstArchiveError, setBurstArchiveError] = useState<string | null>(null);
   const [eventLog, setEventLog] = useState<EventRecord[]>(() => {
     const utc = new Date().toISOString();
     return [
@@ -4110,10 +4360,19 @@ export default function Home() {
   const elapsedRef = useRef(0);
   const photonBinRef = useRef(0);
   const photonRepositoryRef = useRef<PhotonRepository | null>(null);
+  const burstEventRepositoryRef = useRef<BurstEventRepository | null>(null);
   const photonRunIdRef = useRef("");
+  const persistedPhotonRecordCountRef = useRef(0);
   const persistenceFailedRef = useRef(false);
+  const burstArchiveFailedRef = useRef(false);
+  const archivedBurstIdsRef = useRef<Set<string>>(new Set());
+  const burstNotificationTimerRef = useRef<number | null>(null);
   const activeBurstsRef = useRef<BurstEvent[]>([]);
   const nextBurstIdRef = useRef(1);
+  const automaticBurstScheduleRef = useRef<AutomaticBurstSchedule>(
+    createAutomaticBurstSchedule(),
+  );
+  const automaticBurstRandomStateRef = useRef(DEFAULT_OBSERVATION_SEED ^ 0x4752_4201);
   const totalRef = useRef(0);
   const capturedRef = useRef(0);
   const observationRandomRef = useRef(
@@ -4190,6 +4449,7 @@ export default function Home() {
         photonRepositoryRef.current = repository;
         const count = await repository.count();
         if (cancelled) return;
+        persistedPhotonRecordCountRef.current = count;
         setPhotonRecordCount(count);
         setPersistenceStatus("persisting");
       })
@@ -4209,6 +4469,42 @@ export default function Home() {
       photonRepositoryRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    openBurstEventRepository()
+      .then((repository) => {
+        if (cancelled) {
+          repository.close();
+          return;
+        }
+        burstEventRepositoryRef.current = repository;
+        setBurstArchiveError(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        burstArchiveFailedRef.current = true;
+        burstEventRepositoryRef.current?.close();
+        burstEventRepositoryRef.current = null;
+        setBurstArchiveError(
+          error instanceof Error ? error.message : "Unknown burst archive error.",
+        );
+      });
+    return () => {
+      cancelled = true;
+      burstEventRepositoryRef.current?.close();
+      burstEventRepositoryRef.current = null;
+    };
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (burstNotificationTimerRef.current !== null) {
+        window.clearTimeout(burstNotificationTimerRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -4286,47 +4582,45 @@ export default function Home() {
           return null;
         }
       };
-      const storedV4 = readStoredConfiguration(
-        PIXEL_CONFIGURATION_STORAGE_KEY_V4,
+      const configuration = readStoredConfiguration(
+        PIXEL_CONFIGURATION_STORAGE_KEY_V5,
       );
-      const readV3StoredConfiguration = (key: string) => {
+      const readMigratedConfiguration = (
+        key: string,
+        migrate: (value: unknown) => PixelConfiguration | null,
+      ) => {
         const stored = window.localStorage.getItem(key);
         if (!stored) return null;
         try {
-          return migrateStoredPixelConfigurationToAuthoritativeIds(
-            JSON.parse(stored),
-          );
+          return migrate(JSON.parse(stored));
         } catch {
           return null;
         }
       };
-      const readLegacyStoredConfiguration = (key: string) => {
-        const stored = window.localStorage.getItem(key);
-        if (!stored) return null;
-        try {
-          const photoAligned = migrateStoredPixelConfigurationToPhotoGeometry(
-            JSON.parse(stored),
-          );
-          return photoAligned
-            ? migrateStoredPixelConfigurationToAuthoritativeIds(photoAligned)
-            : null;
-        } catch {
-          return null;
-        }
+      const canonicalize = (value: unknown) =>
+        migrateStoredPixelConfigurationToCanonicalV5(value);
+      const migrateV3 = (value: unknown) => {
+        const authoritative = migrateStoredPixelConfigurationToAuthoritativeIds(value);
+        return authoritative ? canonicalize(authoritative) : null;
       };
-      const configuration =
-        storedV4 ??
-        readV3StoredConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V3) ??
-        readLegacyStoredConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V2) ??
-        readLegacyStoredConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V1);
-      if (configuration) {
+      const migrateLegacy = (value: unknown) => {
+        const photoAligned = migrateStoredPixelConfigurationToPhotoGeometry(value);
+        return photoAligned ? migrateV3(photoAligned) : null;
+      };
+      const restored =
+        configuration ??
+        readMigratedConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V4, canonicalize) ??
+        readMigratedConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V3, migrateV3) ??
+        readMigratedConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V2, migrateLegacy) ??
+        readMigratedConfiguration(PIXEL_CONFIGURATION_STORAGE_KEY_V1, migrateLegacy);
+      if (restored) {
         window.localStorage.setItem(
-          PIXEL_CONFIGURATION_STORAGE_KEY_V4,
-          JSON.stringify(configuration),
+          PIXEL_CONFIGURATION_STORAGE_KEY_V5,
+          JSON.stringify(restored),
         );
         timer = window.setTimeout(() => {
-          pixelConfigurationRef.current = configuration;
-          setPixelConfiguration(configuration);
+          pixelConfigurationRef.current = restored;
+          setPixelConfiguration(restored);
         }, 0);
       }
     } catch {
@@ -4441,6 +4735,9 @@ export default function Home() {
             detectorHits: [...detectorResponse.detectorHits],
             detectorExcitationExpectedCounts: [
               ...detectorResponse.detectorExcitationExpectedCounts,
+            ],
+            detectorEarthExpectedCounts: [
+              ...detectorResponse.detectorEarthExpectedCounts,
             ],
             detectorBackgroundRates: [...detectorResponse.backgroundRates],
             detectorBackgroundExpectedCounts: [
@@ -4618,9 +4915,11 @@ export default function Home() {
         filterFrame,
       );
       filterStateRef.current = filterResult.state;
-      setAnalysisPoints((current) =>
-        [...current, filterResult.point].slice(-120),
-      );
+      startTransition(() => {
+        setAnalysisPoints((current) =>
+          [...current, filterResult.point].slice(-120),
+        );
+      });
 
       if (activeBursts.length > 1) {
         activeBursts.forEach((burst) => unresolvedBurstIdsRef.current.add(burst.id));
@@ -4640,25 +4939,106 @@ export default function Home() {
         const candidate = reconstructBurstDirection({
           pixelValues: detectorHits,
           pixelBaseline: detectorLocalizationBaseline,
-          detectorNormals: getConfiguredPixelNormals(currentPixelConfiguration),
+          detectorNormals: getV2R8CandidateNormals(
+            createV2R8CandidateDetectorGeometry(pixelBackground.records),
+          ),
           radialBoresight: celestial.satelliteDirection,
           frameIndex,
           acquisitionTimeSeconds: frameIndex * PIXEL_BACKGROUND_BIN_SECONDS,
         });
         if (candidate.status === "available") {
           const previousPeak = reconstructionPeakRef.current;
-          if (
+          const isNewPeak =
             !previousPeak ||
             previousPeak.burstId !== burst.id ||
             candidate.positiveExcessCounts >
-              previousPeak.reconstruction.positiveExcessCounts
-          ) {
+              previousPeak.reconstruction.positiveExcessCounts;
+          if (isNewPeak) {
             reconstructionPeakRef.current = {
               burstId: burst.id,
               reconstruction: candidate,
               truthRaDeg: burst.raDeg,
               truthDecDeg: burst.decDeg,
             };
+            const truthAngularErrorDeg = scoreDirectionAgainstTruth(candidate, {
+              raDeg: burst.raDeg,
+              decDeg: burst.decDeg,
+            });
+            const eventKey = `${photonRunIdRef.current}:${burst.id}`;
+            const sourceExcessExpectedCounts = detectorHits.map(
+              (value, pixelId) =>
+                Math.max(0, value - detectorLocalizationBaseline[pixelId]),
+            );
+            const record: BurstDetectionRecord = {
+              schemaVersion: 1,
+              eventKey,
+              runId: photonRunIdRef.current,
+              burstId: burst.id,
+              simulatedAtMs: celestial.date.getTime(),
+              simulatedDate: celestial.date.toISOString(),
+              capturedAtMs: Date.now(),
+              missionElapsedSeconds: elapsedRef.current,
+              classification: "injected-source-reconstruction",
+              reconstructionMethod: candidate.method,
+              reconstructedRaDeg: candidate.raDeg,
+              reconstructedDecDeg: candidate.decDeg,
+              truthRaDeg: burst.raDeg,
+              truthDecDeg: burst.decDeg,
+              truthAngularErrorDeg,
+              targetPixelId: burst.pixelId,
+              configuredIntensityPercent: burst.intensity,
+              transmissionFraction: burst.transmission,
+              configuredDurationSeconds: burst.durationSeconds,
+              peakFrameIndex: candidate.frameIndex,
+              exposureSeconds: PIXEL_BACKGROUND_BIN_SECONDS,
+              positiveExcessCounts: candidate.positiveExcessCounts,
+              activePixelCount: candidate.activePixelCount,
+              footprintPixelIds: [...burst.pixelIds],
+              aggregateExpectedCounts: expectedCounts,
+              aggregateBackgroundExpectedCounts: background,
+              aggregateSourceExpectedCounts: reconciledSource,
+              pixels: buildBurstPixelReadouts({
+                aggregateExpectedCounts: detectorHits,
+                backgroundExpectedCounts: detectorLocalizationBaseline,
+                sourceExcessExpectedCounts,
+                relativeImpact: detector,
+              }),
+            };
+            setLatestBurstDetection(record);
+            setBurstNotificationVisible(true);
+            if (burstNotificationTimerRef.current !== null) {
+              window.clearTimeout(burstNotificationTimerRef.current);
+            }
+            burstNotificationTimerRef.current = window.setTimeout(() => {
+              setBurstNotificationVisible(false);
+              burstNotificationTimerRef.current = null;
+            }, 8000);
+            const repository = burstEventRepositoryRef.current;
+            if (repository && !burstArchiveFailedRef.current) {
+              const firstArchive = !archivedBurstIdsRef.current.has(eventKey);
+              archivedBurstIdsRef.current.add(eventKey);
+              void repository.save(record).then(() => {
+                if (!firstArchive) return;
+                setEventLog((current) => [
+                  ...current,
+                  {
+                    time: `T+${formatTime(elapsedRef.current).slice(3)}`,
+                    utc: record.simulatedDate,
+                    text: `Provisional GRB reconstruction #${record.burstId} archived · RA ${record.reconstructedRaDeg.toFixed(2)}° · Dec ${record.reconstructedDecDeg.toFixed(2)}° · ${record.activePixelCount} positive-excess modules`,
+                    kind: "grb",
+                  },
+                ]);
+              }).catch((error: unknown) => {
+                burstArchiveFailedRef.current = true;
+                burstEventRepositoryRef.current?.close();
+                burstEventRepositoryRef.current = null;
+                setBurstArchiveError(
+                  error instanceof Error
+                    ? error.message
+                    : "Unknown burst archive write error.",
+                );
+              });
+            }
           }
           const peak = reconstructionPeakRef.current!;
           setReconstructionDisplay({
@@ -4703,7 +5083,12 @@ export default function Home() {
             (counts) => counts > 0,
           ).length,
         }).then(() => {
-          setPhotonRecordCount((current) => current + 1);
+          persistedPhotonRecordCountRef.current += 1;
+          if (persistedPhotonRecordCountRef.current % 5 === 0) {
+            startTransition(() => {
+              setPhotonRecordCount(persistedPhotonRecordCountRef.current);
+            });
+          }
         }).catch((error: unknown) => {
           persistenceFailedRef.current = true;
           photonRepositoryRef.current?.close();
@@ -4714,7 +5099,7 @@ export default function Home() {
           setPersistenceStatus("not-persisting");
         });
       }
-      setTelemetry({
+      const nextTelemetry = {
         ...next,
         elapsed: elapsedRef.current,
         phase,
@@ -4722,12 +5107,16 @@ export default function Home() {
         captured: capturedRef.current,
         significance: reconciledSource / Math.sqrt(Math.max(1, background)),
         grbActive: isGRB,
+        activeBurstIds: activeBursts.map((burst) => burst.id),
         burstDirections,
         burstPixelGroups,
         detector,
         detectorHits,
         detectorExcitationExpectedCounts: [
           ...detectorResponse.detectorExcitationExpectedCounts,
+        ],
+        detectorEarthExpectedCounts: [
+          ...detectorResponse.detectorEarthExpectedCounts,
         ],
         detectorBackgroundRates: [...detectorResponse.backgroundRates],
         detectorBackgroundExpectedCounts: [
@@ -4755,6 +5144,9 @@ export default function Home() {
         earthAlbedoNoise: mountedEarthAlbedoNoise,
         earthAlbedoAzimuth: celestial.earthAlbedoAzimuth,
         earthAlbedoDirectional: celestial.earthAlbedoDirectional,
+      };
+      startTransition(() => {
+        setTelemetry(nextTelemetry);
       });
       activeBurstsRef.current = activeBursts
         .map((burst) => ({
@@ -4776,7 +5168,7 @@ export default function Home() {
       pixelConfigurationRef.current = configuration;
       setPixelConfiguration(configuration);
       window.localStorage.setItem(
-        PIXEL_CONFIGURATION_STORAGE_KEY_V4,
+        PIXEL_CONFIGURATION_STORAGE_KEY_V5,
         JSON.stringify(configuration),
       );
       setConfigurationView("hub");
@@ -4792,6 +5184,8 @@ export default function Home() {
     raDeg,
     decDeg,
     transmission,
+    localDirection,
+    scenarioLabel,
   }: {
     targetPixel: number;
     footprintCount: number;
@@ -4800,10 +5194,17 @@ export default function Home() {
     raDeg: number;
     decDeg: number;
     transmission: number;
+    localDirection: DetectorVector3;
+    scenarioLabel?: string;
   }) => {
+    const pixelBackground = backgroundProfileRef.current;
+    if (!pixelBackground) return;
+    const physicalGeometry = createV2R8CandidateDetectorGeometry(
+      pixelBackground.records,
+    );
     const pixelIndices = getBurstFootprint(
-      pixelConfigurationRef.current,
-      targetPixel,
+      physicalGeometry,
+      localDirection,
       footprintCount,
     );
     selectPixel(targetPixel);
@@ -4817,7 +5218,7 @@ export default function Home() {
           utc: new Date(
             settingsRef.current.epochMs + elapsedRef.current * 1000,
           ).toISOString(),
-          text: `Test GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · ${intensity.toFixed(0)}% · ${durationSeconds.toFixed(1)} s · ${pixelIndices.length} px footprint · outside current FOV`,
+          text: `${scenarioLabel ? `${scenarioLabel} · ` : ""}Test GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · ${intensity.toFixed(0)}% · ${durationSeconds.toFixed(1)} s · ${pixelIndices.length} px footprint · outside current FOV`,
           kind: "grb",
         },
       ]);
@@ -4831,8 +5232,10 @@ export default function Home() {
         pixelIds: pixelIndices,
         transmission,
         intensity,
+        durationSeconds,
         raDeg,
         decDeg,
+        localDirection,
         ageTicks: 0,
         ticksRemaining: Math.max(1, Math.round(durationSeconds / 0.2)),
       },
@@ -4844,16 +5247,24 @@ export default function Home() {
         utc: new Date(
           settingsRef.current.epochMs + elapsedRef.current * 1000,
         ).toISOString(),
-        text: `GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · ${intensity.toFixed(0)}% · ${durationSeconds.toFixed(1)} s · ${pixelIndices.length} px · ${(transmission * 100).toFixed(0)}% transmission · target physical pixel ID ${targetPixel}`,
+        text: `${scenarioLabel ? `${scenarioLabel} · ` : ""}GRB #${burstId} · RA ${raDeg.toFixed(2)}° · Dec ${decDeg.toFixed(2)}° · ${intensity.toFixed(0)}% · ${durationSeconds.toFixed(1)} s · ${pixelIndices.length} px · ${(transmission * 100).toFixed(0)}% transmission · target physical pixel ID ${targetPixel}`,
         kind: "grb",
       },
     ]);
   }, [selectPixel]);
 
-  const injectGRB = useCallback(() => {
-    const configuration = pixelConfigurationRef.current;
-    const configuredNormals = getConfiguredPixelNormals(configuration);
-    const configuredSphereSlots = getConfiguredPixelSphereSlots(configuration);
+  const injectGRB = useCallback((options?: {
+    random?: () => number;
+    scenarioLabel?: string;
+  }) => {
+    const random = options?.random ?? Math.random;
+    const pixelBackground = backgroundProfileRef.current;
+    if (!pixelBackground) return;
+    const physicalGeometry = createV2R8CandidateDetectorGeometry(
+      pixelBackground.records,
+    );
+    const physicalNormals = getV2R8CandidateNormals(physicalGeometry);
+    const physicalSphereSlots = getV2R8CandidateSphereSlots(physicalGeometry);
     const halfFovCosine = Math.cos(
       THREE.MathUtils.degToRad(
         getMountEffectiveFov(
@@ -4862,25 +5273,25 @@ export default function Home() {
         ) / 2,
       ),
     );
-    const visibleTargets = configuration.pixels.filter((configuredPixel) => {
-      const normal = configuredNormals[configuredPixel.pixelId];
+    const visibleTargets = physicalGeometry.modules.filter((detectorModule) => {
+      const normal = detectorModule.normal;
       return (
         normal[1] >= halfFovCosine &&
         getMountSkyVisibility(
-          configuredSphereSlots[configuredPixel.pixelId],
+          physicalSphereSlots[detectorModule.pixelId],
           settingsRef.current.mountX,
           settingsRef.current.mountZ,
         ) >= 0.12
       );
     });
     const targetPixel =
-      visibleTargets[Math.floor(Math.random() * visibleTargets.length)]?.pixelId ??
+      visibleTargets[Math.floor(random() * visibleTargets.length)]?.pixelId ??
       0;
-    const footprintCount = 4 + Math.floor(Math.random() * 25);
-    const intensity = 72 + Math.random() * 28;
+    const footprintCount = 4 + Math.floor(random() * 25);
+    const intensity = 72 + random() * 28;
     const boresight = satelliteDirectionRef.current;
     const sourceDirection = new THREE.Vector3()
-      .fromArray(configuredNormals[targetPixel])
+      .fromArray(physicalNormals[targetPixel])
       .applyQuaternion(
         new THREE.Quaternion().setFromUnitVectors(
           new THREE.Vector3(0, 1, 0),
@@ -4893,7 +5304,7 @@ export default function Home() {
     );
     const angularResponse = Math.max(
       0,
-      configuredNormals[targetPixel][1],
+      physicalNormals[targetPixel][1],
     ) ** 2;
     launchBurst({
       targetPixel,
@@ -4902,15 +5313,56 @@ export default function Home() {
       durationSeconds: BURST_DURATION_TICKS * 0.2,
       raDeg: coordinates.raDeg,
       decDeg: coordinates.decDeg,
+      localDirection: physicalNormals[targetPixel],
       transmission:
         angularResponse *
         getMountSkyVisibility(
-          configuredSphereSlots[targetPixel],
+          physicalSphereSlots[targetPixel],
           settingsRef.current.mountX,
           settingsRef.current.mountZ,
         ),
+      scenarioLabel: options?.scenarioLabel,
     });
   }, [launchBurst]);
+
+  useEffect(() => {
+    if (simulatorMode !== "simulation" || paused) return;
+    const wallClockMs = Date.now();
+    const scenario = shouldInjectAutomaticBurst({
+      schedule: automaticBurstScheduleRef.current,
+      missionElapsedSeconds: telemetry.elapsed,
+      wallClockMs,
+      directSunRateCountsPerSecond: telemetry.sunNoise,
+      activeBurstCount: telemetry.activeBurstIds.length,
+    });
+    if (!scenario) return;
+    const nextRandom = () => {
+      const next = nextAutomaticBurstRandomState(
+        automaticBurstRandomStateRef.current,
+      );
+      automaticBurstRandomStateRef.current = next.state;
+      return next.value;
+    };
+    injectGRB({
+      random: nextRandom,
+      scenarioLabel:
+        scenario === "solar-overlap"
+          ? "AUTO SOLAR-OVERLAP SCENARIO"
+          : "AUTO RANDOM SCENARIO",
+    });
+    automaticBurstScheduleRef.current = advanceAutomaticBurstSchedule(
+      telemetry.elapsed,
+      wallClockMs,
+      nextRandom(),
+    );
+  }, [
+    injectGRB,
+    paused,
+    simulatorMode,
+    telemetry.activeBurstIds.length,
+    telemetry.elapsed,
+    telemetry.sunNoise,
+  ]);
 
   const aimTestBurstAtBoresight = useCallback(() => {
     const boresight = satelliteDirectionRef.current;
@@ -4952,12 +5404,16 @@ export default function Home() {
           .invert(),
       )
       .normalize();
-    const configuredNormals = getConfiguredPixelNormals(
-      pixelConfigurationRef.current,
+    const pixelBackground = backgroundProfileRef.current;
+    if (!pixelBackground) return;
+    const physicalGeometry = createV2R8CandidateDetectorGeometry(
+      pixelBackground.records,
     );
+    const physicalNormals = getV2R8CandidateNormals(physicalGeometry);
+    const physicalSphereSlots = getV2R8CandidateSphereSlots(physicalGeometry);
     let targetPixel = 0;
     let bestDot = -Infinity;
-    configuredNormals.forEach((normal, index) => {
+    physicalNormals.forEach((normal, index) => {
       const dot =
         normal[0] * localSource.x +
         normal[1] * localSource.y +
@@ -4982,10 +5438,11 @@ export default function Home() {
       durationSeconds,
       raDeg,
       decDeg,
+      localDirection: localSource.toArray() as [number, number, number],
       transmission: inField
         ? Math.max(0, localSource.y) ** 2 *
           getMountSkyVisibility(
-            getConfiguredPixelSphereSlots(pixelConfigurationRef.current)[targetPixel],
+            physicalSphereSlots[targetPixel],
             settingsRef.current.mountX,
             settingsRef.current.mountZ,
           )
@@ -5019,22 +5476,37 @@ export default function Home() {
     capturedRef.current = 0;
     activeBurstsRef.current = [];
     nextBurstIdRef.current = 1;
+    automaticBurstScheduleRef.current = createAutomaticBurstSchedule();
+    automaticBurstRandomStateRef.current = DEFAULT_OBSERVATION_SEED ^ 0x4752_4201;
     photonBinRef.current = 0;
     observationRandomRef.current = createObservationRandom(DEFAULT_OBSERVATION_SEED);
     filterStateRef.current = null;
     reconstructionPeakRef.current = null;
     unresolvedBurstIdsRef.current = new Set();
+    archivedBurstIdsRef.current = new Set();
+    setLatestBurstDetection(null);
+    setBurstNotificationVisible(false);
+    if (burstNotificationTimerRef.current !== null) {
+      window.clearTimeout(burstNotificationTimerRef.current);
+      burstNotificationTimerRef.current = null;
+    }
     setAnalysisPoints([]);
     setReconstructionDisplay({
       status: "unavailable",
       reason: "awaiting-source",
     });
     photonRunIdRef.current = createPhotonRunId();
-    setEpochMs(ephemeris.startMs);
+    const replayStartMs = getModeReplayStartMs(
+      ephemeris.startMs,
+      ephemeris.endMs,
+      settingsRef.current.simulatorMode,
+    );
+    settingsRef.current.epochMs = replayStartMs;
+    setEpochMs(replayStartMs);
     setEphemerisError(null);
     selectPixel(43);
     const celestial = getCelestialGeometry(
-      sampleEciEphemeris(ephemeris, ephemeris.startMs),
+      sampleEciEphemeris(ephemeris, replayStartMs),
       orbitScenarioMode,
       orbitAltitudeKm,
       orbitInclinationDeg,
@@ -5090,6 +5562,9 @@ export default function Home() {
       detectorExcitationExpectedCounts: [
         ...detectorResponse.detectorExcitationExpectedCounts,
       ],
+      detectorEarthExpectedCounts: [
+        ...detectorResponse.detectorEarthExpectedCounts,
+      ],
       detector: [...detectorResponse.detectorImpact],
       detectorBackgroundRates: [...detectorResponse.backgroundRates],
       detectorBackgroundExpectedCounts: [
@@ -5120,8 +5595,20 @@ export default function Home() {
     });
     setEventLog((current) => [
       ...current,
-      { time: "T+00:00", utc: new Date(ephemeris.startMs).toISOString(), text: "Simulation reset to ECI replay start", kind: "system" },
-      { time: "T+00:00", utc: new Date(ephemeris.startMs).toISOString(), text: "Science acquisition started", kind: "background" },
+      {
+        time: "T+00:00",
+        utc: new Date(replayStartMs).toISOString(),
+        text: settingsRef.current.simulatorMode === "simulation"
+          ? "Simulation started 30 minutes after the ECI replay origin"
+          : "Reference replay reset to the ECI origin",
+        kind: "system",
+      },
+      {
+        time: "T+00:00",
+        utc: new Date(replayStartMs).toISOString(),
+        text: "Science acquisition started",
+        kind: "background",
+      },
     ]);
   }, [
     mountX,
@@ -5164,6 +5651,25 @@ export default function Home() {
   const selectedExpectedCounts = telemetry.detectorHits[selectedPixel] ?? 0;
   const selectedBackgroundCounts =
     telemetry.detectorBackgroundExpectedCounts[selectedPixel] ?? 0;
+  const selectedEarthExpectedCount =
+    telemetry.detectorEarthExpectedCounts[selectedPixel] ?? 0;
+  const earthActivePixelCount = telemetry.detectorEarthExpectedCounts.filter(
+    (counts) => counts > 0,
+  ).length;
+  const latestReconstructionMatchesActiveBurst = Boolean(
+    latestBurstDetection &&
+      telemetry.activeBurstIds.includes(latestBurstDetection.burstId),
+  );
+  const showBurstNotification = Boolean(
+    telemetry.grbActive ||
+      (latestBurstDetection && burstNotificationVisible),
+  );
+  const showReconstructedBurst = Boolean(
+    latestBurstDetection &&
+      (!telemetry.grbActive || latestReconstructionMatchesActiveBurst) &&
+      reconstructionDisplay.status === "available" &&
+      reconstructionDisplay.burstId === latestBurstDetection.burstId,
+  );
 
   return (
     <main className="app-shell">
@@ -5326,7 +5832,9 @@ export default function Home() {
               detectorExcitationExpectedCounts={
                 telemetry.detectorExcitationExpectedCounts
               }
+              detectorEarthExpectedCounts={telemetry.detectorEarthExpectedCounts}
               pixelConfiguration={pixelConfiguration}
+              physicalGeometry={physicalGeometry}
               selectedPixel={selectedPixel}
               burstDirections={telemetry.burstDirections}
               burstPixelGroups={telemetry.burstPixelGroups}
@@ -5366,7 +5874,11 @@ export default function Home() {
                 <CircleDot size={16} />
                 <span>
                   <small>EARTH · {(telemetry.earthIllumination * 100).toFixed(0)}% illuminated</small>
-                  <strong>{telemetry.earthIllumination <= 0.01 ? "nightside · zero local solar incidence" : "albedo on exposed outer pixels"}</strong>
+                  <strong>{telemetry.earthIllumination <= EARTH_ALBEDO_ILLUMINATION_THRESHOLD
+                    ? "nightside · zero local solar incidence"
+                    : earthActivePixelCount === 0
+                      ? "platform blocked · move payload to edge or corner"
+                      : `${earthActivePixelCount} exposed outer pixels receiving albedo`}</strong>
                 </span>
                 <em>{telemetry.earthAlbedoNoise > 0.001 ? `+${telemetry.earthAlbedoNoise.toFixed(1)} c/s` : "0 c/s"}</em>
               </div>
@@ -5389,6 +5901,7 @@ export default function Home() {
             burstDirections={telemetry.burstDirections}
             burstPixelGroups={telemetry.burstPixelGroups}
             pixelConfiguration={pixelConfiguration}
+            physicalGeometry={physicalGeometry}
             selectedPixel={selectedPixel}
             satelliteDirection={telemetry.satelliteDirection}
             geocentricSunDirection={telemetry.geocentricSunDirection}
@@ -5404,6 +5917,7 @@ export default function Home() {
             detectorExcitationExpectedCounts={
               telemetry.detectorExcitationExpectedCounts
             }
+            detectorEarthExpectedCounts={telemetry.detectorEarthExpectedCounts}
             mountX={mountX}
             mountZ={mountZ}
             cameraMode={cameraMode}
@@ -5426,9 +5940,51 @@ export default function Home() {
               </em>
             </h2>
           </div>
-          <div className={`grb-alert ${telemetry.grbActive ? "visible" : ""}`}>
+          <div
+            className={`grb-alert ${showBurstNotification ? "visible" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
             <Zap size={18} />
-            <div><small>SYNTHETIC SOURCE ACTIVE</small><strong>Injected source truth · not a detection claim</strong></div>
+            <div>
+              <small>
+                {showReconstructedBurst
+                  ? "PROVISIONAL GRB RECONSTRUCTION"
+                  : telemetry.activeBurstIds.length > 1
+                    ? "RECONSTRUCTION UNAVAILABLE · SIMULTANEOUS SOURCES"
+                    : "SYNTHETIC SOURCE ACTIVE · RECONSTRUCTION PENDING"}
+              </small>
+              {showReconstructedBurst && latestBurstDetection ? (
+                <>
+                  <strong>
+                    RA {latestBurstDetection.reconstructedRaDeg.toFixed(2)}° · DEC{" "}
+                    {latestBurstDetection.reconstructedDecDeg.toFixed(2)}°
+                  </strong>
+                  <span className="grb-alert-metrics">
+                    <em>
+                      {latestBurstDetection.positiveExcessCounts.toFixed(1)} expected excess counts / 0.2 s
+                    </em>
+                    <em>{latestBurstDetection.activePixelCount} positive-excess modules</em>
+                    <em>
+                      Input intensity {latestBurstDetection.configuredIntensityPercent.toFixed(0)}% · physical power unavailable
+                    </em>
+                  </span>
+                  <a
+                    href={`${PUBLIC_BASE_PATH}/event-history/?event=${encodeURIComponent(latestBurstDetection.eventKey)}`}
+                  >
+                    OPEN EVENT RECORD
+                    <ChevronRight size={12} />
+                  </a>
+                </>
+              ) : (
+                <strong>Waiting for a unique positive-excess direction estimate</strong>
+              )}
+              {burstArchiveError && (
+                <span className="grb-alert-archive-error">
+                  Archive unavailable · live reconstruction only
+                </span>
+              )}
+            </div>
           </div>
           <div className="orbit-readout">
             <span>ECI TIMELINE {((telemetry.phase / (Math.PI * 2)) * 100).toFixed(1)}%</span>
@@ -5508,6 +6064,7 @@ export default function Home() {
               <span><small>SELECTED PIXEL</small><strong>PIXEL ID {selectedConfiguredPixel.pixelId}</strong></span>
               <span><small>TOTAL RESPONSE</small><strong>{selectedExpectedCounts.toFixed(4)}</strong></span>
               <span><small>BACKGROUND</small><strong>{selectedBackgroundCounts.toFixed(4)}</strong></span>
+              <span><small>EARTH ALBEDO</small><strong>{selectedEarthExpectedCount.toFixed(4)}</strong></span>
             </div>
             <DetectorMap
               values={telemetry.detector}
@@ -5515,6 +6072,7 @@ export default function Home() {
               excitationExpectedCounts={
                 telemetry.detectorExcitationExpectedCounts
               }
+              earthExpectedCounts={telemetry.detectorEarthExpectedCounts}
               backgroundRates={telemetry.detectorBackgroundRates}
               backgroundExpectedCounts={
                 telemetry.detectorBackgroundExpectedCounts
@@ -5523,11 +6081,6 @@ export default function Home() {
               burstPixelGroups={telemetry.burstPixelGroups}
               pixelConfiguration={pixelConfiguration}
               selectedPixelId={selectedPixel}
-              earthIllumination={telemetry.earthIllumination}
-              earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
-              earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
-              mountX={mountX}
-              mountZ={mountZ}
               onSelect={selectPixel}
             />
           </div>
@@ -5657,7 +6210,7 @@ export default function Home() {
             </div>
 
             <div className="burst-inline-actions">
-              <button type="button" className="random-grb-mini" onClick={injectGRB}>
+              <button type="button" className="random-grb-mini" onClick={() => injectGRB()}>
                 <Sparkles size={12} /> RANDOM GRB
               </button>
               <button type="submit" className="inject-test-inline">
@@ -5704,6 +6257,7 @@ export default function Home() {
               excitationExpectedCounts={
                 telemetry.detectorExcitationExpectedCounts
               }
+              earthExpectedCounts={telemetry.detectorEarthExpectedCounts}
               backgroundRates={telemetry.detectorBackgroundRates}
               backgroundExpectedCounts={
                 telemetry.detectorBackgroundExpectedCounts
@@ -5712,11 +6266,6 @@ export default function Home() {
               burstPixelGroups={telemetry.burstPixelGroups}
               pixelConfiguration={pixelConfiguration}
               selectedPixelId={selectedPixel}
-              earthIllumination={telemetry.earthIllumination}
-              earthAlbedoAzimuth={telemetry.earthAlbedoAzimuth}
-              earthAlbedoDirectional={telemetry.earthAlbedoDirectional}
-              mountX={mountX}
-              mountZ={mountZ}
               onSelect={selectPixel}
             />
           </section>

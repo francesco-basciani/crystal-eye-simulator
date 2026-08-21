@@ -15,6 +15,10 @@ const analysisPanelSource = readFileSync(
   new URL("../app/components/adaptive-analysis-panel.tsx", import.meta.url),
   "utf8",
 );
+const eventHistorySource = readFileSync(
+  new URL("../app/event-history/page.tsx", import.meta.url),
+  "utf8",
+);
 
 test("adaptive analysis and reconstruction belong beside the visible 3D stage", () => {
   const leftPanelStart = pageSource.indexOf(
@@ -87,15 +91,68 @@ test("mode-B composition, excitation glow, and persisted placement are wired con
   assert.match(pageSource, /aggregateBackgroundExpectedCounts/);
   assert.match(pageSource, /configuredBackgroundCounts: background/);
   assert.match(pageSource, /detectorExcitationExpectedCounts/);
+  assert.match(pageSource, /detectorEarthExpectedCounts: \[\.\.\.earthAllocation\.values\]/);
+  assert.match(pageSource, /const isEarthPath = earthExpectedCount > 0/);
+  assert.match(pageSource, /const isEarthAlbedo = earthExpectedFrame\[physicalPixelId\] > 0/);
+  assert.match(pageSource, /getDetectorVisualResponse/);
+  assert.match(pageSource, /visualResponse\.earthOnly/);
+  assert.match(pageSource, /is-albedo-only/);
+  assert.match(pageSource, /has-albedo-overlap/);
+  assert.match(pageSource, /<small>EARTH ALBEDO<\/small>/);
+  assert.match(styles, /\.detector-map \.detector-pixel\.is-albedo-only/);
+  assert.match(styles, /\.detector-map \.detector-pixel\.has-albedo-overlap/);
   assert.match(pageSource, /const isFired = detectorExcitationFrame\[pixelId\] > 0/);
   assert.match(pageSource, /const isActive = excitationCount > 0/);
   assert.match(pageSource, /PAYLOAD_PLACEMENT_STORAGE_KEY_V1/);
   assert.match(pageSource, /parseStoredPayloadPlacement/);
   assert.match(pageSource, /serializePayloadPlacement/);
+  assert.match(pageSource, /getEarthAlbedoResponse\([\s\S]*?mountX,[\s\S]*?mountZ/);
+  assert.match(pageSource, /earthIllumination,[\s\S]*?earthAlbedoAzimuth,[\s\S]*?earthAlbedoDirectional,[\s\S]*?mountX,[\s\S]*?mountZ/);
   assert.match(pageSource, /saved locally/i);
   assert.match(pageSource, /EXPOSED OUTER PIXELS/);
   assert.match(analysisPanelSource, /VISIBLE SUN\/MOON\/EARTH ONLY · RITO EXCLUDED/);
   assert.match(analysisPanelSource, /RITO \+ VISIBLE SUN\/MOON\/EARTH/);
+});
+
+test("Simulation schedules one Sun-overlap burst before sparse deterministic random bursts", () => {
+  assert.match(pageSource, /shouldInjectAutomaticBurst/);
+  assert.match(pageSource, /directSunRateCountsPerSecond: telemetry\.sunNoise/);
+  assert.match(pageSource, /AUTO SOLAR-OVERLAP SCENARIO/);
+  assert.match(pageSource, /AUTO RANDOM SCENARIO/);
+  assert.match(pageSource, /nextAutomaticBurstRandomState/);
+  assert.match(pageSource, /simulatorMode !== "simulation" \|\| paused/);
+});
+
+test("Simulation starts 30 minutes forward while Reference keeps the ECI origin", () => {
+  assert.match(pageSource, /getModeReplayStartMs/);
+  assert.match(pageSource, /settingsRef\.current\.simulatorMode/);
+  assert.match(pageSource, /Simulation started 30 minutes after the ECI replay origin/);
+  assert.match(pageSource, /Reference replay reset to the ECI origin/);
+});
+
+test("V2R8 candidate directions drive burst physics while the flat map stays visual", () => {
+  assert.match(pageSource, /createV2R8CandidateDetectorGeometry/);
+  assert.match(pageSource, /rankV2R8PixelsForDirection/);
+  assert.match(pageSource, /getV2R8CosineIncidence/);
+  assert.match(pageSource, /localDirection: DetectorVector3/);
+  assert.doesNotMatch(pageSource, /getConfiguredPixelDistance|getConfiguredBurstIncidence/);
+  assert.match(pageSource, /UPPER ACD/);
+  assert.match(pageSource, /UP · GAGG/);
+  assert.match(pageSource, /DOWN · LYSO/);
+  assert.doesNotMatch(pageSource, /CH 0–1|CH 2–4|CH 5–7/);
+});
+
+test("provisional GRB reconstruction notification links to a fail-closed event archive", () => {
+  assert.match(pageSource, /PROVISIONAL GRB RECONSTRUCTION/);
+  assert.match(pageSource, /OPEN EVENT RECORD/);
+  assert.match(pageSource, /physical power unavailable/);
+  assert.match(pageSource, /buildBurstPixelReadouts/);
+  assert.match(eventHistorySource, /All 126 physical modules/);
+  assert.match(eventHistorySource, /UPPER ACD/);
+  assert.match(eventHistorySource, /UPPER GAGG/);
+  assert.match(eventHistorySource, /LOWER LYSO/);
+  assert.match(eventHistorySource, /UNAVAILABLE/);
+  assert.doesNotMatch(eventHistorySource, />0<\/td>/);
 });
 
 test("topbar simulation control is prominent and shares the panel mode transition", () => {
@@ -121,4 +178,23 @@ test("the vinext development overlay does not mask opaque script errors", () => 
     viteConfig,
     /ignored:\s*\["\*\*\/\.next\/\*\*",\s*"\*\*\/out\/\*\*"\]/,
   );
+});
+
+test("directional geometry keeps celestial bodies outside the satellite orbit", () => {
+  assert.match(pageSource, /SATELLITE_ORBIT_RADIUS_SCALE/);
+  assert.match(pageSource, /MOON_DIRECTION_RADIUS_SCALE/);
+  assert.match(pageSource, /SUN_DIRECTION_RADIUS_SCALE/);
+  assert.match(pageSource, /SUN · DIRECTION TO 1 AU/);
+  assert.match(pageSource, /MOON · DIRECTION TO ~384,000 KM/);
+  assert.match(pageSource, /ECI X–Z DIRECTION SCHEMATIC · RADIAL DISTANCES NOT TO SCALE/);
+  assert.match(pageSource, /sunDirection=\{geocentricSunDirection\}/);
+  assert.match(pageSource, /moonDirection=\{geocentricMoonDirection\}/);
+});
+
+test("3D detector materials update only when detector state changes", () => {
+  assert.match(pageSource, /appliedDetectorIntensity !== settings\.detectorIntensity/);
+  assert.match(pageSource, /appliedDetectorEarth !== settings\.detectorEarthExpectedCounts/);
+  assert.match(pageSource, /appliedSelectedPixel !== settings\.selectedPixel/);
+  assert.match(pageSource, /appliedDetectorIntensity = settings\.detectorIntensity/);
+  assert.match(pageSource, /appliedDetectorEarth = settings\.detectorEarthExpectedCounts/);
 });

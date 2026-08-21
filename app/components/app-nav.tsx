@@ -4,6 +4,7 @@ const links = [
   { href: "/", label: "SIMULATOR" },
   { href: "/ephemeris/", label: "EPHEMERIS" },
   { href: "/photon-history/", label: "PHOTON HISTORY" },
+  { href: "/event-history/", label: "GRB EVENTS" },
 ] as const;
 
 export function AppNav({ current }: { current: (typeof links)[number]["href"] }) {

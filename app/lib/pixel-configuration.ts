@@ -1,4 +1,4 @@
-import manualPixelConfiguration from "../data/crystal-eye-pixel-configuration.v2.json" with {
+import manualPixelConfiguration from "../data/crystal-eye-pixel-configuration.v3.json" with {
   type: "json",
 };
 
@@ -11,6 +11,8 @@ export const PIXEL_CONFIGURATION_STORAGE_KEY_V3 =
   "crystal-eye.pixel-configuration.v3";
 export const PIXEL_CONFIGURATION_STORAGE_KEY_V4 =
   "crystal-eye.pixel-configuration.v4";
+export const PIXEL_CONFIGURATION_STORAGE_KEY_V5 =
+  "crystal-eye.pixel-configuration.v5";
 
 export type PixelConfigurationEntry = {
   /** Canonical physical identity and pixbkg pixel_id. */
@@ -215,6 +217,26 @@ export function migrateStoredPixelConfigurationToAuthoritativeIds(
     pixels: stored.pixels.map((pixel, geometrySlot) => ({
       ...pixel,
       pixelId: DEFAULT_PIXEL_CONFIGURATION.pixels[geometrySlot].pixelId,
+    })),
+  };
+}
+
+export function migrateStoredPixelConfigurationToCanonicalV5(
+  value: unknown,
+): PixelConfiguration | null {
+  const stored = normalizePixelConfiguration(value);
+  if (!stored) return null;
+  const annotationsByPixelId = new Map(
+    stored.pixels
+      .filter((pixel) => pixel.legacyAnnotation.length > 0)
+      .map((pixel) => [pixel.pixelId, pixel.legacyAnnotation] as const),
+  );
+  return {
+    version: 2,
+    pixels: DEFAULT_PIXEL_CONFIGURATION.pixels.map((pixel) => ({
+      ...pixel,
+      legacyAnnotation:
+        annotationsByPixelId.get(pixel.pixelId) ?? pixel.legacyAnnotation,
     })),
   };
 }

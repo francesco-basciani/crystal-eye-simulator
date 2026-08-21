@@ -5,8 +5,10 @@ import {
   DEFAULT_PIXEL_CONFIGURATION,
   PIXEL_CONFIGURATION_STORAGE_KEY_V3,
   PIXEL_CONFIGURATION_STORAGE_KEY_V4,
+  PIXEL_CONFIGURATION_STORAGE_KEY_V5,
   hasCanonicalPixelIdBijection,
   migrateStoredPixelConfigurationToAuthoritativeIds,
+  migrateStoredPixelConfigurationToCanonicalV5,
   migrateStoredPixelConfigurationToPhotoGeometry,
   normalizePixelConfiguration,
   swapPhysicalPixelIds,
@@ -18,17 +20,16 @@ const legacyConfigurationUrl = new URL(
   import.meta.url,
 );
 const bundledConfigurationUrl = new URL(
-  "../app/data/crystal-eye-pixel-configuration.v2.json",
+  "../app/data/crystal-eye-pixel-configuration.v3.json",
   import.meta.url,
 );
 const authoritativeSourceUrl = new URL(
-  "../docs/provenance/inputs/CE-SIM-20260806-authoritative-pixel-ids.source.json",
+  "../docs/provenance/inputs/CE-SIM-20260821-pixel-configuration-4.source.json",
   import.meta.url,
 );
 
-test("the bundled default combines the current geometry with the authoritative physical IDs", async () => {
+test("the bundled default is the author-supplied canonical pixel configuration", async () => {
   const supplied = JSON.parse(await readFile(bundledConfigurationUrl, "utf8"));
-  const legacyGeometry = JSON.parse(await readFile(legacyConfigurationUrl, "utf8"));
   const authoritativeSource = JSON.parse(await readFile(authoritativeSourceUrl, "utf8"));
   const configuration = normalizePixelConfiguration(supplied);
   assert.deepEqual(configuration, DEFAULT_PIXEL_CONFIGURATION);
@@ -43,41 +44,12 @@ test("the bundled default combines the current geometry with the authoritative p
     configuration?.pixels.map((pixel) => pixel.pixelId),
     authoritativeSource.pixels.map((pixel: { pixelId: number }) => pixel.pixelId),
   );
+  assert.deepEqual(supplied, authoritativeSource);
   assert.deepEqual(
-    supplied.pixels.map(
-      ({ x, y, isSeam, isPentagon, rotationDeg, legacyAnnotation }: {
-        x: number;
-        y: number;
-        isSeam: boolean;
-        isPentagon: boolean;
-        rotationDeg: number;
-        legacyAnnotation: string;
-      }) => ({
-        x,
-        y,
-        isSeam,
-        isPentagon,
-        rotationDeg,
-        legacyAnnotation,
-      }),
+    [48, 54, 99, 115].map((geometrySlot) =>
+      configuration?.pixels[geometrySlot].pixelId
     ),
-    legacyGeometry.pixels.map(
-      ({ x, y, isSeam, isPentagon, rotationDeg, secondaryId }: {
-        x: number;
-        y: number;
-        isSeam: boolean;
-        isPentagon: boolean;
-        rotationDeg: number;
-        secondaryId: string;
-      }) => ({
-        x,
-        y,
-        isSeam,
-        isPentagon,
-        rotationDeg,
-        legacyAnnotation: secondaryId,
-      }),
-    ),
+    [15, 2, 106, 98],
   );
   assert.deepEqual(
     configuration?.pixels
@@ -223,6 +195,54 @@ test("stored v3 geometry and annotations migrate to authoritative IDs under stor
   assert.deepEqual(
     migrated.pixels.map((pixel) => pixel.pixelId),
     DEFAULT_PIXEL_CONFIGURATION.pixels.map((pixel) => pixel.pixelId),
+  );
+});
+
+test("storage v5 isolates the author-supplied canonical configuration from older browser layouts", () => {
+  assert.equal(
+    PIXEL_CONFIGURATION_STORAGE_KEY_V5,
+    "crystal-eye.pixel-configuration.v5",
+  );
+  const storedV4 = swapPhysicalPixelIds(
+    {
+      version: 2,
+      pixels: DEFAULT_PIXEL_CONFIGURATION.pixels.map((pixel) => ({
+        ...pixel,
+        x: 12.5,
+        y: 87.5,
+        rotationDeg: 47.5,
+      })),
+    },
+    0,
+    125,
+  );
+  storedV4.pixels.find((pixel) => pixel.pixelId === 117)!.legacyAnnotation =
+    "saved-note";
+  const migrated = migrateStoredPixelConfigurationToCanonicalV5(storedV4);
+  assert.ok(migrated);
+  assert.deepEqual(
+    migrated.pixels.map(({ pixelId, x, y, rotationDeg, isPentagon, isSeam }) => ({
+      pixelId,
+      x,
+      y,
+      rotationDeg,
+      isPentagon,
+      isSeam,
+    })),
+    DEFAULT_PIXEL_CONFIGURATION.pixels.map(
+      ({ pixelId, x, y, rotationDeg, isPentagon, isSeam }) => ({
+        pixelId,
+        x,
+        y,
+        rotationDeg,
+        isPentagon,
+        isSeam,
+      }),
+    ),
+  );
+  assert.equal(
+    migrated.pixels.find((pixel) => pixel.pixelId === 117)?.legacyAnnotation,
+    "saved-note",
   );
 });
 
