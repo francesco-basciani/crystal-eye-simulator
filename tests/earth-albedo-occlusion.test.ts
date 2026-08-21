@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  EARTH_ALBEDO_ILLUMINATION_THRESHOLD,
   getExposedEarthAlbedoWeight,
   getNadirExposureFraction,
   getSubSatelliteSolarIncidence,
@@ -41,16 +40,8 @@ test("nightside and inner pixels have no Earth support", () => {
     ));
   }
   assert.equal(getExposedEarthAlbedoWeight(inner, 1, 0, 1, 1, -1), 0);
-  assert.equal(
-    getExposedEarthAlbedoWeight(
-      outer[0],
-      EARTH_ALBEDO_ILLUMINATION_THRESHOLD,
-      0,
-      1,
-      1,
-      0,
-    ),
-    0,
+  assert.ok(
+    getExposedEarthAlbedoWeight(outer[0], 1e-6, 0, 1, 1, 0) > 0,
   );
 });
 

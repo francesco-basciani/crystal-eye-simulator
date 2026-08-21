@@ -101,3 +101,43 @@ Results:
 - The added point overlay is an explicitly diagnostic visual cue, not an additional physical signal.
 - Browser QA confirms removal of the identified unnecessary work, but no instrumented frame-time benchmark has yet been archived.
 - The payload remains centered for a new browser profile and therefore has zero Earth-albedo support until the author selects edge/corner placement in Configuration.
+
+## Follow-up: continuous angular source response
+
+### Objective and observed cause
+
+- Remove the visually abrupt on/off transition when a strong source crosses the detector field-of-view or a payload-occlusion boundary.
+- The discontinuity was not only a rendering issue: Sun and Moon counts were multiplied by binary angular gates, and mount visibility selected a single best pixel. Crossing either boundary could therefore remove a positive count contribution in one 0.2 s telemetry step.
+
+### Author decision and implementation
+
+- The author explicitly approved introduction of a gradual response on 2026-08-21.
+- Sun and Moon now use a continuous angular acceptance
+  `A(theta) = max(0, cos(theta))^2 * smoothstep(0, 1, (H - theta) / W)`,
+  where `theta` and `H` are angles in degrees and the edge roll-off width is currently `W = 10 deg`.
+- Payload visibility is a continuous positive-cosine-squared weighted average over the physical pixel directions instead of a winner-takes-all pixel selection.
+- Earth albedo reaches exactly zero only at zero local solar incidence; arbitrarily small positive incidence remains continuous rather than being removed by a 0.01 threshold.
+- The visual detector transition was increased from 120 ms to 220 ms. This affects presentation only; the scientific vectors remain sampled at the established cadence.
+- Per-frame `pixel / maximumPixel` color normalization was replaced by the absolute continuous presentation mapping `1 - exp(-expectedCounts / 0.75 counts/bin)`. Source amplitude can therefore fade visibly instead of retaining a saturated color until the final non-zero frame.
+- The earlier immediate 3D albedo clear is superseded: the final, already small terminator contribution now follows the same 220 ms visual transition to canonical blue.
+- No validation-status label was added to the simulator UI.
+
+### Status and limits
+
+- The mathematical continuity and implementation are `VERIFIED` by automated tests.
+- The 10 deg roll-off width, cosine-squared angular law, and 0.75 counts/bin presentation reference are engineering assumptions requiring calibration and domain validation before they can represent Crystal Eye's measured response.
+- At the 500x time preset, each 0.2 s update advances about 100 simulated seconds, so the displayed transition is naturally sampled more coarsely than at 1x or 50x even though the response itself is continuous.
+
+### Additional files modified
+
+- `app/lib/angular-acceptance.ts`
+- `app/lib/earth-albedo-occlusion.ts`
+- `tests/angular-acceptance.test.ts`
+- `tests/earth-albedo-occlusion.test.ts`
+
+### Follow-up verification
+
+- ESLint: pass.
+- TypeScript: pass.
+- Tests: 101/101 pass.
+- Production build: pass; existing chunk-size warning only.

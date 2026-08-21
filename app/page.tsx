@@ -58,7 +58,10 @@ import {
   createZeroDetectorFrame,
   resolveDetectorFrameVector,
 } from "./lib/detector-frame";
-import { getDetectorVisualResponse } from "./lib/detector-visual-response";
+import {
+  getAbsoluteExcitationImpact,
+  getDetectorVisualResponse,
+} from "./lib/detector-visual-response";
 import {
   createV2R8CandidateDetectorGeometry,
   getV2R8CandidateNormals,
@@ -68,11 +71,11 @@ import {
   type DetectorVector3,
 } from "./lib/detector-geometry-v2r8";
 import {
-  EARTH_ALBEDO_ILLUMINATION_THRESHOLD,
   getExposedEarthAlbedoWeight,
   getNadirExposureFraction,
   getSubSatelliteSolarIncidence,
 } from "./lib/earth-albedo-occlusion";
+import { getSmoothAngularAcceptance } from "./lib/angular-acceptance";
 import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
 import {
   ECI_EPHEMERIS_INITIAL_SAMPLE,
@@ -679,7 +682,6 @@ function createDetectorExpectedResponse({
     earth: earthAllocation.values,
     source: sourceAllocation.values,
   });
-  const maximumExcitation = Math.max(0, ...composed.excitation);
   const detectorImpact = Array.from({ length: pixelCount }, (_, pixelId) => {
     const earthImpact = THREE.MathUtils.clamp(earthWeights[pixelId] * 0.42, 0, 0.42);
     const burstImpact = activeBursts.reduce((maximum, burst) => {
@@ -692,9 +694,10 @@ function createDetectorExpectedResponse({
         ) ** 2.2 *
         Math.exp(-Math.max(0, burst.ageTicks - 1) / 5));
     }, 0);
-    const excitationImpact = maximumExcitation > 0
-      ? composed.excitation[pixelId] / maximumExcitation
-      : 0;
+    const excitationImpact = getAbsoluteExcitationImpact(
+      composed.excitation[pixelId],
+      SOURCE_VISUAL_REFERENCE_COUNTS_PER_BIN,
+    );
     return THREE.MathUtils.clamp(
       Math.max(excitationImpact, earthImpact, burstImpact),
       0,
@@ -716,9 +719,11 @@ function createDetectorExpectedResponse({
 
 const BURST_DURATION_TICKS = 15;
 const DIRECT_SUN_BACKGROUND_RATE = 260;
+const SOURCE_VISUAL_REFERENCE_COUNTS_PER_BIN = 0.75;
 const EARTH_RADIUS_KM = 6371;
 const DISPLAY_INTERPOLATION_MS = 220;
-const DETECTOR_VISUAL_TRANSITION_MS = 120;
+const DETECTOR_VISUAL_TRANSITION_MS = 220;
+const SOURCE_EDGE_ROLLOFF_DEG = 10;
 const EFFECTIVE_FOV_DEG = 130;
 const EFFECTIVE_HALF_ANGLE_DEG = EFFECTIVE_FOV_DEG / 2;
 const BASE_PIXEL_COLOR = "#1739b8";
@@ -817,19 +822,19 @@ function getMountedDirectionVisibility(
     .fromArray(direction)
     .applyQuaternion(inverseOrientation)
     .normalize();
-  let bestPixelIndex = 0;
-  let bestDot = -Infinity;
+  let weightedVisibility = 0;
+  let totalWeight = 0;
   PIXEL_NORMALS.forEach((normal, index) => {
-    const dot =
+    const weight = Math.max(
+      0,
       normal[0] * localDirection.x +
       normal[1] * localDirection.y +
-      normal[2] * localDirection.z;
-    if (dot > bestDot) {
-      bestDot = dot;
-      bestPixelIndex = index;
-    }
+      normal[2] * localDirection.z,
+    ) ** 2;
+    weightedVisibility += weight * getMountSkyVisibility(index, mountX, mountZ);
+    totalWeight += weight;
   });
-  return getMountSkyVisibility(bestPixelIndex, mountX, mountZ);
+  return totalWeight > 0 ? weightedVisibility / totalWeight : 0;
 }
 
 function getCelestialGeometry(
@@ -876,16 +881,21 @@ function getCelestialGeometry(
   );
   const sunSeparation = referenceFrames.sunBoresightSeparationDeg;
   const moonSeparation = referenceFrames.moonBoresightSeparationDeg;
-  const sunInFov = sunSeparation <= EFFECTIVE_HALF_ANGLE_DEG;
-  const moonInFov = moonSeparation <= EFFECTIVE_HALF_ANGLE_DEG;
-  const angularResponse = (separation: number) =>
-    Math.max(0, Math.cos(THREE.MathUtils.degToRad(separation))) ** 2;
-  const sunNoise = sunInFov
-    ? DIRECT_SUN_BACKGROUND_RATE * angularResponse(sunSeparation)
-    : 0;
-  const moonNoise = moonInFov
-    ? 22 * angularResponse(moonSeparation) * (0.3 + 0.7 * moonIllumination.phase_fraction)
-    : 0;
+  const sunAcceptance = getSmoothAngularAcceptance(
+    sunSeparation,
+    EFFECTIVE_HALF_ANGLE_DEG,
+    SOURCE_EDGE_ROLLOFF_DEG,
+  );
+  const moonAcceptance = getSmoothAngularAcceptance(
+    moonSeparation,
+    EFFECTIVE_HALF_ANGLE_DEG,
+    SOURCE_EDGE_ROLLOFF_DEG,
+  );
+  const sunInFov = sunAcceptance > 0;
+  const moonInFov = moonAcceptance > 0;
+  const sunNoise = DIRECT_SUN_BACKGROUND_RATE * sunAcceptance;
+  const moonNoise = 22 * moonAcceptance *
+    (0.3 + 0.7 * moonIllumination.phase_fraction);
   const earthIllumination = getSubSatelliteSolarIncidence(
     satelliteDirection,
     geocentricSunDirection,
@@ -905,9 +915,7 @@ function getCelestialGeometry(
   const earthAlbedoAzimuth =
     earthAlbedoDirectional > 1e-4 ? Math.atan2(localSun.z, localSun.x) : 0;
   const earthAngularScale = (EARTH_RADIUS_KM / satelliteRadiusKm) ** 2;
-  const earthAlbedoNoise = earthIllumination > EARTH_ALBEDO_ILLUMINATION_THRESHOLD
-    ? 85 * earthAngularScale * earthIllumination ** 1.35
-    : 0;
+  const earthAlbedoNoise = 85 * earthAngularScale * earthIllumination ** 1.35;
 
   return {
     date,
@@ -938,25 +946,58 @@ function getCelestialGeometry(
   };
 }
 
-const INITIAL_CELESTIAL = getCelestialGeometry(ECI_EPHEMERIS_INITIAL_SAMPLE);
-const INITIAL_MOUNT_SUN_NOISE =
-  INITIAL_CELESTIAL.sunSeparation <= getMountEffectiveFov(0, 0) / 2
-    ? INITIAL_CELESTIAL.sunNoise *
-      getMountedDirectionVisibility(
-        INITIAL_CELESTIAL.sunDirection,
-        INITIAL_CELESTIAL.satelliteDirection,
-        0,
-        0,
-      )
-    : 0;
-const INITIAL_MOUNT_MOON_NOISE =
-  INITIAL_CELESTIAL.moonNoise *
-  getMountedDirectionVisibility(
-    INITIAL_CELESTIAL.moonDirection,
-    INITIAL_CELESTIAL.satelliteDirection,
-    0,
-    0,
+type CelestialGeometry = ReturnType<typeof getCelestialGeometry>;
+
+function getMountedSourceRate(
+  separationDeg: number,
+  direction: [number, number, number],
+  boresight: [number, number, number],
+  peakRateCountsPerSecond: number,
+  mountX: number,
+  mountZ: number,
+) {
+  const acceptance = getSmoothAngularAcceptance(
+    separationDeg,
+    getMountEffectiveFov(mountX, mountZ) / 2,
+    SOURCE_EDGE_ROLLOFF_DEG,
   );
+  return peakRateCountsPerSecond * acceptance *
+    getMountedDirectionVisibility(direction, boresight, mountX, mountZ);
+}
+
+function getMountedSunNoise(
+  celestial: CelestialGeometry,
+  mountX: number,
+  mountZ: number,
+) {
+  return getMountedSourceRate(
+    celestial.sunSeparation,
+    celestial.sunDirection,
+    celestial.satelliteDirection,
+    DIRECT_SUN_BACKGROUND_RATE,
+    mountX,
+    mountZ,
+  );
+}
+
+function getMountedMoonNoise(
+  celestial: CelestialGeometry,
+  mountX: number,
+  mountZ: number,
+) {
+  return getMountedSourceRate(
+    celestial.moonSeparation,
+    celestial.moonDirection,
+    celestial.satelliteDirection,
+    22 * (0.3 + 0.7 * celestial.moonPhase),
+    mountX,
+    mountZ,
+  );
+}
+
+const INITIAL_CELESTIAL = getCelestialGeometry(ECI_EPHEMERIS_INITIAL_SAMPLE);
+const INITIAL_MOUNT_SUN_NOISE = getMountedSunNoise(INITIAL_CELESTIAL, 0, 0);
+const INITIAL_MOUNT_MOON_NOISE = getMountedMoonNoise(INITIAL_CELESTIAL, 0, 0);
 const INITIAL_MOUNT_ALBEDO_NOISE =
   INITIAL_CELESTIAL.earthAlbedoNoise * getMountAlbedoTransmission(0, 0);
 const DEFAULT_PIXEL_SPHERE_SLOTS = getConfiguredPixelSphereSlots(
@@ -1510,7 +1551,6 @@ function GlobeScene({
     );
     const targetPixelScale = new Float32Array(PIXEL_LAYOUT.length).fill(1);
     const pixelVisualTransitionStartedAt = new Float64Array(PIXEL_LAYOUT.length);
-    const earthActivePixelState = new Uint8Array(PIXEL_LAYOUT.length);
     const animatingPixelIds = new Set<number>();
     const upAxis = new THREE.Vector3(0, 1, 0);
     let configuredPixelNormals = settingsRef.current.physicalGeometry
@@ -1871,7 +1911,6 @@ function GlobeScene({
         const maximumEarthExpectedCount = Math.max(0, ...detectorEarthFrame);
         let earthAlbedoCueCount = 0;
         crystalPixels.forEach((crystal, pixelId) => {
-          const material = pixelMaterials[pixelId];
           const impact = detectorIntensityFrame[pixelId];
           const hitCount = detectorHitsFrame[pixelId];
           const isFired = detectorExcitationFrame[pixelId] > 0;
@@ -1884,9 +1923,6 @@ function GlobeScene({
           );
           const earthImpact = visualResponse.normalizedEarth;
           const isEarthPath = earthExpectedCount > 0;
-          const earthJustCleared =
-            earthActivePixelState[pixelId] === 1 && !isEarthPath;
-          earthActivePixelState[pixelId] = isEarthPath ? 1 : 0;
           const impactColor = visualResponse.earthOnly
             ? EARTH_ALBEDO_THREE_COLORS[Math.round(earthImpact * 100)]
             : IMPACT_THREE_COLORS[Math.round(visualResponse.impact * 100)];
@@ -1906,11 +1942,7 @@ function GlobeScene({
             Math.abs(targetColor.b - previousTargetBlue) > 0.004 ||
             Math.abs(nextScale - targetPixelScale[pixelId]) > 0.002;
           targetPixelScale[pixelId] = nextScale;
-          if (earthJustCleared) {
-            material.color.copy(targetColor);
-            crystal.scale.setScalar(nextScale);
-            animatingPixelIds.delete(pixelId);
-          } else if (targetChanged) {
+          if (targetChanged) {
             pixelVisualTransitionStartedAt[pixelId] = now;
             animatingPixelIds.add(pixelId);
           }
@@ -4669,27 +4701,8 @@ export default function Home() {
       orbitAltitudeKm,
       orbitInclinationDeg,
     );
-    const mountedEffectiveFov = getMountEffectiveFov(mountX, mountZ);
-    const mountedSunNoise =
-      celestial.sunSeparation <= mountedEffectiveFov / 2
-        ? celestial.sunNoise *
-          getMountedDirectionVisibility(
-            celestial.sunDirection,
-            celestial.satelliteDirection,
-            mountX,
-            mountZ,
-          )
-        : 0;
-    const mountedMoonNoise =
-      celestial.moonSeparation <= mountedEffectiveFov / 2
-        ? celestial.moonNoise *
-          getMountedDirectionVisibility(
-            celestial.moonDirection,
-            celestial.satelliteDirection,
-            mountX,
-            mountZ,
-          )
-        : 0;
+    const mountedSunNoise = getMountedSunNoise(celestial, mountX, mountZ);
+    const mountedMoonNoise = getMountedMoonNoise(celestial, mountX, mountZ);
     const mountedEarthAlbedoNoise =
       celestial.earthAlbedoNoise * getMountAlbedoTransmission(mountX, mountZ);
     const pixelBackground = backgroundProfileRef.current;
@@ -4823,30 +4836,16 @@ export default function Home() {
           },
         ]);
       }
-      const mountedEffectiveFov = getMountEffectiveFov(
+      const mountedSunNoise = getMountedSunNoise(
+        celestial,
         settings.mountX,
         settings.mountZ,
       );
-      const mountedSunNoise =
-        celestial.sunSeparation <= mountedEffectiveFov / 2
-          ? celestial.sunNoise *
-            getMountedDirectionVisibility(
-              celestial.sunDirection,
-              celestial.satelliteDirection,
-              settings.mountX,
-              settings.mountZ,
-            )
-          : 0;
-      const mountedMoonNoise =
-        celestial.moonSeparation <= mountedEffectiveFov / 2
-          ? celestial.moonNoise *
-            getMountedDirectionVisibility(
-              celestial.moonDirection,
-              celestial.satelliteDirection,
-              settings.mountX,
-              settings.mountZ,
-            )
-          : 0;
+      const mountedMoonNoise = getMountedMoonNoise(
+        celestial,
+        settings.mountX,
+        settings.mountZ,
+      );
       const mountedEarthAlbedoNoise =
         celestial.earthAlbedoNoise *
         getMountAlbedoTransmission(settings.mountX, settings.mountZ);
@@ -5512,27 +5511,8 @@ export default function Home() {
       orbitInclinationDeg,
     );
     satelliteDirectionRef.current = celestial.satelliteDirection;
-    const mountedEffectiveFov = getMountEffectiveFov(mountX, mountZ);
-    const mountedSunNoise =
-      celestial.sunSeparation <= mountedEffectiveFov / 2
-        ? celestial.sunNoise *
-          getMountedDirectionVisibility(
-            celestial.sunDirection,
-            celestial.satelliteDirection,
-            mountX,
-            mountZ,
-          )
-        : 0;
-    const mountedMoonNoise =
-      celestial.moonSeparation <= mountedEffectiveFov / 2
-        ? celestial.moonNoise *
-          getMountedDirectionVisibility(
-            celestial.moonDirection,
-            celestial.satelliteDirection,
-            mountX,
-            mountZ,
-          )
-        : 0;
+    const mountedSunNoise = getMountedSunNoise(celestial, mountX, mountZ);
+    const mountedMoonNoise = getMountedMoonNoise(celestial, mountX, mountZ);
     const mountedEarthAlbedoNoise =
       celestial.earthAlbedoNoise * getMountAlbedoTransmission(mountX, mountZ);
     const detectorResponse = createDetectorExpectedResponse({
@@ -5623,9 +5603,9 @@ export default function Home() {
     return getMountEffectiveFov(mountX, mountZ);
   }, [mountX, mountZ]);
   const mountedSunInFov =
-    telemetry.sunSeparation <= effectiveMountFov / 2 && telemetry.sunNoise > 0.1;
+    telemetry.sunSeparation < effectiveMountFov / 2 && telemetry.sunNoise > 0;
   const mountedMoonInFov =
-    telemetry.moonSeparation <= effectiveMountFov / 2 && telemetry.moonNoise > 0.1;
+    telemetry.moonSeparation < effectiveMountFov / 2 && telemetry.moonNoise > 0;
   const changeTimeWarp = useCallback((direction: -1 | 1) => {
     setSpeed((current) => {
       if (direction < 0) {
@@ -5874,7 +5854,7 @@ export default function Home() {
                 <CircleDot size={16} />
                 <span>
                   <small>EARTH · {(telemetry.earthIllumination * 100).toFixed(0)}% illuminated</small>
-                  <strong>{telemetry.earthIllumination <= EARTH_ALBEDO_ILLUMINATION_THRESHOLD
+                  <strong>{telemetry.earthIllumination <= 0
                     ? "nightside · zero local solar incidence"
                     : earthActivePixelCount === 0
                       ? "platform blocked · move payload to edge or corner"

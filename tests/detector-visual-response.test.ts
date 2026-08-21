@@ -1,6 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getDetectorVisualResponse } from "../app/lib/detector-visual-response.ts";
+import {
+  getAbsoluteExcitationImpact,
+  getDetectorVisualResponse,
+} from "../app/lib/detector-visual-response.ts";
+
+test("absolute excitation impact preserves source amplitude across frames", () => {
+  const referenceCount = 0.75;
+  const samples = [0, 0.01, 0.1, 0.75, 3].map((expectedCount) =>
+    getAbsoluteExcitationImpact(expectedCount, referenceCount)
+  );
+  assert.equal(samples[0], 0);
+  assert.ok(samples.every((value) => value >= 0 && value < 1));
+  assert.ok(samples.every((value, index) => index === 0 || value > samples[index - 1]));
+});
+
+test("absolute excitation impact fails closed on invalid scale inputs", () => {
+  assert.throws(() => getAbsoluteExcitationImpact(-1, 0.75), RangeError);
+  assert.throws(() => getAbsoluteExcitationImpact(1, 0), RangeError);
+});
 
 test("Earth-only counts produce a visible but slight crown response", () => {
   const weak = getDetectorVisualResponse(1, 0.02, 0.02, 0.08);

@@ -8,6 +8,19 @@ export type DetectorVisualResponse = Readonly<{
   normalizedEarth: number;
 }>;
 
+export function getAbsoluteExcitationImpact(
+  expectedCount: number,
+  referenceCount: number,
+): number {
+  if (!Number.isFinite(expectedCount) || expectedCount < 0) {
+    throw new RangeError("expectedCount must be finite and non-negative.");
+  }
+  if (!Number.isFinite(referenceCount) || referenceCount <= 0) {
+    throw new RangeError("referenceCount must be finite and positive.");
+  }
+  return 1 - Math.exp(-expectedCount / referenceCount);
+}
+
 export function getDetectorVisualResponse(
   detectorImpact: number,
   excitationExpectedCount: number,

@@ -3086,10 +3086,10 @@ button {
   opacity: calc(0.82 + var(--heat) * 0.18);
   cursor: pointer;
   transition:
-    background-color 120ms linear,
-    border-color 120ms linear,
-    color 120ms linear,
-    opacity 120ms linear,
+    background-color 220ms linear,
+    border-color 220ms linear,
+    color 220ms linear,
+    opacity 220ms linear,
     transform 140ms ease;
   animation-delay: var(--delay);
 }

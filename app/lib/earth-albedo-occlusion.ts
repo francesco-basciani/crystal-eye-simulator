@@ -1,6 +1,5 @@
 export const SATELLITE_PLATFORM_HALF_SIZE_CM = 30;
 export const CRYSTAL_EYE_RADIUS_CM = 15;
-export const EARTH_ALBEDO_ILLUMINATION_THRESHOLD = 0.01;
 
 export type NadirPixelGeometry = Readonly<{
   ring: number;
@@ -63,7 +62,7 @@ export function getExposedEarthAlbedoWeight(
   mountZ: number,
 ): number {
   if (
-    illumination <= EARTH_ALBEDO_ILLUMINATION_THRESHOLD ||
+    illumination <= 0 ||
     !isPixelCenterExposedToNadir(pixel, mountX, mountZ)
   ) return 0;
   const delta = Math.atan2(
