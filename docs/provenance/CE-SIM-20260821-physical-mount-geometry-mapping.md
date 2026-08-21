@@ -5,7 +5,7 @@
 - Date: 2026-08-21
 - Objective: remove isolated detector-response holes caused by mapping physical V2R8 modules onto unrelated synthetic hemisphere slots.
 - Author decision: correct the physical mapping without changing the author-supplied planar pixel configuration, rotations, shapes, annotations, or physical IDs.
-- Publication status: local checkpoint only; not pushed or deployed by this task.
+- Publication status: pushed to GitHub and deployed to GitHub Pages with explicit author approval.
 
 ## Inputs and observed defect
 
@@ -58,3 +58,13 @@
 - The 4.5 cm mount attenuation length remains an engineering visualization/simulation assumption requiring domain validation.
 - The 80° outer-crown boundary is unambiguous in the current supplied angular bands but its detector-topology interpretation should still be confirmed by the physics team.
 - A separate ID 105/107 neighbourhood inconsistency between planar topology and angular records was observed during review. It does not cause the 112/117/122 defect and is not changed here; it requires a physics mapping confirmation rather than an implicit software correction.
+
+## Publication record
+
+- GitHub remote: `git@github.com:francesco-basciani/crystal-eye-simulator.git`.
+- Initial feature commit: `2d34b05`.
+- GitHub Pages run `32515183139` exposed a TypeScript compatibility error that the local vinext build did not reproduce: an internal import ended in `.ts`, while the Pages Next.js build did not enable `allowImportingTsExtensions`.
+- The mount visibility helpers were moved into the existing standalone geometry module without changing their behavior; full tests and the exact `npm run build:pages` command then passed locally.
+- Corrected deployment commit: `6d62e5a`.
+- GitHub Pages run `32515405565`: build `success`, deploy `success`, overall conclusion `success`.
+- Public URL: `https://francesco-basciani.github.io/crystal-eye-simulator/` returned HTTP 200 with a deployment timestamp after the successful run.
