@@ -1,13 +1,16 @@
 export const SATELLITE_PLATFORM_HALF_SIZE_CM = 30;
 export const CRYSTAL_EYE_RADIUS_CM = 15;
-
-export type NadirPixelGeometry = Readonly<{
-  ring: number;
-  outermostRing: number;
-  angleRadians: number;
-}>;
+export const OUTER_CROWN_MIN_POLAR_ANGLE_DEG = 80;
+const OUTER_CROWN_MAX_NORMAL_Y = Math.cos(
+  OUTER_CROWN_MIN_POLAR_ANGLE_DEG * Math.PI / 180,
+);
 
 export type UnitDirection = readonly [number, number, number];
+
+export type NadirModuleGeometry = Readonly<{
+  pixelId: number;
+  normal: UnitDirection;
+}>;
 
 export function getSubSatelliteSolarIncidence(
   surfaceOutwardDirection: UnitDirection,
@@ -25,36 +28,66 @@ function requireMount(value: number, label: string) {
   }
 }
 
-/** Binary point-center visibility for a vertical nadir ray. */
-export function isPixelCenterExposedToNadir(
-  pixel: NadirPixelGeometry,
+function requireModule(module: NadirModuleGeometry) {
+  const [x, y, z] = module.normal;
+  const length = Math.hypot(x, y, z);
+  if (
+    !Number.isInteger(module.pixelId) ||
+    module.pixelId < 0 ||
+    !Number.isFinite(length) ||
+    Math.abs(length - 1) > 1e-9
+  ) {
+    throw new RangeError("Nadir module requires a non-negative pixel ID and unit normal.");
+  }
+}
+
+export function isOuterCrownModule(module: NadirModuleGeometry): boolean {
+  requireModule(module);
+  return module.normal[1] <= OUTER_CROWN_MAX_NORMAL_Y + 1e-12;
+}
+
+export function getProjectedModuleCenterCm(
+  module: NadirModuleGeometry,
+  mountX: number,
+  mountZ: number,
+): Readonly<{ x: number; z: number }> {
+  requireModule(module);
+  requireMount(mountX, "mountX");
+  requireMount(mountZ, "mountZ");
+  return Object.freeze({
+    x: mountX * SATELLITE_PLATFORM_HALF_SIZE_CM +
+      module.normal[0] * CRYSTAL_EYE_RADIUS_CM,
+    z: mountZ * SATELLITE_PLATFORM_HALF_SIZE_CM +
+      module.normal[2] * CRYSTAL_EYE_RADIUS_CM,
+  });
+}
+
+/** Point-center visibility for a vertical nadir ray; partial module area is unavailable. */
+export function isModuleCenterExposedToNadir(
+  module: NadirModuleGeometry,
   mountX: number,
   mountZ: number,
 ): boolean {
-  requireMount(mountX, "mountX");
-  requireMount(mountZ, "mountZ");
-  if (pixel.ring !== pixel.outermostRing) return false;
-  const pixelX = mountX * SATELLITE_PLATFORM_HALF_SIZE_CM +
-    Math.cos(pixel.angleRadians) * CRYSTAL_EYE_RADIUS_CM;
-  const pixelZ = mountZ * SATELLITE_PLATFORM_HALF_SIZE_CM +
-    Math.sin(pixel.angleRadians) * CRYSTAL_EYE_RADIUS_CM;
-  return Math.abs(pixelX) > SATELLITE_PLATFORM_HALF_SIZE_CM ||
-    Math.abs(pixelZ) > SATELLITE_PLATFORM_HALF_SIZE_CM;
+  if (!isOuterCrownModule(module)) return false;
+  const center = getProjectedModuleCenterCm(module, mountX, mountZ);
+  return Math.abs(center.x) > SATELLITE_PLATFORM_HALF_SIZE_CM ||
+    Math.abs(center.z) > SATELLITE_PLATFORM_HALF_SIZE_CM;
 }
 
 export function getNadirExposureFraction(
-  pixels: readonly NadirPixelGeometry[],
+  modules: readonly NadirModuleGeometry[],
   mountX: number,
   mountZ: number,
 ): number {
-  const outer = pixels.filter((pixel) => pixel.ring === pixel.outermostRing);
-  if (outer.length === 0) return 0;
-  return outer.filter((pixel) => isPixelCenterExposedToNadir(pixel, mountX, mountZ)).length /
-    outer.length;
+  const outerCrown = modules.filter(isOuterCrownModule);
+  if (outerCrown.length === 0) return 0;
+  return outerCrown.filter((module) =>
+    isModuleCenterExposedToNadir(module, mountX, mountZ)
+  ).length / outerCrown.length;
 }
 
 export function getExposedEarthAlbedoWeight(
-  pixel: NadirPixelGeometry,
+  module: NadirModuleGeometry,
   illumination: number,
   azimuthRadians: number,
   directional: number,
@@ -63,11 +96,12 @@ export function getExposedEarthAlbedoWeight(
 ): number {
   if (
     illumination <= 0 ||
-    !isPixelCenterExposedToNadir(pixel, mountX, mountZ)
+    !isModuleCenterExposedToNadir(module, mountX, mountZ)
   ) return 0;
+  const moduleAzimuth = Math.atan2(module.normal[2], module.normal[0]);
   const delta = Math.atan2(
-    Math.sin(pixel.angleRadians - azimuthRadians),
-    Math.cos(pixel.angleRadians - azimuthRadians),
+    Math.sin(moduleAzimuth - azimuthRadians),
+    Math.cos(moduleAzimuth - azimuthRadians),
   );
   const directionalLobe = Math.max(0, Math.cos(delta)) ** 1.7;
   const boundedDirectional = Math.max(0, Math.min(1, directional));

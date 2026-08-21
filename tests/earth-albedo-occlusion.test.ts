@@ -4,17 +4,32 @@ import {
   getExposedEarthAlbedoWeight,
   getNadirExposureFraction,
   getSubSatelliteSolarIncidence,
-  isPixelCenterExposedToNadir,
-  type NadirPixelGeometry,
+  isModuleCenterExposedToNadir,
+  isOuterCrownModule,
+  type NadirModuleGeometry,
 } from "../app/lib/earth-albedo-occlusion.ts";
 
-const count = 35;
-const outer: readonly NadirPixelGeometry[] = Array.from({ length: count }, (_, slot) => ({
-  ring: 6,
-  outermostRing: 6,
-  angleRadians: slot / count * Math.PI * 2 + Math.PI / count,
-}));
-const inner: NadirPixelGeometry = { ring: 5, outermostRing: 6, angleRadians: 0 };
+function moduleAt(
+  pixelId: number,
+  thetaDeg: number,
+  phiDeg: number,
+): NadirModuleGeometry {
+  const theta = thetaDeg * Math.PI / 180;
+  const phi = phiDeg * Math.PI / 180;
+  return {
+    pixelId,
+    normal: [
+      Math.sin(theta) * Math.cos(phi),
+      Math.cos(theta),
+      -Math.sin(theta) * Math.sin(phi),
+    ],
+  };
+}
+
+const outer = Array.from({ length: 25 }, (_, index) =>
+  moduleAt(index, 82.3, index / 25 * 360)
+);
+const inner = moduleAt(117, 20.5521, 90);
 
 test("geocentric solar incidence is noon one and terminator/midnight zero", () => {
   assert.equal(getSubSatelliteSolarIncidence([1, 0, 0], [1, 0, 0]), 1);
@@ -22,57 +37,50 @@ test("geocentric solar incidence is noon one and terminator/midnight zero", () =
   assert.equal(getSubSatelliteSolarIncidence([1, 0, 0], [-1, 0, 0]), 0);
 });
 
-test("binary nadir visibility covers center edge corner and outer ring only", () => {
-  const exposed = (x: number, z: number) => outer.filter((pixel) =>
-    isPixelCenterExposedToNadir(pixel, x, z),
-  );
-  assert.equal(exposed(0, 0).length, 0);
-  assert.equal(exposed(1, 0).length, 18);
-  assert.equal(exposed(1, -1).length, 26);
-  assert.equal(getNadirExposureFraction(outer, 1, 0), 18 / 35);
-  assert.equal(isPixelCenterExposedToNadir(inner, 1, -1), false);
+test("physical theta identifies only the pixbkg outer crown", () => {
+  assert.ok(outer.every(isOuterCrownModule));
+  assert.equal(isOuterCrownModule(inner), false);
+  assert.equal(isModuleCenterExposedToNadir(inner, 1, -1), false);
 });
 
-test("nightside and inner pixels have no Earth support", () => {
-  for (const [x, z] of [[0, 0], [1, 0], [1, -1]] as const) {
-    assert.ok(outer.every((pixel) =>
-      getExposedEarthAlbedoWeight(pixel, 0, 0, 1, x, z) === 0,
-    ));
-  }
-  assert.equal(getExposedEarthAlbedoWeight(inner, 1, 0, 1, 1, -1), 0);
-  assert.ok(
-    getExposedEarthAlbedoWeight(outer[0], 1e-6, 0, 1, 1, 0) > 0,
+test("point-center nadir visibility follows mount placement", () => {
+  const exposed = (x: number, z: number) => outer.filter((module) =>
+    isModuleCenterExposedToNadir(module, x, z)
   );
+  assert.equal(exposed(0, 0).length, 0);
+  assert.ok(exposed(1, 0).length > 0 && exposed(1, 0).length < outer.length);
+  assert.ok(exposed(1, -1).length > exposed(1, 0).length);
+  assert.equal(
+    getNadirExposureFraction(outer, 1, 0),
+    exposed(1, 0).length / outer.length,
+  );
+});
+
+test("nightside and inner modules have no Earth support", () => {
+  assert.ok(outer.every((module) =>
+    getExposedEarthAlbedoWeight(module, 0, 0, 1, 1, -1) === 0
+  ));
+  assert.equal(getExposedEarthAlbedoWeight(inner, 1, 0, 1, 1, -1), 0);
+  const exposedOuter = outer.find((module) =>
+    isModuleCenterExposedToNadir(module, 1, 0)
+  );
+  assert.ok(exposedOuter);
+  assert.ok(getExposedEarthAlbedoWeight(exposedOuter, 1e-6, 0, 1, 1, 0) > 0);
 });
 
 test("sunlit Earth reaches a mount-dependent subset of the outer crown only", () => {
-  const supportedSlots = (mountX: number, mountZ: number) =>
-    outer
-      .map((pixel, slot) => ({
-        slot,
-        weight: getExposedEarthAlbedoWeight(
-          pixel,
-          0.8,
-          Math.PI / 5,
-          0.9,
-          mountX,
-          mountZ,
-        ),
-      }))
-      .filter(({ weight }) => weight > 0)
-      .map(({ slot }) => slot);
-
-  const centered = supportedSlots(0, 0);
-  const edge = supportedSlots(1, 0);
-  const oppositeEdge = supportedSlots(-1, 0);
-  const corner = supportedSlots(1, -1);
-
-  assert.deepEqual(centered, []);
-  assert.ok(edge.length > 0 && edge.length < outer.length);
-  assert.ok(corner.length > edge.length && corner.length < outer.length);
-  assert.notDeepEqual(edge, oppositeEdge);
-  assert.equal(
-    getExposedEarthAlbedoWeight(inner, 0.8, 0, 0.9, 1, -1),
-    0,
+  const supported = (mountX: number, mountZ: number) => outer.filter((module) =>
+    getExposedEarthAlbedoWeight(
+      module,
+      0.8,
+      Math.PI / 5,
+      0.9,
+      mountX,
+      mountZ,
+    ) > 0
   );
+  assert.deepEqual(supported(0, 0), []);
+  assert.ok(supported(1, 0).length > 0);
+  assert.ok(supported(1, -1).length > supported(1, 0).length);
+  assert.equal(getExposedEarthAlbedoWeight(inner, 0.8, 0, 0.9, 1, -1), 0);
 });

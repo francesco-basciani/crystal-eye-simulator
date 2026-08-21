@@ -74,7 +74,9 @@ import {
   getExposedEarthAlbedoWeight,
   getNadirExposureFraction,
   getSubSatelliteSolarIncidence,
+  isOuterCrownModule,
 } from "./lib/earth-albedo-occlusion";
+import { getMountSkyVisibility } from "./lib/payload-mount-visibility";
 import { getSmoothAngularAcceptance } from "./lib/angular-acceptance";
 import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
 import {
@@ -472,81 +474,55 @@ function getBurstFootprint(
   );
 }
 
-function getMountEdgeExposure(
-  sphereSlot: number,
+function getMountAlbedoTransmission(
+  geometry: DetectorGeometryV2R8Candidate | null,
   mountX: number,
   mountZ: number,
 ) {
-  const pixel = PIXEL_LAYOUT[sphereSlot];
-  const satelliteHalfSizeCm = 30;
-  const detectorRadiusCm = 15;
-  const centerX = mountX * satelliteHalfSizeCm;
-  const centerZ = mountZ * satelliteHalfSizeCm;
-  const rimX = centerX + Math.cos(pixel.angle) * detectorRadiusCm;
-  const rimZ = centerZ + Math.sin(pixel.angle) * detectorRadiusCm;
-  const clearanceCm = Math.min(
-    satelliteHalfSizeCm - Math.abs(rimX),
-    satelliteHalfSizeCm - Math.abs(rimZ),
-  );
-  if (clearanceCm <= 0) return 1;
-  return THREE.MathUtils.clamp(Math.exp(-clearanceCm / 4.5) * 0.12, 0.015, 1);
-}
-
-function getMountSkyVisibility(
-  sphereSlot: number,
-  mountX: number,
-  mountZ: number,
-) {
-  const horizonWeight = PIXEL_LAYOUT[sphereSlot].radius ** 3.4;
-  return THREE.MathUtils.lerp(
-    1,
-    getMountEdgeExposure(sphereSlot, mountX, mountZ),
-    horizonWeight,
-  );
-}
-
-function getMountAlbedoTransmission(mountX: number, mountZ: number) {
+  if (!geometry) return 0;
   return getNadirExposureFraction(
-    PIXEL_LAYOUT.map((pixel) => ({
-      ring: pixel.ring,
-      outermostRing: PIXEL_RING_COUNTS.length - 1,
-      angleRadians: pixel.angle,
-    })),
+    geometry.modules,
     mountX,
     mountZ,
   );
 }
 
-function getMountHorizonVisibility(mountX: number, mountZ: number) {
-  const horizonPixels = PIXEL_LAYOUT.filter((pixel) => pixel.ring >= 5);
-  return (
-    horizonPixels.reduce(
-      (sum, pixel) =>
-        sum + getMountSkyVisibility(pixel.index, mountX, mountZ),
-      0,
-    ) / horizonPixels.length
-  );
+function getMountHorizonVisibility(
+  geometry: DetectorGeometryV2R8Candidate | null,
+  mountX: number,
+  mountZ: number,
+) {
+  if (!geometry) return 1;
+  let weightedVisibility = 0;
+  let totalWeight = 0;
+  geometry.modules.forEach((detectorModule) => {
+    const normal = detectorModule.normal;
+    const horizonWeight = Math.hypot(normal[0], normal[2]) ** 3.4;
+    weightedVisibility += horizonWeight *
+      getMountSkyVisibility(detectorModule, mountX, mountZ);
+    totalWeight += horizonWeight;
+  });
+  return totalWeight > 0 ? weightedVisibility / totalWeight : 0;
 }
 
-function getMountEffectiveFov(mountX: number, mountZ: number) {
-  return 92 + getMountHorizonVisibility(mountX, mountZ) * 38;
+function getMountEffectiveFov(
+  geometry: DetectorGeometryV2R8Candidate | null,
+  mountX: number,
+  mountZ: number,
+) {
+  return 92 + getMountHorizonVisibility(geometry, mountX, mountZ) * 38;
 }
 
 function getEarthAlbedoResponse(
-  sphereSlot: number,
+  detectorModule: DetectorGeometryV2R8Candidate["modules"][number],
   illumination: number,
   azimuth: number,
   directional: number,
   mountX = 0,
   mountZ = 0,
 ) {
-  const pixel = PIXEL_LAYOUT[sphereSlot];
   return getExposedEarthAlbedoWeight(
-    {
-      ring: pixel.ring,
-      outermostRing: PIXEL_RING_COUNTS.length - 1,
-      angleRadians: pixel.angle,
-    },
+    detectorModule,
     illumination,
     azimuth,
     directional,
@@ -563,7 +539,6 @@ function getDirectionalPixelWeights(
   direction: [number, number, number],
   boresight: [number, number, number],
   geometry: DetectorGeometryV2R8Candidate,
-  sphereSlots: readonly number[],
   mountX: number,
   mountZ: number,
 ) {
@@ -572,11 +547,14 @@ function getDirectionalPixelWeights(
     .invert();
   const localDirection = new THREE.Vector3().fromArray(direction)
     .applyQuaternion(inverseOrientation).normalize();
-  const normals = getV2R8CandidateNormals(geometry);
-  return normals.map((normal, pixelId) => Math.max(
-    0,
-    normal[0] * localDirection.x + normal[1] * localDirection.y + normal[2] * localDirection.z,
-  ) ** 2 * getMountSkyVisibility(sphereSlots[pixelId], mountX, mountZ));
+  return geometry.modules.map((detectorModule) => {
+    const normal = detectorModule.normal;
+    return Math.max(
+      0,
+      normal[0] * localDirection.x + normal[1] * localDirection.y +
+        normal[2] * localDirection.z,
+    ) ** 2 * getMountSkyVisibility(detectorModule, mountX, mountZ);
+  });
 }
 
 function createDetectorExpectedResponse({
@@ -622,14 +600,12 @@ function createDetectorExpectedResponse({
   }
   const pixelCount = configuration.pixels.length;
   const physicalGeometry = createV2R8CandidateDetectorGeometry(pixelBackground.records);
-  const sphereSlots = getV2R8CandidateSphereSlots(physicalGeometry);
   const sunAllocation = distributeSupportedTotal(
     rateToExpectedCountsPerBin(sunRateCountsPerSecond),
     getDirectionalPixelWeights(
       sunDirection,
       boresight,
       physicalGeometry,
-      sphereSlots,
       mountX,
       mountZ,
     ),
@@ -640,14 +616,13 @@ function createDetectorExpectedResponse({
       moonDirection,
       boresight,
       physicalGeometry,
-      sphereSlots,
       mountX,
       mountZ,
     ),
   );
   const earthWeights = Array.from({ length: pixelCount }, (_, pixelId) =>
     getEarthAlbedoResponse(
-      sphereSlots[pixelId],
+      physicalGeometry.modules[pixelId],
       earthIllumination,
       earthAlbedoAzimuth,
       earthAlbedoDirectional,
@@ -809,9 +784,11 @@ function sceneDirectionToEquatorial(direction: [number, number, number]) {
 function getMountedDirectionVisibility(
   direction: [number, number, number],
   boresight: [number, number, number],
+  geometry: DetectorGeometryV2R8Candidate | null,
   mountX: number,
   mountZ: number,
 ) {
+  if (!geometry) return 1;
   const inverseOrientation = new THREE.Quaternion()
     .setFromUnitVectors(
       new THREE.Vector3(0, 1, 0),
@@ -824,14 +801,16 @@ function getMountedDirectionVisibility(
     .normalize();
   let weightedVisibility = 0;
   let totalWeight = 0;
-  PIXEL_NORMALS.forEach((normal, index) => {
+  geometry.modules.forEach((detectorModule) => {
+    const normal = detectorModule.normal;
     const weight = Math.max(
       0,
       normal[0] * localDirection.x +
       normal[1] * localDirection.y +
       normal[2] * localDirection.z,
     ) ** 2;
-    weightedVisibility += weight * getMountSkyVisibility(index, mountX, mountZ);
+    weightedVisibility += weight *
+      getMountSkyVisibility(detectorModule, mountX, mountZ);
     totalWeight += weight;
   });
   return totalWeight > 0 ? weightedVisibility / totalWeight : 0;
@@ -953,20 +932,28 @@ function getMountedSourceRate(
   direction: [number, number, number],
   boresight: [number, number, number],
   peakRateCountsPerSecond: number,
+  geometry: DetectorGeometryV2R8Candidate | null,
   mountX: number,
   mountZ: number,
 ) {
   const acceptance = getSmoothAngularAcceptance(
     separationDeg,
-    getMountEffectiveFov(mountX, mountZ) / 2,
+    getMountEffectiveFov(geometry, mountX, mountZ) / 2,
     SOURCE_EDGE_ROLLOFF_DEG,
   );
   return peakRateCountsPerSecond * acceptance *
-    getMountedDirectionVisibility(direction, boresight, mountX, mountZ);
+    getMountedDirectionVisibility(
+      direction,
+      boresight,
+      geometry,
+      mountX,
+      mountZ,
+    );
 }
 
 function getMountedSunNoise(
   celestial: CelestialGeometry,
+  geometry: DetectorGeometryV2R8Candidate | null,
   mountX: number,
   mountZ: number,
 ) {
@@ -975,6 +962,7 @@ function getMountedSunNoise(
     celestial.sunDirection,
     celestial.satelliteDirection,
     DIRECT_SUN_BACKGROUND_RATE,
+    geometry,
     mountX,
     mountZ,
   );
@@ -982,6 +970,7 @@ function getMountedSunNoise(
 
 function getMountedMoonNoise(
   celestial: CelestialGeometry,
+  geometry: DetectorGeometryV2R8Candidate | null,
   mountX: number,
   mountZ: number,
 ) {
@@ -990,30 +979,18 @@ function getMountedMoonNoise(
     celestial.moonDirection,
     celestial.satelliteDirection,
     22 * (0.3 + 0.7 * celestial.moonPhase),
+    geometry,
     mountX,
     mountZ,
   );
 }
 
 const INITIAL_CELESTIAL = getCelestialGeometry(ECI_EPHEMERIS_INITIAL_SAMPLE);
-const INITIAL_MOUNT_SUN_NOISE = getMountedSunNoise(INITIAL_CELESTIAL, 0, 0);
-const INITIAL_MOUNT_MOON_NOISE = getMountedMoonNoise(INITIAL_CELESTIAL, 0, 0);
+const INITIAL_MOUNT_SUN_NOISE = getMountedSunNoise(INITIAL_CELESTIAL, null, 0, 0);
+const INITIAL_MOUNT_MOON_NOISE = getMountedMoonNoise(INITIAL_CELESTIAL, null, 0, 0);
 const INITIAL_MOUNT_ALBEDO_NOISE =
-  INITIAL_CELESTIAL.earthAlbedoNoise * getMountAlbedoTransmission(0, 0);
-const DEFAULT_PIXEL_SPHERE_SLOTS = getConfiguredPixelSphereSlots(
-  DEFAULT_PIXEL_CONFIGURATION,
-);
-const INITIAL_DETECTOR_HITS = PIXEL_LAYOUT.map((pixel) => {
-  const response = getEarthAlbedoResponse(
-    DEFAULT_PIXEL_SPHERE_SLOTS[pixel.index],
-    INITIAL_CELESTIAL.earthIllumination,
-    INITIAL_CELESTIAL.earthAlbedoAzimuth,
-    INITIAL_CELESTIAL.earthAlbedoDirectional,
-  );
-  return response > 0
-    ? Math.max(1, Math.round((response * INITIAL_CELESTIAL.earthAlbedoNoise) / 18))
-    : 0;
-});
+  INITIAL_CELESTIAL.earthAlbedoNoise * getMountAlbedoTransmission(null, 0, 0);
+const INITIAL_DETECTOR_HITS = PIXEL_LAYOUT.map(() => 0);
 
 const INITIAL_TELEMETRY: Telemetry = {
   observed: 0,
@@ -4172,24 +4149,38 @@ function PixelConfigurationEditor({
 function PayloadPlacementPanel({
   mountX,
   mountZ,
+  physicalGeometry,
   onMountChange,
   onClose,
 }: {
   mountX: number;
   mountZ: number;
+  physicalGeometry: DetectorGeometryV2R8Candidate | null;
   onMountChange: (x: number, z: number) => void;
   onClose: () => void;
 }) {
   const placementStats = useMemo(() => {
-    const horizonVisibility = getMountHorizonVisibility(mountX, mountZ);
-    const earthExposure = getMountAlbedoTransmission(mountX, mountZ);
+    const horizonVisibility = getMountHorizonVisibility(
+      physicalGeometry,
+      mountX,
+      mountZ,
+    );
+    const earthExposure = getMountAlbedoTransmission(
+      physicalGeometry,
+      mountX,
+      mountZ,
+    );
+    const outerCrownCount = physicalGeometry?.modules.filter(
+      isOuterCrownModule,
+    ).length ?? 0;
     return {
-      effectiveFov: getMountEffectiveFov(mountX, mountZ),
+      effectiveFov: getMountEffectiveFov(physicalGeometry, mountX, mountZ),
       earthExposure,
-      exposedOuterPixels: Math.round(earthExposure * PIXEL_RING_COUNTS.at(-1)!),
+      exposedOuterPixels: Math.round(earthExposure * outerCrownCount),
+      outerCrownCount,
       horizonVisibility,
     };
-  }, [mountX, mountZ]);
+  }, [mountX, mountZ, physicalGeometry]);
 
   const updateFromPointer = (
     clientX: number,
@@ -4291,7 +4282,7 @@ function PayloadPlacementPanel({
               </div>
               <div>
                 <small>EXPOSED OUTER PIXELS</small>
-                <strong>{placementStats.exposedOuterPixels} / {PIXEL_RING_COUNTS.at(-1)}</strong>
+                <strong>{placementStats.exposedOuterPixels} / {placementStats.outerCrownCount}</strong>
               </div>
             </div>
 
@@ -4299,8 +4290,9 @@ function PayloadPlacementPanel({
               <span><b>Crystal Eye</b> Ø 30 cm dome + 30 cm base</span>
               <span><b>Satellite</b> 60 × 60 cm top surface</span>
               <p>
-                PROVISIONAL binary nadir-ray model. Only outer-ring pixel centers beyond
-                the opaque 60 × 60 cm platform are exposed; no partial area is modeled.
+                Point-center nadir-ray model using the physical pixbkg theta/phi normals.
+                Module centers beyond the opaque 60 × 60 cm platform are exposed; no
+                partial module area is modeled.
               </p>
             </div>
           </div>
@@ -4701,10 +4693,21 @@ export default function Home() {
       orbitAltitudeKm,
       orbitInclinationDeg,
     );
-    const mountedSunNoise = getMountedSunNoise(celestial, mountX, mountZ);
-    const mountedMoonNoise = getMountedMoonNoise(celestial, mountX, mountZ);
+    const mountedSunNoise = getMountedSunNoise(
+      celestial,
+      physicalGeometry,
+      mountX,
+      mountZ,
+    );
+    const mountedMoonNoise = getMountedMoonNoise(
+      celestial,
+      physicalGeometry,
+      mountX,
+      mountZ,
+    );
     const mountedEarthAlbedoNoise =
-      celestial.earthAlbedoNoise * getMountAlbedoTransmission(mountX, mountZ);
+      celestial.earthAlbedoNoise *
+      getMountAlbedoTransmission(physicalGeometry, mountX, mountZ);
     const pixelBackground = backgroundProfileRef.current;
     const activeBursts = activeBurstsRef.current.filter((burst) => burst.ticksRemaining > 0);
     const aggregateSourceCounts = Math.round(activeBursts.reduce(
@@ -4787,6 +4790,7 @@ export default function Home() {
     orbitScenarioMode,
     orbitAltitudeKm,
     orbitInclinationDeg,
+    physicalGeometry,
     simulatorMode,
   ]);
 
@@ -4806,6 +4810,9 @@ export default function Home() {
       const pixelBackground = backgroundProfileRef.current;
       const ephemeris = ephemerisProfileRef.current;
       if (settings.paused || !pixelBackground || !ephemeris) return;
+      const physicalGeometry = createV2R8CandidateDetectorGeometry(
+        pixelBackground.records,
+      );
       const dt = 0.2 * settings.speed;
       const requestedTimestampMs =
         settings.epochMs + (elapsedRef.current + dt) * 1000;
@@ -4838,17 +4845,23 @@ export default function Home() {
       }
       const mountedSunNoise = getMountedSunNoise(
         celestial,
+        physicalGeometry,
         settings.mountX,
         settings.mountZ,
       );
       const mountedMoonNoise = getMountedMoonNoise(
         celestial,
+        physicalGeometry,
         settings.mountX,
         settings.mountZ,
       );
       const mountedEarthAlbedoNoise =
         celestial.earthAlbedoNoise *
-        getMountAlbedoTransmission(settings.mountX, settings.mountZ);
+        getMountAlbedoTransmission(
+          physicalGeometry,
+          settings.mountX,
+          settings.mountZ,
+        );
       const activeBursts = activeBurstsRef.current.filter(
         (burst) => burst.ticksRemaining > 0,
       );
@@ -5263,10 +5276,10 @@ export default function Home() {
       pixelBackground.records,
     );
     const physicalNormals = getV2R8CandidateNormals(physicalGeometry);
-    const physicalSphereSlots = getV2R8CandidateSphereSlots(physicalGeometry);
     const halfFovCosine = Math.cos(
       THREE.MathUtils.degToRad(
         getMountEffectiveFov(
+          physicalGeometry,
           settingsRef.current.mountX,
           settingsRef.current.mountZ,
         ) / 2,
@@ -5277,7 +5290,7 @@ export default function Home() {
       return (
         normal[1] >= halfFovCosine &&
         getMountSkyVisibility(
-          physicalSphereSlots[detectorModule.pixelId],
+          detectorModule,
           settingsRef.current.mountX,
           settingsRef.current.mountZ,
         ) >= 0.12
@@ -5316,7 +5329,7 @@ export default function Home() {
       transmission:
         angularResponse *
         getMountSkyVisibility(
-          physicalSphereSlots[targetPixel],
+          physicalGeometry.modules[targetPixel],
           settingsRef.current.mountX,
           settingsRef.current.mountZ,
         ),
@@ -5409,7 +5422,6 @@ export default function Home() {
       pixelBackground.records,
     );
     const physicalNormals = getV2R8CandidateNormals(physicalGeometry);
-    const physicalSphereSlots = getV2R8CandidateSphereSlots(physicalGeometry);
     let targetPixel = 0;
     let bestDot = -Infinity;
     physicalNormals.forEach((normal, index) => {
@@ -5426,6 +5438,7 @@ export default function Home() {
     const inField =
       separation <=
       getMountEffectiveFov(
+        physicalGeometry,
         settingsRef.current.mountX,
         settingsRef.current.mountZ,
       ) /
@@ -5441,7 +5454,7 @@ export default function Home() {
       transmission: inField
         ? Math.max(0, localSource.y) ** 2 *
           getMountSkyVisibility(
-            physicalSphereSlots[targetPixel],
+            physicalGeometry.modules[targetPixel],
             settingsRef.current.mountX,
             settingsRef.current.mountZ,
           )
@@ -5511,10 +5524,24 @@ export default function Home() {
       orbitInclinationDeg,
     );
     satelliteDirectionRef.current = celestial.satelliteDirection;
-    const mountedSunNoise = getMountedSunNoise(celestial, mountX, mountZ);
-    const mountedMoonNoise = getMountedMoonNoise(celestial, mountX, mountZ);
+    const physicalGeometry = createV2R8CandidateDetectorGeometry(
+      pixelBackground.records,
+    );
+    const mountedSunNoise = getMountedSunNoise(
+      celestial,
+      physicalGeometry,
+      mountX,
+      mountZ,
+    );
+    const mountedMoonNoise = getMountedMoonNoise(
+      celestial,
+      physicalGeometry,
+      mountX,
+      mountZ,
+    );
     const mountedEarthAlbedoNoise =
-      celestial.earthAlbedoNoise * getMountAlbedoTransmission(mountX, mountZ);
+      celestial.earthAlbedoNoise *
+      getMountAlbedoTransmission(physicalGeometry, mountX, mountZ);
     const detectorResponse = createDetectorExpectedResponse({
       mode: settingsRef.current.simulatorMode,
       pixelBackground,
@@ -5600,8 +5627,8 @@ export default function Home() {
   ]);
 
   const effectiveMountFov = useMemo(() => {
-    return getMountEffectiveFov(mountX, mountZ);
-  }, [mountX, mountZ]);
+    return getMountEffectiveFov(physicalGeometry, mountX, mountZ);
+  }, [mountX, mountZ, physicalGeometry]);
   const mountedSunInFov =
     telemetry.sunSeparation < effectiveMountFov / 2 && telemetry.sunNoise > 0;
   const mountedMoonInFov =
@@ -5780,6 +5807,7 @@ export default function Home() {
         <PayloadPlacementPanel
           mountX={mountX}
           mountZ={mountZ}
+          physicalGeometry={physicalGeometry}
           onMountChange={(x, z) => {
             setMountX(THREE.MathUtils.clamp(x, -1, 1));
             setMountZ(THREE.MathUtils.clamp(z, -1, 1));
