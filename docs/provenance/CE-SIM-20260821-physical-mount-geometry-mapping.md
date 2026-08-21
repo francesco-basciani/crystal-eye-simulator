@@ -28,7 +28,6 @@
 ## Files changed
 
 - `app/lib/earth-albedo-occlusion.ts`
-- `app/lib/payload-mount-visibility.ts`
 - `app/page.tsx`
 - `tests/earth-albedo-occlusion.test.ts`
 - `tests/payload-mount-visibility.test.ts`

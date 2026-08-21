@@ -72,11 +72,11 @@ import {
 } from "./lib/detector-geometry-v2r8";
 import {
   getExposedEarthAlbedoWeight,
+  getMountSkyVisibility,
   getNadirExposureFraction,
   getSubSatelliteSolarIncidence,
   isOuterCrownModule,
 } from "./lib/earth-albedo-occlusion";
-import { getMountSkyVisibility } from "./lib/payload-mount-visibility";
 import { getSmoothAngularAcceptance } from "./lib/angular-acceptance";
 import { deriveCelestialReferenceFrameDirections } from "./lib/celestial-reference-frames";
 import {

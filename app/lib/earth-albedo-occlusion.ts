@@ -1,6 +1,8 @@
 export const SATELLITE_PLATFORM_HALF_SIZE_CM = 30;
 export const CRYSTAL_EYE_RADIUS_CM = 15;
 export const OUTER_CROWN_MIN_POLAR_ANGLE_DEG = 80;
+/** Existing engineering attenuation length; requires domain validation. */
+export const MOUNT_EDGE_ATTENUATION_LENGTH_CM = 4.5;
 const OUTER_CROWN_MAX_NORMAL_Y = Math.cos(
   OUTER_CROWN_MIN_POLAR_ANGLE_DEG * Math.PI / 180,
 );
@@ -60,6 +62,38 @@ export function getProjectedModuleCenterCm(
     z: mountZ * SATELLITE_PLATFORM_HALF_SIZE_CM +
       module.normal[2] * CRYSTAL_EYE_RADIUS_CM,
   });
+}
+
+export function getMountEdgeExposure(
+  module: NadirModuleGeometry,
+  mountX: number,
+  mountZ: number,
+): number {
+  const center = getProjectedModuleCenterCm(module, mountX, mountZ);
+  const clearanceCm = Math.min(
+    SATELLITE_PLATFORM_HALF_SIZE_CM - Math.abs(center.x),
+    SATELLITE_PLATFORM_HALF_SIZE_CM - Math.abs(center.z),
+  );
+  return Math.max(
+    0.015,
+    Math.min(
+      1,
+      Math.exp(
+        -Math.max(0, clearanceCm) / MOUNT_EDGE_ATTENUATION_LENGTH_CM,
+      ),
+    ),
+  );
+}
+
+export function getMountSkyVisibility(
+  module: NadirModuleGeometry,
+  mountX: number,
+  mountZ: number,
+): number {
+  const horizontal = Math.hypot(module.normal[0], module.normal[2]);
+  const horizonWeight = horizontal ** 3.4;
+  return 1 + (getMountEdgeExposure(module, mountX, mountZ) - 1) *
+    horizonWeight;
 }
 
 /** Point-center visibility for a vertical nadir ray; partial module area is unavailable. */

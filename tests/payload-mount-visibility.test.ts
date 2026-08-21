@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getMountSkyVisibility } from "../app/lib/payload-mount-visibility.ts";
-import type { NadirModuleGeometry } from "../app/lib/earth-albedo-occlusion.ts";
+import {
+  getMountSkyVisibility,
+  type NadirModuleGeometry,
+} from "../app/lib/earth-albedo-occlusion.ts";
 
 function moduleAt(pixelId: number, thetaDeg: number, phiDeg: number): NadirModuleGeometry {
   const theta = thetaDeg * Math.PI / 180;
