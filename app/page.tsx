@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Activity,
+  ChevronDown,
   ChevronRight,
   CircleDot,
   Download,
@@ -4338,6 +4338,12 @@ export default function Home() {
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [detectorExpanded, setDetectorExpanded] = useState(false);
   const [historyView, setHistoryView] = useState<"events" | null>(null);
+  const [collapsedRailPanels, setCollapsedRailPanels] = useState({
+    burst: false,
+    celestial: false,
+    detector: false,
+    diagnostics: true,
+  });
   const [simulatorMode, setSimulatorMode] =
     useState<SimulatorMode>("reference");
   const [testBurstDraft, setTestBurstDraft] = useState<TestBurstDraft>({
@@ -5850,139 +5856,10 @@ export default function Home() {
 
       <section className="workspace">
         <aside className="control-panel left-panel">
-          <form
-            className="burst-inline-panel burst-left-panel"
-            onSubmit={(event) => {
-              event.preventDefault();
-              injectTestBurst();
-            }}
-          >
-            <div className="burst-inline-header">
-              <div>
-                <small>TEST BURST CONFIGURATION</small>
-                <strong>Equatorial source · current epoch</strong>
-              </div>
-              <button type="button" onClick={aimTestBurstAtBoresight}>
-                AIM BORESIGHT
-              </button>
-            </div>
-
-            <div className="burst-inline-fields burst-coordinate-fields">
-              <label>
-                <span>RIGHT ASCENSION · RA</span>
-                <div>
-                  <input
-                    type="number"
-                    min="0"
-                    max="360"
-                    step="0.001"
-                    value={testBurstDraft.raDeg}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        raDeg: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>deg</em>
-                </div>
-              </label>
-              <label>
-                <span>DECLINATION · DEC</span>
-                <div>
-                  <input
-                    type="number"
-                    min="-90"
-                    max="90"
-                    step="0.001"
-                    value={testBurstDraft.decDeg}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        decDeg: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>deg</em>
-                </div>
-              </label>
-            </div>
-
-            <div className="burst-inline-fields burst-response-fields">
-              <label>
-                <span>PEAK IMPACT</span>
-                <div>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={testBurstDraft.intensity}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        intensity: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>%</em>
-                </div>
-              </label>
-              <label>
-                <span>FOOTPRINT</span>
-                <div>
-                  <input
-                    type="number"
-                    min="1"
-                    max="60"
-                    step="1"
-                    value={testBurstDraft.spreadPixels}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        spreadPixels: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>px</em>
-                </div>
-              </label>
-              <label>
-                <span>DURATION</span>
-                <div>
-                  <input
-                    type="number"
-                    min="0.2"
-                    max="10"
-                    step="0.2"
-                    value={testBurstDraft.durationSeconds}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        durationSeconds: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>s</em>
-                </div>
-              </label>
-            </div>
-
-            <div className="burst-inline-scale">
-              <span>0</span>
-              <i />
-              <span>100</span>
-            </div>
-
-            <div className="burst-inline-actions">
-              <button type="button" className="random-grb-mini" onClick={() => injectGRB()}>
-                <Sparkles size={12} /> RANDOM GRB
-              </button>
-              <button type="submit" className="inject-test-inline">
-                <Sparkles size={13} /> INJECT TEST BURST
-              </button>
-            </div>
-          </form>
+          <div className="rail-heading">
+            <small>OBSERVATION CONTEXT</small>
+            <strong>What Crystal Eye can see</strong>
+          </div>
           <div className="left-sensor-slot">
             <SensorView
               satelliteDirection={telemetry.satelliteDirection}
@@ -6013,15 +5890,30 @@ export default function Home() {
             />
           </div>
 
-          <div className="celestial-card">
-            <div className="chart-header">
+          <section className={`celestial-card collapsible-panel ${collapsedRailPanels.celestial ? "is-collapsed" : ""}`}>
+            <div className="chart-header unified-panel-header">
               <div>
                 <small>CELESTIAL INTERFERENCE</small>
                 <strong>Sun, Moon, and Earth albedo</strong>
               </div>
-              <span>FOV {effectiveMountFov.toFixed(0)}°</span>
+              <div className="panel-header-actions">
+                <span className="panel-header-badge">FOV {effectiveMountFov.toFixed(0)}°</span>
+                <button
+                  type="button"
+                  className="panel-collapse-button"
+                  aria-expanded={!collapsedRailPanels.celestial}
+                  aria-label={`${collapsedRailPanels.celestial ? "Expand" : "Collapse"} celestial interference`}
+                  onClick={() => setCollapsedRailPanels((current) => ({
+                    ...current,
+                    celestial: !current.celestial,
+                  }))}
+                >
+                  <ChevronDown size={15} />
+                </button>
+              </div>
             </div>
-            <div className="celestial-rows">
+            <div className="collapsible-panel-body">
+              <div className="celestial-rows">
               <div className={mountedSunInFov ? "in-fov sun" : ""}>
                 <Sun size={16} />
                 <span>
@@ -6047,13 +5939,14 @@ export default function Home() {
                 </span>
                 <em>{telemetry.earthAlbedoNoise > 0.001 ? `+${telemetry.earthAlbedoNoise.toFixed(1)} c/s` : "0 c/s"}</em>
               </div>
+              </div>
+              <p>
+                PROVISIONAL derived response · {simulatorMode === "simulation"
+                  ? "visible Sun + Moon + Earth only; Rito excluded"
+                  : "Rito reference + visible Sun + Moon + Earth"}. Not flight telemetry or a calibrated detector model.
+              </p>
             </div>
-            <p>
-              PROVISIONAL derived response · {simulatorMode === "simulation"
-                ? "visible Sun + Moon + Earth only; Rito excluded"
-                : "Rito reference + visible Sun + Moon + Earth"}. Not flight telemetry or a calibrated detector model.
-            </p>
-          </div>
+          </section>
         </aside>
 
         <section className="simulation-stage">
@@ -6176,18 +6069,203 @@ export default function Home() {
         </section>
 
         <aside className="control-panel right-panel">
-          <a
-            className="panel-heading history-launch"
-            href={`${PUBLIC_BASE_PATH}/photon-history/`}
-            aria-label="Open photon stream history table"
+          <div className="rail-heading">
+            <small>INJECTION &amp; SCIENCE RESPONSE</small>
+            <strong>Configure, observe, and reconstruct</strong>
+          </div>
+
+          <form
+            className={`burst-inline-panel collapsible-panel ${collapsedRailPanels.burst ? "is-collapsed" : ""}`}
+            onSubmit={(event) => {
+              event.preventDefault();
+              injectTestBurst();
+            }}
           >
-            <span>PHOTON STREAM</span>
-            <span className="history-launch-icon">
-              <small>{photonRecordCount.toLocaleString("en-US")} ROWS</small>
-              <Activity size={17} />
-              <ChevronRight size={13} />
-            </span>
-          </a>
+            <div className="burst-inline-header unified-panel-header">
+              <div>
+                <small>TEST BURST CONFIGURATION</small>
+                <strong>Equatorial source · current epoch</strong>
+              </div>
+              <div className="panel-header-actions">
+                <button type="button" className="panel-header-action" onClick={aimTestBurstAtBoresight}>
+                  AIM BORESIGHT
+                </button>
+                <button
+                  type="button"
+                  className="panel-collapse-button"
+                  aria-expanded={!collapsedRailPanels.burst}
+                  aria-label={`${collapsedRailPanels.burst ? "Expand" : "Collapse"} test burst configuration`}
+                  onClick={() => setCollapsedRailPanels((current) => ({
+                    ...current,
+                    burst: !current.burst,
+                  }))}
+                >
+                  <ChevronDown size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div className="collapsible-panel-body burst-panel-body">
+              <div className="burst-inline-fields burst-coordinate-fields">
+                <label>
+                  <span>RIGHT ASCENSION · RA</span>
+                  <div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="360"
+                      step="0.001"
+                      value={testBurstDraft.raDeg}
+                      onChange={(event) => setTestBurstDraft((current) => ({
+                        ...current,
+                        raDeg: Number(event.target.value),
+                      }))}
+                    />
+                    <em>deg</em>
+                  </div>
+                </label>
+                <label>
+                  <span>DECLINATION · DEC</span>
+                  <div>
+                    <input
+                      type="number"
+                      min="-90"
+                      max="90"
+                      step="0.001"
+                      value={testBurstDraft.decDeg}
+                      onChange={(event) => setTestBurstDraft((current) => ({
+                        ...current,
+                        decDeg: Number(event.target.value),
+                      }))}
+                    />
+                    <em>deg</em>
+                  </div>
+                </label>
+              </div>
+
+              <div className="burst-inline-fields burst-response-fields">
+                <label>
+                  <span>PEAK IMPACT</span>
+                  <div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={testBurstDraft.intensity}
+                      onChange={(event) => setTestBurstDraft((current) => ({
+                        ...current,
+                        intensity: Number(event.target.value),
+                      }))}
+                    />
+                    <em>%</em>
+                  </div>
+                </label>
+                <label>
+                  <span>FOOTPRINT</span>
+                  <div>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      step="1"
+                      value={testBurstDraft.spreadPixels}
+                      onChange={(event) => setTestBurstDraft((current) => ({
+                        ...current,
+                        spreadPixels: Number(event.target.value),
+                      }))}
+                    />
+                    <em>px</em>
+                  </div>
+                </label>
+                <label>
+                  <span>DURATION</span>
+                  <div>
+                    <input
+                      type="number"
+                      min="0.2"
+                      max="10"
+                      step="0.2"
+                      value={testBurstDraft.durationSeconds}
+                      onChange={(event) => setTestBurstDraft((current) => ({
+                        ...current,
+                        durationSeconds: Number(event.target.value),
+                      }))}
+                    />
+                    <em>s</em>
+                  </div>
+                </label>
+              </div>
+
+              <div className="burst-inline-scale">
+                <span>0</span>
+                <i />
+                <span>100</span>
+              </div>
+
+              <div className="burst-inline-actions">
+                <button type="button" className="random-grb-mini" onClick={() => injectGRB()}>
+                  <Sparkles size={12} /> RANDOM GRB
+                </button>
+                <button type="submit" className="inject-test-inline">
+                  <Sparkles size={13} /> INJECT TEST BURST
+                </button>
+              </div>
+            </div>
+          </form>
+
+          <section className={`detector-section collapsible-panel ${collapsedRailPanels.detector ? "is-collapsed" : ""}`}>
+            <div className="detector-section-header unified-panel-header">
+              <div>
+                <small>DETECTOR RESPONSE</small>
+                <strong>Configured planar pixel map · actual expected response / 0.2 s</strong>
+              </div>
+              <div className="panel-header-actions">
+                <button
+                  type="button"
+                  className="detector-expand-button"
+                  onClick={() => setDetectorExpanded(true)}
+                  aria-label="Open enlarged detector map"
+                  title="Open enlarged detector map"
+                >
+                  <Maximize2 size={13} />
+                </button>
+                <button
+                  type="button"
+                  className="panel-collapse-button"
+                  aria-expanded={!collapsedRailPanels.detector}
+                  aria-label={`${collapsedRailPanels.detector ? "Expand" : "Collapse"} detector response`}
+                  onClick={() => setCollapsedRailPanels((current) => ({
+                    ...current,
+                    detector: !current.detector,
+                  }))}
+                >
+                  <ChevronDown size={15} />
+                </button>
+              </div>
+            </div>
+            <div className="collapsible-panel-body detector-panel-body">
+              <div className="detector-response-summary" aria-live="polite">
+                <span><small>SELECTED PIXEL</small><strong>PIXEL ID {selectedConfiguredPixel.pixelId}</strong></span>
+                <span><small>TOTAL RESPONSE</small><strong>{selectedExpectedCounts.toFixed(4)}</strong></span>
+                <span><small>BACKGROUND</small><strong>{selectedBackgroundCounts.toFixed(4)}</strong></span>
+                <span><small>EARTH ALBEDO</small><strong>{selectedEarthExpectedCount.toFixed(4)}</strong></span>
+              </div>
+              <DetectorMap
+                values={telemetry.detector}
+                hits={telemetry.detectorHits}
+                excitationExpectedCounts={telemetry.detectorExcitationExpectedCounts}
+                earthExpectedCounts={telemetry.detectorEarthExpectedCounts}
+                backgroundRates={telemetry.detectorBackgroundRates}
+                backgroundExpectedCounts={telemetry.detectorBackgroundExpectedCounts}
+                grbActive={telemetry.grbActive}
+                burstPixelGroups={telemetry.burstPixelGroups}
+                pixelConfiguration={pixelConfiguration}
+                selectedPixelId={selectedPixel}
+                onSelect={selectPixel}
+              />
+            </div>
+          </section>
 
           <AdaptiveAnalysisPanel
             points={analysisPoints}
@@ -6195,78 +6273,60 @@ export default function Home() {
             seed={DEFAULT_OBSERVATION_SEED}
             onModeChange={changeSimulatorMode}
             reconstruction={reconstructionDisplay}
+            historyHref={`${PUBLIC_BASE_PATH}/photon-history/`}
+            historyRowCount={photonRecordCount}
           />
 
-          <div
-            className={`persistence-status ${persistenceStatus}`}
-            role={persistenceStatus === "not-persisting" ? "alert" : "status"}
-          >
-            <small>PHOTON ARCHIVE · INDEXEDDB</small>
-            <strong>
-              {persistenceStatus === "persisting"
-                ? "PERSISTING"
-                : persistenceStatus === "initializing"
-                  ? "INITIALIZING…"
-                  : `NOT PERSISTING · ${persistenceError ?? "storage unavailable"}`}
-            </strong>
-          </div>
-
-          <div
-            className={`background-model-status ${
-              backgroundProfileError ? "error" : backgroundProfile ? "ready" : "loading"
-            }`}
-            role={backgroundProfileError ? "alert" : "status"}
-          >
-            <small>BACKGROUND PROFILE</small>
-            <strong>
-              {backgroundProfileError
-                ? `UNAVAILABLE · ${backgroundProfileError}`
-                : backgroundProfile
-                  ? `${backgroundProfile.totalRateCountsPerSecond.toFixed(4)} c/s · 126 pixels · deterministic`
-                  : "VALIDATING pixbkg.txt…"}
-            </strong>
-          </div>
-
-          <div className="detector-section">
-            <div className="detector-section-header">
+          <section className={`diagnostics-panel collapsible-panel ${collapsedRailPanels.diagnostics ? "is-collapsed" : ""}`}>
+            <div className="unified-panel-header diagnostics-header">
               <div>
-                <small>DETECTOR RESPONSE</small>
-                <strong>Configured planar pixel map · actual expected response / 0.2 s</strong>
+                <small>DATA &amp; ARCHIVE STATUS</small>
+                <strong>Persistence and background inputs</strong>
               </div>
               <button
                 type="button"
-                className="detector-expand-button"
-                onClick={() => setDetectorExpanded(true)}
-                aria-label="Open enlarged detector map"
-                title="Open enlarged detector map"
+                className="panel-collapse-button"
+                aria-expanded={!collapsedRailPanels.diagnostics}
+                aria-label={`${collapsedRailPanels.diagnostics ? "Expand" : "Collapse"} data and archive status`}
+                onClick={() => setCollapsedRailPanels((current) => ({
+                  ...current,
+                  diagnostics: !current.diagnostics,
+                }))}
               >
-                <Maximize2 size={13} />
+                <ChevronDown size={15} />
               </button>
             </div>
-            <div className="detector-response-summary" aria-live="polite">
-              <span><small>SELECTED PIXEL</small><strong>PIXEL ID {selectedConfiguredPixel.pixelId}</strong></span>
-              <span><small>TOTAL RESPONSE</small><strong>{selectedExpectedCounts.toFixed(4)}</strong></span>
-              <span><small>BACKGROUND</small><strong>{selectedBackgroundCounts.toFixed(4)}</strong></span>
-              <span><small>EARTH ALBEDO</small><strong>{selectedEarthExpectedCount.toFixed(4)}</strong></span>
+            <div className="collapsible-panel-body diagnostics-panel-body">
+              <div
+                className={`persistence-status ${persistenceStatus}`}
+                role={persistenceStatus === "not-persisting" ? "alert" : "status"}
+              >
+                <small>PHOTON ARCHIVE · INDEXEDDB</small>
+                <strong>
+                  {persistenceStatus === "persisting"
+                    ? "PERSISTING"
+                    : persistenceStatus === "initializing"
+                      ? "INITIALIZING…"
+                      : `NOT PERSISTING · ${persistenceError ?? "storage unavailable"}`}
+                </strong>
+              </div>
+              <div
+                className={`background-model-status ${
+                  backgroundProfileError ? "error" : backgroundProfile ? "ready" : "loading"
+                }`}
+                role={backgroundProfileError ? "alert" : "status"}
+              >
+                <small>BACKGROUND PROFILE</small>
+                <strong>
+                  {backgroundProfileError
+                    ? `UNAVAILABLE · ${backgroundProfileError}`
+                    : backgroundProfile
+                      ? `${backgroundProfile.totalRateCountsPerSecond.toFixed(4)} c/s · 126 pixels · deterministic`
+                      : "VALIDATING pixbkg.txt…"}
+                </strong>
+              </div>
             </div>
-            <DetectorMap
-              values={telemetry.detector}
-              hits={telemetry.detectorHits}
-              excitationExpectedCounts={
-                telemetry.detectorExcitationExpectedCounts
-              }
-              earthExpectedCounts={telemetry.detectorEarthExpectedCounts}
-              backgroundRates={telemetry.detectorBackgroundRates}
-              backgroundExpectedCounts={
-                telemetry.detectorBackgroundExpectedCounts
-              }
-              grbActive={telemetry.grbActive}
-              burstPixelGroups={telemetry.burstPixelGroups}
-              pixelConfiguration={pixelConfiguration}
-              selectedPixelId={selectedPixel}
-              onSelect={selectPixel}
-            />
-          </div>
+          </section>
         </aside>
       </section>
 

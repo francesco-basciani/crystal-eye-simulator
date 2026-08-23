@@ -41,8 +41,9 @@ test("adaptive analysis and reconstruction belong beside the visible 3D stage", 
   );
   assert.match(
     pageSource.slice(rightPanelStart, rightPanelEnd),
-    /PHOTON STREAM[\s\S]*<AdaptiveAnalysisPanel/,
+    /TEST BURST CONFIGURATION[\s\S]*DETECTOR RESPONSE[\s\S]*<AdaptiveAnalysisPanel[\s\S]*DATA &amp; ARCHIVE STATUS/,
   );
+  assert.match(analysisPanelSource, /PHOTON STREAM · 0\.2 S ACQUISITION/);
   assert.doesNotMatch(pageSource, /<SignalChart|TRANSIENT DETECTED|GRB candidate/);
   assert.match(pageSource, /SYNTHETIC SOURCE ACTIVE/);
   assert.match(pageSource, /simulatorMode === "simulation" \? "Simulation Mode" : "Reference Replay"/);
@@ -65,7 +66,7 @@ test("the right-hand planar map preserves the configurator aspect and geometry",
   assert.match(styles, /\.burst-reconstruction-panel\s*\{/);
   assert.match(
     styles,
-    /@media \(max-height: 900px\) and \(min-width: 901px\)[\s\S]*?\.left-panel \.burst-inline-panel\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*3px 7px;/,
+    /@media \(max-height: 900px\) and \(min-width: 1101px\)[\s\S]*?\.right-panel \.burst-inline-panel\s*\{[\s\S]*?padding:\s*0;/,
   );
   assert.match(pageSource, /"--pixel-x": `\$\{configuredPixel\.x\}%`/);
   assert.match(pageSource, /"--pixel-y": `\$\{configuredPixel\.y\}%`/);
@@ -75,7 +76,7 @@ test("the right-hand planar map preserves the configurator aspect and geometry",
   );
 });
 
-test("burst controls live in the left rail and Geometry opens first", () => {
+test("rails separate observation context from injection and science response", () => {
   const leftPanelStart = pageSource.indexOf(
     '<aside className="control-panel left-panel">',
   );
@@ -90,12 +91,9 @@ test("burst controls live in the left rail and Geometry opens first", () => {
   const leftRail = pageSource.slice(leftPanelStart, simulationStageStart);
   const rightRail = pageSource.slice(rightPanelStart, rightPanelEnd);
 
-  assert.match(leftRail, /TEST BURST CONFIGURATION/);
-  assert.match(
-    leftRail,
-    /TEST BURST CONFIGURATION[\s\S]*<div className="left-sensor-slot">/,
-  );
-  assert.doesNotMatch(rightRail, /TEST BURST CONFIGURATION/);
+  assert.match(leftRail, /OBSERVATION CONTEXT[\s\S]*<div className="left-sensor-slot">[\s\S]*CELESTIAL INTERFERENCE/);
+  assert.doesNotMatch(leftRail, /TEST BURST CONFIGURATION|DETECTOR RESPONSE|<AdaptiveAnalysisPanel/);
+  assert.match(rightRail, /INJECTION &amp; SCIENCE RESPONSE[\s\S]*TEST BURST CONFIGURATION[\s\S]*DETECTOR RESPONSE[\s\S]*<AdaptiveAnalysisPanel/);
   assert.match(pageSource, /useState<SensorViewMode>\("geometry"\)/);
   assert.match(
     pageSource,
@@ -103,8 +101,19 @@ test("burst controls live in the left rail and Geometry opens first", () => {
   );
   assert.match(
     styles,
-    /\.left-panel > \.burst-inline-panel\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?border-bottom:/,
+    /\.collapsible-panel\.is-collapsed > \.collapsible-panel-body\s*\{[\s\S]*?display:\s*none;/,
   );
+});
+
+test("rail window headings share one visible type hierarchy", () => {
+  assert.match(pageSource, /burst-inline-header unified-panel-header/);
+  assert.match(pageSource, /chart-header unified-panel-header/);
+  assert.match(pageSource, /detector-section-header unified-panel-header/);
+  assert.match(analysisPanelSource, /<header className="unified-panel-header">/);
+  assert.match(styles, /\.unified-panel-header,[\s\S]*?\.sensor-view-header\s*\{[\s\S]*?min-height:\s*48px;/);
+  assert.match(styles, /\.unified-panel-header strong,[\s\S]*?\.sensor-view-header strong\s*\{[\s\S]*?font-size:\s*11px;/);
+  assert.match(pageSource, /diagnostics:\s*true/);
+  assert.match(pageSource, /burst:\s*false[\s\S]*?celestial:\s*false[\s\S]*?detector:\s*false/);
 });
 
 test("analysis wiring preserves exposure, separates time warp, and avoids detection claims", () => {
