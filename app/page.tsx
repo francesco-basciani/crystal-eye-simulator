@@ -5996,7 +5996,7 @@ export default function Home() {
             <h2>
               {simulatorMode === "simulation"
                 ? "Crystal Eye Simulator"
-                : "Orbital Observation Replay"}
+                : "Orbital Observation"}
               <em>
                 {orbitScenarioMode === "canonical"
                   ? ` ${telemetry.altitudeKm.toFixed(1)} km`
