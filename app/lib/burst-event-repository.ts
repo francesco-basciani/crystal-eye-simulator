@@ -1,7 +1,27 @@
+import { angularSeparationDeg } from "./burst-direction-truth-score.ts";
+
 export const BURST_EVENT_DATABASE_NAME = "crystal-eye-burst-events";
 export const BURST_EVENT_DATABASE_VERSION = 1;
 export const BURST_EVENT_STORE_NAME = "burstEvents";
 export const BURST_EVENT_PIXEL_COUNT = 126;
+
+export const BURST_COORDINATE_FRAME = "SIMULATOR ECI-LIKE EQUATORIAL";
+export const BURST_COORDINATE_EPOCH = "SIMULATED UTC";
+export const BURST_RA_CONVENTION = "DEGREES [0, 360)";
+export const BURST_DEC_CONVENTION = "DEGREES [-90, +90]";
+
+export type BurstTruthEvaluation = Readonly<{
+  status: "available";
+  raDeg: number;
+  decDeg: number;
+  angularErrorDeg: number;
+}> | Readonly<{
+  status: "unavailable";
+  reason:
+    | "not-injected-source"
+    | "truth-not-retained"
+    | "invalid-direction-data";
+}>;
 
 export type UnavailableLayerReadout = Readonly<{
   status: "unavailable";
@@ -23,7 +43,7 @@ export type BurstPixelReadout = Readonly<{
 }>;
 
 export type BurstDetectionRecordInput = Readonly<{
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   eventKey: string;
   runId: string;
   burstId: number;
@@ -31,13 +51,21 @@ export type BurstDetectionRecordInput = Readonly<{
   simulatedDate: string;
   capturedAtMs: number;
   missionElapsedSeconds: number;
-  classification: "injected-source-reconstruction";
+  classification:
+    | "injected-source-reconstruction"
+    | "telemetry-reconstruction";
   reconstructionMethod: "positive-excess-weighted-centroid-v1";
   reconstructedRaDeg: number;
   reconstructedDecDeg: number;
-  truthRaDeg: number;
-  truthDecDeg: number;
-  truthAngularErrorDeg: number;
+  coordinateFrame?: "simulation-eci-like-equatorial";
+  coordinateEpoch?: "simulated-utc";
+  rightAscensionConvention?: "degrees-[0,360)";
+  declinationConvention?: "degrees-[-90,+90]";
+  truthStatus?: "available" | "unavailable";
+  truthRaDeg: number | null;
+  truthDecDeg: number | null;
+  truthAngularErrorDeg: number | null;
+  truthUnavailableReason?: "not-injected-source" | "truth-not-retained" | null;
   targetPixelId: number;
   configuredIntensityPercent: number;
   transmissionFraction: number;
@@ -54,6 +82,114 @@ export type BurstDetectionRecordInput = Readonly<{
 }>;
 
 export type BurstDetectionRecord = BurstDetectionRecordInput;
+
+export function getBurstTruthEvaluation(
+  record: Pick<
+    BurstDetectionRecord,
+    | "classification"
+    | "truthStatus"
+    | "truthRaDeg"
+    | "truthDecDeg"
+    | "truthAngularErrorDeg"
+    | "truthUnavailableReason"
+    | "reconstructedRaDeg"
+    | "reconstructedDecDeg"
+  >,
+): BurstTruthEvaluation {
+  if (record.classification !== "injected-source-reconstruction") {
+    return Object.freeze({
+      status: "unavailable",
+      reason: "not-injected-source",
+    });
+  }
+  if (
+    record.truthStatus !== "unavailable" &&
+    Number.isFinite(record.truthRaDeg) &&
+    Number.isFinite(record.truthDecDeg) &&
+    isCanonicalEquatorial(record.truthRaDeg as number, record.truthDecDeg as number) &&
+    isCanonicalEquatorial(record.reconstructedRaDeg, record.reconstructedDecDeg)
+  ) {
+    try {
+      return Object.freeze({
+        status: "available",
+        raDeg: record.truthRaDeg as number,
+        decDeg: record.truthDecDeg as number,
+        angularErrorDeg: angularSeparationDeg(
+          {
+            raDeg: record.reconstructedRaDeg,
+            decDeg: record.reconstructedDecDeg,
+          },
+          {
+            raDeg: record.truthRaDeg as number,
+            decDeg: record.truthDecDeg as number,
+          },
+        ),
+      });
+    } catch {
+      return Object.freeze({
+        status: "unavailable",
+        reason: "invalid-direction-data",
+      });
+    }
+  }
+  return Object.freeze({
+    status: "unavailable",
+    reason: record.truthUnavailableReason ?? "truth-not-retained",
+  });
+}
+
+function isCanonicalEquatorial(raDeg: number, decDeg: number): boolean {
+  return Number.isFinite(raDeg) &&
+    raDeg >= 0 &&
+    raDeg < 360 &&
+    Number.isFinite(decDeg) &&
+    decDeg >= -90 &&
+    decDeg <= 90;
+}
+
+function validateBurstDetectionRecord(input: BurstDetectionRecordInput): void {
+  if (!isCanonicalEquatorial(input.reconstructedRaDeg, input.reconstructedDecDeg)) {
+    throw new RangeError("Burst reconstruction coordinates are outside the declared convention.");
+  }
+  if (input.schemaVersion === 2 && (
+    input.coordinateFrame !== "simulation-eci-like-equatorial" ||
+    input.coordinateEpoch !== "simulated-utc" ||
+    input.rightAscensionConvention !== "degrees-[0,360)" ||
+    input.declinationConvention !== "degrees-[-90,+90]"
+  )) {
+    throw new RangeError("Burst schema v2 requires explicit coordinate metadata.");
+  }
+  if (input.classification === "telemetry-reconstruction") {
+    if (
+      input.truthStatus !== "unavailable" ||
+      input.truthRaDeg !== null ||
+      input.truthDecDeg !== null ||
+      input.truthAngularErrorDeg !== null
+    ) {
+      throw new RangeError("Telemetry reconstruction cannot contain injected truth.");
+    }
+    return;
+  }
+  if (
+    input.truthStatus === "unavailable" ||
+    input.truthRaDeg === null ||
+    input.truthDecDeg === null ||
+    input.truthAngularErrorDeg === null ||
+    !isCanonicalEquatorial(input.truthRaDeg, input.truthDecDeg) ||
+    !Number.isFinite(input.truthAngularErrorDeg) ||
+    input.truthAngularErrorDeg < 0 ||
+    input.truthAngularErrorDeg > 180
+  ) {
+    throw new RangeError("Injected-source reconstruction requires valid truth coordinates.");
+  }
+  const recomputed = angularSeparationDeg(
+    { raDeg: input.reconstructedRaDeg, decDeg: input.reconstructedDecDeg },
+    { raDeg: input.truthRaDeg, decDeg: input.truthDecDeg },
+  );
+  if (Math.abs(recomputed - input.truthAngularErrorDeg) > 1e-9) {
+    throw new RangeError("Stored truth angular error is inconsistent with the coordinate pair.");
+  }
+}
 
 export type BurstEventCursor = Readonly<{
   simulatedAtMs: number;
@@ -157,6 +293,7 @@ export class BurstEventRepository {
 
   save(input: BurstDetectionRecordInput): Promise<BurstDetectionRecord> {
     return new Promise((resolve, reject) => {
+      validateBurstDetectionRecord(input);
       const transaction = this.database.transaction(
         BURST_EVENT_STORE_NAME,
         "readwrite",

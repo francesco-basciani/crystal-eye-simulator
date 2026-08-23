@@ -3,6 +3,13 @@
 import type { AnalysisPoint } from "../lib/source-conditioned-kalman";
 import type { BurstDirectionReconstruction } from "../lib/burst-direction-reconstruction";
 import { deriveAnalysisScale } from "../lib/adaptive-analysis-scale";
+import {
+  BURST_COORDINATE_EPOCH,
+  BURST_COORDINATE_FRAME,
+  BURST_DEC_CONVENTION,
+  BURST_RA_CONVENTION,
+  type BurstTruthEvaluation,
+} from "../lib/burst-event-repository";
 
 const WIDTH = 680;
 const HEIGHT = 400;
@@ -27,7 +34,7 @@ export type ReconstructionDisplay = Readonly<{
   status: "available";
   burstId: number;
   reconstruction: BurstDirectionReconstruction;
-  truthAngularErrorDeg: number;
+  truth: BurstTruthEvaluation;
 }> | Readonly<{
   status: "unavailable";
   reason:
@@ -129,15 +136,16 @@ export function AdaptiveAnalysisPanel({
             <span><small>METHOD</small><strong>POSITIVE-EXCESS WEIGHTED CENTROID</strong></span>
             <span><small>BURST</small><strong>#{reconstruction.burstId}</strong></span>
             <span><small>PEAK FRAME / TIME</small><strong>{reconstruction.reconstruction.frameIndex} / {reconstruction.reconstruction.acquisitionTimeSeconds.toFixed(1)} s</strong></span>
-            <span><small>RA / DEC</small><strong>{reconstruction.reconstruction.raDeg.toFixed(2)}° / {reconstruction.reconstruction.decDeg.toFixed(2)}°</strong></span>
+            <span><small>INJECTED TRUTH · WITHHELD FROM ESTIMATOR</small><strong>{reconstruction.truth.status === "available" ? `RA ${reconstruction.truth.raDeg.toFixed(2)}° · Dec ${reconstruction.truth.decDeg.toFixed(2)}°` : "N/A · NO INJECTED TRUTH"}</strong></span>
+            <span><small>RECONSTRUCTED DIRECTION</small><strong>RA {reconstruction.reconstruction.raDeg.toFixed(2)}° · Dec {reconstruction.reconstruction.decDeg.toFixed(2)}°</strong></span>
+            <span><small>ANGULAR SEPARATION · GREAT-CIRCLE</small><strong>{reconstruction.truth.status === "available" ? `${reconstruction.truth.angularErrorDeg.toFixed(2)}°` : "N/A"}</strong></span>
             <span><small>POSITIVE EXCESS</small><strong>{reconstruction.reconstruction.positiveExcessCounts.toFixed(2)} counts</strong></span>
             <span><small>ACTIVE PIXELS</small><strong>{reconstruction.reconstruction.activePixelCount}</strong></span>
-            <span><small>SYNTHETIC EVALUATION · WITHHELD FROM ESTIMATOR</small><strong>TRUTH ERROR {reconstruction.truthAngularErrorDeg.toFixed(2)}°</strong></span>
           </div>
         ) : (
           <div className="reconstruction-unavailable">UNAVAILABLE · {reconstruction.reason.replaceAll("-", " ").toUpperCase()}</div>
         )}
-        <p>Engineering reconstruction under current radial-attitude/minimum-rotation convention. Sun, Moon, Earth, and GRB use the derived per-pixel support; Rito remains background-only. No confidence ellipse. Simultaneous bursts are unresolved.</p>
+        <p>{BURST_COORDINATE_FRAME} · epoch: {BURST_COORDINATE_EPOCH} · RA {BURST_RA_CONVENTION} · Dec {BURST_DEC_CONVENTION}. Engineering reconstruction under the current radial-attitude/minimum-rotation convention. Truth is evaluation-only and never estimator input. No confidence ellipse. Simultaneous bursts are unresolved.</p>
       </section>
     </section>
   );

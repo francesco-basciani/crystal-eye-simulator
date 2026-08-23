@@ -144,6 +144,9 @@ test("V2R8 candidate directions drive burst physics while the flat map stays vis
 
 test("provisional GRB reconstruction notification links to a fail-closed event archive", () => {
   assert.match(pageSource, /PROVISIONAL GRB RECONSTRUCTION/);
+  assert.match(pageSource, /TRUTH ·/);
+  assert.match(pageSource, /RECONSTRUCTED · RA/);
+  assert.match(pageSource, /ANGULAR SEPARATION ·/);
   assert.match(pageSource, /OPEN EVENT RECORD/);
   assert.match(pageSource, /physical power unavailable/);
   assert.match(pageSource, /buildBurstPixelReadouts/);
@@ -152,6 +155,10 @@ test("provisional GRB reconstruction notification links to a fail-closed event a
   assert.match(eventHistorySource, /UPPER GAGG/);
   assert.match(eventHistorySource, /LOWER LYSO/);
   assert.match(eventHistorySource, /UNAVAILABLE/);
+  assert.match(eventHistorySource, /TRUTH RA/);
+  assert.match(eventHistorySource, /TRUTH DEC/);
+  assert.match(eventHistorySource, /ANGULAR SEPARATION/);
+  assert.match(eventHistorySource, /"N\/A"/);
   assert.doesNotMatch(eventHistorySource, />0<\/td>/);
 });
 

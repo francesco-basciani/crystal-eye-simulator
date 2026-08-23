@@ -39,6 +39,19 @@ test("positive-excess centroid reconstructs a canonical local direction", () => 
     assert.ok(Math.abs(result.decDeg) < 1e-10);
     assert.equal(result.activePixelCount, 1);
     assert.equal(scoreDirectionAgainstTruth(result, { raDeg: 0, decDeg: 0 }), 0);
+    const wrapped = { ...result, raDeg: 359, decDeg: 0 };
+    assert.ok(
+      Math.abs(scoreDirectionAgainstTruth(wrapped, { raDeg: 1, decDeg: 0 }) - 2) <
+        1e-10,
+    );
+    const polar = { ...result, raDeg: 245, decDeg: 90 };
+    assert.ok(
+      scoreDirectionAgainstTruth(polar, { raDeg: 12, decDeg: 90 }) < 1e-6,
+    );
+    assert.throws(
+      () => scoreDirectionAgainstTruth(result, { raDeg: 0, decDeg: 91 }),
+      /within \[-90, \+90\]/,
+    );
   }
 });
 

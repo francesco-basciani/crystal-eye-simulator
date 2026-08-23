@@ -4,6 +4,11 @@ import { ChevronRight, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppNav } from "../components/app-nav";
 import {
+  BURST_COORDINATE_EPOCH,
+  BURST_COORDINATE_FRAME,
+  BURST_DEC_CONVENTION,
+  BURST_RA_CONVENTION,
+  getBurstTruthEvaluation,
   openBurstEventRepository,
   type BurstDetectionRecord,
   type BurstEventCursor,
@@ -30,6 +35,7 @@ function EventDetail({
   record: BurstDetectionRecord;
   onClose: () => void;
 }) {
+  const truth = getBurstTruthEvaluation(record);
   return (
     <div
       className="event-detail-backdrop"
@@ -46,7 +52,9 @@ function EventDetail({
       >
         <header>
           <div>
-            <small>PROVISIONAL · INJECTED-SOURCE RECONSTRUCTION</small>
+            <small>PROVISIONAL · {record.classification === "injected-source-reconstruction"
+              ? "INJECTED-SOURCE RECONSTRUCTION"
+              : "TELEMETRY RECONSTRUCTION · NO INJECTED TRUTH"}</small>
             <strong id="event-detail-title">GRB EVENT #{record.burstId}</strong>
           </div>
           <button type="button" onClick={onClose} aria-label="Close event detail">
@@ -57,13 +65,16 @@ function EventDetail({
         <div className="event-detail-summary">
           <span><small>SIMULATED UTC</small><strong>{record.simulatedDate}</strong></span>
           <span><small>RECONSTRUCTED POSITION</small><strong>RA {record.reconstructedRaDeg.toFixed(3)}° · Dec {record.reconstructedDecDeg.toFixed(3)}°</strong></span>
-          <span><small>INPUT TRUTH · EVALUATION ONLY</small><strong>RA {record.truthRaDeg.toFixed(3)}° · Dec {record.truthDecDeg.toFixed(3)}° · error {record.truthAngularErrorDeg.toFixed(3)}°</strong></span>
+          <span><small>INJECTED TRUTH · EVALUATION ONLY</small><strong>{truth.status === "available" ? `RA ${truth.raDeg.toFixed(3)}° · Dec ${truth.decDeg.toFixed(3)}°` : "N/A · NOT AVAILABLE FOR THIS EVENT"}</strong></span>
+          <span><small>ANGULAR SEPARATION · GREAT-CIRCLE</small><strong>{truth.status === "available" ? `${truth.angularErrorDeg.toFixed(3)}°` : "N/A"}</strong></span>
+          <span><small>COORDINATE CONVENTION</small><strong>{BURST_COORDINATE_FRAME} · {BURST_COORDINATE_EPOCH}</strong></span>
           <span><small>SIGNAL</small><strong>{record.positiveExcessCounts.toFixed(3)} expected excess counts / {record.exposureSeconds.toFixed(1)} s</strong></span>
           <span><small>INPUT INTENSITY</small><strong>{record.configuredIntensityPercent.toFixed(1)}% · physical power unavailable</strong></span>
           <span><small>MODULES</small><strong>{record.activePixelCount} positive-excess · {record.footprintPixelIds.length} configured footprint</strong></span>
         </div>
 
         <p className="event-layer-notice">
+          RA {BURST_RA_CONVENTION} · Dec {BURST_DEC_CONVENTION}. Truth is retained only for injected simulator sources and is withheld from the reconstruction algorithm. {" "}
           Aggregate expected module response is available. Per-layer measured counts and energy for Upper ACD, Upper GAGG and Lower LYSO remain unavailable until a validated layer-resolved response model is integrated.
         </p>
 
@@ -252,19 +263,26 @@ export default function EventHistoryPage() {
           <thead>
             <tr>
               <th>EVENT</th><th>SIMULATED UTC</th><th>CLASSIFICATION</th>
-              <th>RECONSTRUCTED RA</th><th>RECONSTRUCTED DEC</th>
+              <th>TRUTH RA</th><th>TRUTH DEC</th>
+              <th>RECONSTRUCTED RA</th><th>RECONSTRUCTED DEC</th><th>ANGULAR SEPARATION</th>
               <th>INPUT INTENSITY</th><th>PHYSICAL POWER</th>
               <th>EXCESS / 0.2 S</th><th>MODULES</th><th>DETAIL</th>
             </tr>
           </thead>
           <tbody>
-            {result.items.map((record) => (
-              <tr key={record.eventKey}>
+            {result.items.map((record) => {
+              const truth = getBurstTruthEvaluation(record);
+              return <tr key={record.eventKey}>
                 <th scope="row">#{record.burstId}</th>
                 <td>{record.simulatedDate.replace("T", " ")}</td>
-                <td>PROVISIONAL RECONSTRUCTION</td>
+                <td>{record.classification === "injected-source-reconstruction"
+                  ? "INJECTED SIMULATION"
+                  : "TELEMETRY · NO TRUTH"}</td>
+                <td>{truth.status === "available" ? `${truth.raDeg.toFixed(3)}°` : "N/A"}</td>
+                <td>{truth.status === "available" ? `${truth.decDeg.toFixed(3)}°` : "N/A"}</td>
                 <td>{record.reconstructedRaDeg.toFixed(3)}°</td>
                 <td>{record.reconstructedDecDeg.toFixed(3)}°</td>
+                <td>{truth.status === "available" ? `${truth.angularErrorDeg.toFixed(3)}°` : "N/A"}</td>
                 <td>{record.configuredIntensityPercent.toFixed(1)}%</td>
                 <td><LayerStatus /></td>
                 <td>{record.positiveExcessCounts.toFixed(3)}</td>
@@ -274,8 +292,8 @@ export default function EventHistoryPage() {
                     126 PIXELS <ChevronRight size={12} />
                   </button>
                 </td>
-              </tr>
-            ))}
+              </tr>;
+            })}
           </tbody>
         </table>
         {status === "ready" && result.items.length === 0 && (

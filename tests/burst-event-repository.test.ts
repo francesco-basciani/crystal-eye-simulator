@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { angularSeparationDeg } from "../app/lib/burst-direction-truth-score.ts";
 import {
+  BURST_COORDINATE_EPOCH,
+  BURST_COORDINATE_FRAME,
   BURST_EVENT_STORE_NAME,
   BurstEventRepository,
   buildBurstPixelReadouts,
+  getBurstTruthEvaluation,
   openBurstEventRepository,
   type BurstDetectionRecord,
   type BurstDetectionRecordInput,
@@ -144,8 +148,12 @@ function input(
     Math.max(0, value - background[pixelId]),
   );
   const impact = source.map((value) => Math.min(1, value / 10));
+  const truthAngularErrorDeg = angularSeparationDeg(
+    { raDeg: 12, decDeg: -4 },
+    { raDeg: 11, decDeg: -3 },
+  );
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     eventKey,
     runId: "run-a",
     burstId,
@@ -157,9 +165,15 @@ function input(
     reconstructionMethod: "positive-excess-weighted-centroid-v1",
     reconstructedRaDeg: 12,
     reconstructedDecDeg: -4,
+    coordinateFrame: "simulation-eci-like-equatorial",
+    coordinateEpoch: "simulated-utc",
+    rightAscensionConvention: "degrees-[0,360)",
+    declinationConvention: "degrees-[-90,+90]",
+    truthStatus: "available",
     truthRaDeg: 11,
     truthDecDeg: -3,
-    truthAngularErrorDeg: 1.4,
+    truthAngularErrorDeg,
+    truthUnavailableReason: null,
     targetPixelId: 43,
     configuredIntensityPercent: 80,
     transmissionFraction: 0.7,
@@ -186,6 +200,72 @@ function input(
     }),
   };
 }
+
+test("truth evaluation remains separate from reconstruction and fails closed when absent", async () => {
+  const injected = input("run-a:1", 1, 1_000);
+  const evaluation = getBurstTruthEvaluation(injected);
+  assert.equal(evaluation.status, "available");
+  if (evaluation.status === "available") {
+    assert.equal(evaluation.raDeg, 11);
+    assert.equal(evaluation.decDeg, -3);
+    assert.ok(Math.abs(
+      evaluation.angularErrorDeg -
+        angularSeparationDeg(
+          { raDeg: injected.reconstructedRaDeg, decDeg: injected.reconstructedDecDeg },
+          { raDeg: 11, decDeg: -3 },
+        )
+    ) < 1e-12);
+  }
+
+  const telemetry: BurstDetectionRecordInput = {
+    ...injected,
+    schemaVersion: 2,
+    classification: "telemetry-reconstruction",
+    truthStatus: "unavailable",
+    truthRaDeg: null,
+    truthDecDeg: null,
+    truthAngularErrorDeg: null,
+    truthUnavailableReason: "not-injected-source",
+  };
+  assert.deepEqual(getBurstTruthEvaluation(telemetry), {
+    status: "unavailable",
+    reason: "not-injected-source",
+  });
+  const repository = new BurstEventRepository(
+    new FakeDatabase() as unknown as IDBDatabase,
+    fakeKeyRange,
+  );
+  const stored = await repository.save(telemetry);
+  assert.equal(getBurstTruthEvaluation(stored).status, "unavailable");
+  assert.equal(BURST_COORDINATE_FRAME, "SIMULATOR ECI-LIKE EQUATORIAL");
+  assert.equal(BURST_COORDINATE_EPOCH, "SIMULATED UTC");
+});
+
+test("archive validation rejects inconsistent truth and truth display recomputes separation", async () => {
+  const database = new FakeDatabase();
+  const repository = new BurstEventRepository(
+    database as unknown as IDBDatabase,
+    fakeKeyRange,
+  );
+  const valid = input("run-a:4", 4, 4_000);
+  const tampered = { ...valid, truthAngularErrorDeg: 99 };
+  await assert.rejects(
+    repository.save(tampered),
+    /inconsistent with the coordinate pair/,
+  );
+  const displayed = getBurstTruthEvaluation(tampered);
+  assert.equal(displayed.status, "available");
+  if (displayed.status === "available") {
+    assert.notEqual(displayed.angularErrorDeg, 99);
+  }
+  assert.equal(
+    getBurstTruthEvaluation({
+      ...valid,
+      truthRaDeg: 400,
+    }).status,
+    "unavailable",
+  );
+});
 
 test("pixel event readouts preserve all 126 aggregate values and fail closed per layer", () => {
   const record = input("run-a:1", 1, 1_000);

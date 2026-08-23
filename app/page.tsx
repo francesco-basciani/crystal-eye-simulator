@@ -48,7 +48,10 @@ import {
 } from "./lib/burst-direction-reconstruction";
 import { scoreDirectionAgainstTruth } from "./lib/burst-direction-truth-score";
 import {
+  BURST_COORDINATE_EPOCH,
+  BURST_COORDINATE_FRAME,
   buildBurstPixelReadouts,
+  getBurstTruthEvaluation,
   openBurstEventRepository,
   type BurstDetectionRecord,
   type BurstEventRepository,
@@ -4986,7 +4989,7 @@ export default function Home() {
                 Math.max(0, value - detectorLocalizationBaseline[pixelId]),
             );
             const record: BurstDetectionRecord = {
-              schemaVersion: 1,
+              schemaVersion: 2,
               eventKey,
               runId: photonRunIdRef.current,
               burstId: burst.id,
@@ -4998,9 +5001,15 @@ export default function Home() {
               reconstructionMethod: candidate.method,
               reconstructedRaDeg: candidate.raDeg,
               reconstructedDecDeg: candidate.decDeg,
+              coordinateFrame: "simulation-eci-like-equatorial",
+              coordinateEpoch: "simulated-utc",
+              rightAscensionConvention: "degrees-[0,360)",
+              declinationConvention: "degrees-[-90,+90]",
+              truthStatus: "available",
               truthRaDeg: burst.raDeg,
               truthDecDeg: burst.decDeg,
               truthAngularErrorDeg,
+              truthUnavailableReason: null,
               targetPixelId: burst.pixelId,
               configuredIntensityPercent: burst.intensity,
               transmissionFraction: burst.transmission,
@@ -5040,7 +5049,7 @@ export default function Home() {
                   {
                     time: `T+${formatTime(elapsedRef.current).slice(3)}`,
                     utc: record.simulatedDate,
-                    text: `Provisional GRB reconstruction #${record.burstId} archived · RA ${record.reconstructedRaDeg.toFixed(2)}° · Dec ${record.reconstructedDecDeg.toFixed(2)}° · ${record.activePixelCount} positive-excess modules`,
+                    text: `Provisional GRB reconstruction #${record.burstId} archived · truth RA ${burst.raDeg.toFixed(2)}° / Dec ${burst.decDeg.toFixed(2)}° · reconstructed RA ${record.reconstructedRaDeg.toFixed(2)}° / Dec ${record.reconstructedDecDeg.toFixed(2)}° · separation ${truthAngularErrorDeg.toFixed(2)}°`,
                     kind: "grb",
                   },
                 ]);
@@ -5061,10 +5070,15 @@ export default function Home() {
             status: "available",
             burstId: peak.burstId,
             reconstruction: peak.reconstruction,
-            truthAngularErrorDeg: scoreDirectionAgainstTruth(
-              peak.reconstruction,
-              { raDeg: peak.truthRaDeg, decDeg: peak.truthDecDeg },
-            ),
+            truth: {
+              status: "available",
+              raDeg: peak.truthRaDeg,
+              decDeg: peak.truthDecDeg,
+              angularErrorDeg: scoreDirectionAgainstTruth(
+                peak.reconstruction,
+                { raDeg: peak.truthRaDeg, decDeg: peak.truthDecDeg },
+              ),
+            },
           });
         } else {
           setReconstructionDisplay({
@@ -5974,11 +5988,29 @@ export default function Home() {
               </small>
               {showReconstructedBurst && latestBurstDetection ? (
                 <>
-                  <strong>
-                    RA {latestBurstDetection.reconstructedRaDeg.toFixed(2)}° · DEC{" "}
-                    {latestBurstDetection.reconstructedDecDeg.toFixed(2)}°
-                  </strong>
+                  {(() => {
+                    const truth = getBurstTruthEvaluation(latestBurstDetection);
+                    return (
+                      <div className="grb-alert-directions">
+                        <strong>
+                          TRUTH · {truth.status === "available"
+                            ? `RA ${truth.raDeg.toFixed(2)}° · Dec ${truth.decDeg.toFixed(2)}°`
+                            : "N/A"}
+                        </strong>
+                        <strong>
+                          RECONSTRUCTED · RA {latestBurstDetection.reconstructedRaDeg.toFixed(2)}° · Dec{" "}
+                          {latestBurstDetection.reconstructedDecDeg.toFixed(2)}°
+                        </strong>
+                        <strong>
+                          ANGULAR SEPARATION · {truth.status === "available"
+                            ? `${truth.angularErrorDeg.toFixed(2)}°`
+                            : "N/A"}
+                        </strong>
+                      </div>
+                    );
+                  })()}
                   <span className="grb-alert-metrics">
+                    <em>{BURST_COORDINATE_FRAME} · EPOCH: {BURST_COORDINATE_EPOCH}</em>
                     <em>
                       {latestBurstDetection.positiveExcessCounts.toFixed(1)} expected excess counts / 0.2 s
                     </em>
