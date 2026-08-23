@@ -65,13 +65,45 @@ test("the right-hand planar map preserves the configurator aspect and geometry",
   assert.match(styles, /\.burst-reconstruction-panel\s*\{/);
   assert.match(
     styles,
-    /@media \(max-height: 900px\) and \(min-width: 901px\)[\s\S]*?\.right-panel \.burst-inline-panel\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*3px 7px;/,
+    /@media \(max-height: 900px\) and \(min-width: 901px\)[\s\S]*?\.left-panel \.burst-inline-panel\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*3px 7px;/,
   );
   assert.match(pageSource, /"--pixel-x": `\$\{configuredPixel\.x\}%`/);
   assert.match(pageSource, /"--pixel-y": `\$\{configuredPixel\.y\}%`/);
   assert.match(
     pageSource,
     /"--pixel-rotation": `\$\{configuredPixel\.rotationDeg\}deg`/,
+  );
+});
+
+test("burst controls live in the left rail and Geometry opens first", () => {
+  const leftPanelStart = pageSource.indexOf(
+    '<aside className="control-panel left-panel">',
+  );
+  const simulationStageStart = pageSource.indexOf(
+    '<section className="simulation-stage">',
+    leftPanelStart,
+  );
+  const rightPanelStart = pageSource.indexOf(
+    '<aside className="control-panel right-panel">',
+  );
+  const rightPanelEnd = pageSource.indexOf("</aside>", rightPanelStart);
+  const leftRail = pageSource.slice(leftPanelStart, simulationStageStart);
+  const rightRail = pageSource.slice(rightPanelStart, rightPanelEnd);
+
+  assert.match(leftRail, /TEST BURST CONFIGURATION/);
+  assert.match(
+    leftRail,
+    /TEST BURST CONFIGURATION[\s\S]*<div className="left-sensor-slot">/,
+  );
+  assert.doesNotMatch(rightRail, /TEST BURST CONFIGURATION/);
+  assert.match(pageSource, /useState<SensorViewMode>\("geometry"\)/);
+  assert.match(
+    pageSource,
+    /\["geometry", "Geometry"\],[\s\S]*\["sky", "Sky"\],[\s\S]*\["mask", "Mask"\],[\s\S]*\["events", "Events"\]/,
+  );
+  assert.match(
+    styles,
+    /\.left-panel > \.burst-inline-panel\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?border-bottom:/,
   );
 });
 

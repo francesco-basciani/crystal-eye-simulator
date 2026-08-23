@@ -1664,6 +1664,12 @@ button {
   border-right: 1px solid var(--line-strong);
 }
 
+.left-panel > .burst-inline-panel {
+  flex: 0 0 auto;
+  border-top: 0;
+  border-bottom: 1px solid rgba(255, 200, 87, 0.28);
+}
+
 .right-panel {
   border-left: 1px solid var(--line-strong);
 }
@@ -2706,8 +2712,8 @@ button {
 }
 
 .left-sensor-slot {
-  flex: 1 1 65%;
-  min-height: 220px;
+  flex: 1 1 55%;
+  min-height: 200px;
   overflow: hidden;
   border-bottom: 1px solid var(--line);
 }
@@ -4814,33 +4820,33 @@ button {
     padding: 3px 8px;
   }
 
-  .right-panel .burst-inline-panel {
+  .left-panel .burst-inline-panel {
     gap: 2px;
     padding: 3px 7px;
   }
 
-  .right-panel .burst-inline-header strong,
-  .right-panel .burst-inline-scale {
+  .left-panel .burst-inline-header strong,
+  .left-panel .burst-inline-scale {
     display: none;
   }
 
-  .right-panel .burst-inline-header button {
+  .left-panel .burst-inline-header button {
     height: 17px;
   }
 
-  .right-panel .burst-inline-fields {
+  .left-panel .burst-inline-fields {
     gap: 3px;
   }
 
-  .right-panel .burst-inline-fields label > span {
+  .left-panel .burst-inline-fields label > span {
     margin-bottom: 1px;
   }
 
-  .right-panel .burst-inline-fields input {
+  .left-panel .burst-inline-fields input {
     height: 20px;
   }
 
-  .right-panel .burst-inline-actions button {
+  .left-panel .burst-inline-actions button {
     min-height: 22px;
   }
 
@@ -5437,11 +5443,11 @@ button {
 
 @media (max-height: 900px) and (min-width: 1101px) {
   .right-panel > .photon-stream-chart .chart-header strong,
-  .right-panel .burst-inline-header strong {
+  .left-panel .burst-inline-header strong {
     display: block;
   }
 
-  .right-panel .burst-inline-scale {
+  .left-panel .burst-inline-scale {
     display: grid;
   }
 

@@ -2339,7 +2339,7 @@ function SensorView({
   effectiveFov: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [mode, setMode] = useState<SensorViewMode>("mask");
+  const [mode, setMode] = useState<SensorViewMode>("geometry");
   const detectorFrame = resolveDetectorFrameVector(detector, "Sensor detector intensity");
   const excitationFrame = resolveDetectorFrameVector(
     detectorExcitationExpectedCounts,
@@ -2692,10 +2692,10 @@ function SensorView({
       </div>
       <div className="sensor-view-tabs" role="group" aria-label="Sensor view mode">
         {([
+          ["geometry", "Geometry"],
           ["sky", "Sky"],
           ["mask", "Mask"],
           ["events", "Events"],
-          ["geometry", "Geometry"],
         ] as const).map(([value, label]) => (
           <button
             key={value}
@@ -5850,6 +5850,139 @@ export default function Home() {
 
       <section className="workspace">
         <aside className="control-panel left-panel">
+          <form
+            className="burst-inline-panel burst-left-panel"
+            onSubmit={(event) => {
+              event.preventDefault();
+              injectTestBurst();
+            }}
+          >
+            <div className="burst-inline-header">
+              <div>
+                <small>TEST BURST CONFIGURATION</small>
+                <strong>Equatorial source · current epoch</strong>
+              </div>
+              <button type="button" onClick={aimTestBurstAtBoresight}>
+                AIM BORESIGHT
+              </button>
+            </div>
+
+            <div className="burst-inline-fields burst-coordinate-fields">
+              <label>
+                <span>RIGHT ASCENSION · RA</span>
+                <div>
+                  <input
+                    type="number"
+                    min="0"
+                    max="360"
+                    step="0.001"
+                    value={testBurstDraft.raDeg}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        raDeg: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>deg</em>
+                </div>
+              </label>
+              <label>
+                <span>DECLINATION · DEC</span>
+                <div>
+                  <input
+                    type="number"
+                    min="-90"
+                    max="90"
+                    step="0.001"
+                    value={testBurstDraft.decDeg}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        decDeg: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>deg</em>
+                </div>
+              </label>
+            </div>
+
+            <div className="burst-inline-fields burst-response-fields">
+              <label>
+                <span>PEAK IMPACT</span>
+                <div>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="1"
+                    value={testBurstDraft.intensity}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        intensity: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>%</em>
+                </div>
+              </label>
+              <label>
+                <span>FOOTPRINT</span>
+                <div>
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    step="1"
+                    value={testBurstDraft.spreadPixels}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        spreadPixels: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>px</em>
+                </div>
+              </label>
+              <label>
+                <span>DURATION</span>
+                <div>
+                  <input
+                    type="number"
+                    min="0.2"
+                    max="10"
+                    step="0.2"
+                    value={testBurstDraft.durationSeconds}
+                    onChange={(event) =>
+                      setTestBurstDraft((current) => ({
+                        ...current,
+                        durationSeconds: Number(event.target.value),
+                      }))
+                    }
+                  />
+                  <em>s</em>
+                </div>
+              </label>
+            </div>
+
+            <div className="burst-inline-scale">
+              <span>0</span>
+              <i />
+              <span>100</span>
+            </div>
+
+            <div className="burst-inline-actions">
+              <button type="button" className="random-grb-mini" onClick={() => injectGRB()}>
+                <Sparkles size={12} /> RANDOM GRB
+              </button>
+              <button type="submit" className="inject-test-inline">
+                <Sparkles size={13} /> INJECT TEST BURST
+              </button>
+            </div>
+          </form>
           <div className="left-sensor-slot">
             <SensorView
               satelliteDirection={telemetry.satelliteDirection}
@@ -6134,140 +6267,6 @@ export default function Home() {
               onSelect={selectPixel}
             />
           </div>
-
-          <form
-            className="burst-inline-panel"
-            onSubmit={(event) => {
-              event.preventDefault();
-              injectTestBurst();
-            }}
-          >
-            <div className="burst-inline-header">
-              <div>
-                <small>TEST BURST CONFIGURATION</small>
-                <strong>Equatorial source · current epoch</strong>
-              </div>
-              <button type="button" onClick={aimTestBurstAtBoresight}>
-                AIM BORESIGHT
-              </button>
-            </div>
-
-            <div className="burst-inline-fields burst-coordinate-fields">
-              <label>
-                <span>RIGHT ASCENSION · RA</span>
-                <div>
-                  <input
-                    type="number"
-                    min="0"
-                    max="360"
-                    step="0.001"
-                    value={testBurstDraft.raDeg}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        raDeg: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>deg</em>
-                </div>
-              </label>
-              <label>
-                <span>DECLINATION · DEC</span>
-                <div>
-                  <input
-                    type="number"
-                    min="-90"
-                    max="90"
-                    step="0.001"
-                    value={testBurstDraft.decDeg}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        decDeg: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>deg</em>
-                </div>
-              </label>
-            </div>
-
-            <div className="burst-inline-fields burst-response-fields">
-              <label>
-                <span>PEAK IMPACT</span>
-                <div>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="1"
-                    value={testBurstDraft.intensity}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        intensity: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>%</em>
-                </div>
-              </label>
-              <label>
-                <span>FOOTPRINT</span>
-                <div>
-                  <input
-                    type="number"
-                    min="1"
-                    max="60"
-                    step="1"
-                    value={testBurstDraft.spreadPixels}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        spreadPixels: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>px</em>
-                </div>
-              </label>
-              <label>
-                <span>DURATION</span>
-                <div>
-                  <input
-                    type="number"
-                    min="0.2"
-                    max="10"
-                    step="0.2"
-                    value={testBurstDraft.durationSeconds}
-                    onChange={(event) =>
-                      setTestBurstDraft((current) => ({
-                        ...current,
-                        durationSeconds: Number(event.target.value),
-                      }))
-                    }
-                  />
-                  <em>s</em>
-                </div>
-              </label>
-            </div>
-
-            <div className="burst-inline-scale">
-              <span>0</span>
-              <i />
-              <span>100</span>
-            </div>
-
-            <div className="burst-inline-actions">
-              <button type="button" className="random-grb-mini" onClick={() => injectGRB()}>
-                <Sparkles size={12} /> RANDOM GRB
-              </button>
-              <button type="submit" className="inject-test-inline">
-                <Sparkles size={13} /> INJECT TEST BURST
-              </button>
-            </div>
-          </form>
         </aside>
       </section>
 
