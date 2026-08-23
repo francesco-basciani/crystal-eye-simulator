@@ -97,8 +97,7 @@ button {
 .brand,
 .mission-status,
 .status-live,
-.header-metric,
-.brand-mark {
+.header-metric {
   display: flex;
   align-items: center;
 }
@@ -132,26 +131,29 @@ button {
   background: rgba(35, 131, 161, 0.1);
 }
 
-.brand-mark {
-  width: 42px;
-  height: 42px;
-  justify-content: center;
-  color: #071319;
-  border-radius: 50%;
-  background: linear-gradient(145deg, var(--cyan), var(--teal));
-  box-shadow: 0 0 26px rgba(83, 224, 207, 0.22);
+.brand-logo {
+  display: block;
+  width: 82px;
+  height: 60px;
+  flex: 0 0 auto;
+  object-fit: contain;
+  border-radius: 3px;
+  background: #fff;
+  box-shadow: 0 0 20px rgba(83, 224, 207, 0.14);
 }
 
-.brand h1 {
-  margin: 0;
-  font-size: 20px;
-  letter-spacing: 0.2em;
-  line-height: 1;
-  font-weight: 620;
+.brand-copy {
+  min-width: 108px;
 }
 
-.brand h1 span {
-  color: var(--cyan);
+.brand-copy strong {
+  display: block;
+  color: #d8e9ef;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 8px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0.12em;
 }
 
 .eyebrow {
@@ -4622,13 +4624,13 @@ button {
     padding-inline: 18px;
   }
 
-  .brand-mark {
-    width: 36px;
-    height: 36px;
+  .brand-logo {
+    width: 64px;
+    height: 46px;
   }
 
-  .brand h1 {
-    font-size: 17px;
+  .brand-copy strong {
+    font-size: 7px;
   }
 
   .eyebrow {
@@ -5238,13 +5240,9 @@ button {
     padding-left: 0;
   }
 
-  .brand h1 {
-    font-size: 16px;
-  }
-
-  .brand-mark {
-    width: 36px;
-    height: 36px;
+  .brand-logo {
+    width: 68px;
+    height: 50px;
   }
 
   .workspace {

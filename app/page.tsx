@@ -2,7 +2,6 @@
 
 import {
   Activity,
-  Aperture,
   ChevronRight,
   CircleDot,
   Download,
@@ -5682,10 +5681,16 @@ export default function Home() {
     <main className="app-shell">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-mark"><Aperture size={25} /></div>
-          <div>
+          <img
+            className="brand-logo"
+            src={`${PUBLIC_BASE_PATH}/crystal-eye-logo.jpeg`}
+            alt="Crystal Eye"
+            width={760}
+            height={558}
+          />
+          <div className="brand-copy">
             <div className="eyebrow">GSSI · VISION DIGITAL TWIN</div>
-            <h1>CRYSTAL <span>EYE</span></h1>
+            <strong>ORBITAL PHOTON SIMULATOR</strong>
           </div>
         </div>
         <AppNav current="/" />
