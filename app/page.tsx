@@ -1674,6 +1674,11 @@ function GlobeScene({
       dragging = false;
     };
     const onWheel = (event: WheelEvent) => {
+      // In the stacked responsive layout the document itself must remain
+      // scrollable while the pointer is over the large 3D canvas.  The zoom
+      // slider remains available there; wheel-to-zoom is reserved for the
+      // desktop cockpit where the document does not scroll.
+      if (!window.matchMedia("(min-width: 1101px)").matches) return;
       event.preventDefault();
       onSystemZoomChange(
         THREE.MathUtils.clamp(

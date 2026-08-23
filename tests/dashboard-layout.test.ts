@@ -198,3 +198,45 @@ test("3D detector materials update only when detector state changes", () => {
   assert.match(pageSource, /appliedDetectorIntensity = settings\.detectorIntensity/);
   assert.match(pageSource, /appliedDetectorEarth = settings\.detectorEarthExpectedCounts/);
 });
+
+test("responsive layouts keep every dashboard region reachable", () => {
+  assert.match(
+    styles,
+    /\.left-panel\s*\{[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overflow-y:\s*auto;/,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 1100px\)[\s\S]*?\.app-shell\s*\{[\s\S]*?height:\s*auto;[\s\S]*?min-height:\s*100dvh;/,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 1100px\)[\s\S]*?\.workspace\s*\{[\s\S]*?grid-template-areas:[\s\S]*?"stage stage"[\s\S]*?"left right";[\s\S]*?overflow:\s*visible;/,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 700px\)[\s\S]*?\.workspace\s*\{[\s\S]*?display:\s*grid;[\s\S]*?"stage"[\s\S]*?"right"[\s\S]*?"left";/,
+  );
+  assert.match(
+    pageSource,
+    /if \(!window\.matchMedia\("\(min-width: 1101px\)"\)\.matches\) return;[\s\S]*?event\.preventDefault\(\);/,
+  );
+});
+
+test("compact configuration surfaces preserve scrollable content and actions", () => {
+  assert.match(
+    styles,
+    /@media \(max-width: 1100px\)[\s\S]*?\.configuration-hub\s*\{[\s\S]*?max-height:\s*calc\(100dvh - 40px\);[\s\S]*?overflow:\s*hidden;/,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 1100px\)[\s\S]*?\.configuration-hub > div\s*\{[\s\S]*?overflow-y:\s*auto;/,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 1100px\)[\s\S]*?\.pixel-editor-body\s*\{[\s\S]*?overflow-y:\s*auto;/,
+  );
+  assert.match(
+    styles,
+    /@media \(max-width: 1100px\)[\s\S]*?\.pixel-editor-workspace\s*\{[\s\S]*?container-type:\s*inline-size;/,
+  );
+});
