@@ -5985,12 +5985,18 @@ export default function Home() {
           />
           <div className="stage-title">
             <span className="eyebrow">
-              {orbitScenarioMode === "canonical"
-                ? "CANONICAL ECI REPLAY"
-                : "PARAMETRIC SATELLITE SCENARIO · ECI CELESTIAL TIMELINE"}
+              {simulatorMode === "simulation"
+                ? orbitScenarioMode === "canonical"
+                  ? "CANONICAL ECI ORBIT · SYNTHETIC PHOTON SIMULATION"
+                  : "PARAMETRIC ECI ORBIT · SYNTHETIC PHOTON SIMULATION"
+                : orbitScenarioMode === "canonical"
+                  ? "CANONICAL ECI ORBIT · REFERENCE MODE"
+                  : "PARAMETRIC ECI ORBIT · REFERENCE MODE"}
             </span>
             <h2>
-              {simulatorMode === "simulation" ? "Simulation Mode" : "Reference Replay"}
+              {simulatorMode === "simulation"
+                ? "Crystal Eye Simulator"
+                : "Orbital Observation Replay"}
               <em>
                 {orbitScenarioMode === "canonical"
                   ? ` ${telemetry.altitudeKm.toFixed(1)} km`

@@ -46,7 +46,10 @@ test("adaptive analysis and reconstruction belong beside the visible 3D stage", 
   assert.match(analysisPanelSource, /PHOTON STREAM · 0\.2 S ACQUISITION/);
   assert.doesNotMatch(pageSource, /<SignalChart|TRANSIENT DETECTED|GRB candidate/);
   assert.match(pageSource, /SYNTHETIC SOURCE ACTIVE/);
-  assert.match(pageSource, /simulatorMode === "simulation" \? "Simulation Mode" : "Reference Replay"/);
+  assert.match(pageSource, /"Crystal Eye Simulator"/);
+  assert.match(pageSource, /"Orbital Observation Replay"/);
+  assert.match(pageSource, /"CANONICAL ECI ORBIT · SYNTHETIC PHOTON SIMULATION"/);
+  assert.match(pageSource, /"CANONICAL ECI ORBIT · REFERENCE MODE"/);
 });
 
 test("the right-hand planar map preserves the configurator aspect and geometry", () => {
