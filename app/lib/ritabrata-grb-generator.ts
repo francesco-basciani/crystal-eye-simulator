@@ -1,5 +1,9 @@
 export const RITABRATA_GRB_PIXEL_COUNT = 126;
 export const RITABRATA_GRB_SOURCE_AREA_CM2 = 4 * 18 * 18;
+// Intentionally empty until the author approves one exact converted bundle.
+// A downloaded manifest cannot authorize itself: activation requires a code change.
+export const RITABRATA_GRB_APPROVED_PROVENANCE_SHA256 = "";
+export const RITABRATA_GRB_APPROVED_GOLDEN_SHA256 = "";
 
 type NumericVector = ArrayLike<number>;
 
@@ -335,8 +339,14 @@ export function generateRitabrataGrbResponse(
   assets: RitabrataGrbGeneratorAssets | null,
 ): GrbGenerationResult {
   if (!assets) return unavailable("asset-data-unavailable");
-  if (!assets.rootParity.verified) return unavailable("asset-parity-unverified");
   if (
+    !assets.rootParity.verified ||
+    !RITABRATA_GRB_APPROVED_PROVENANCE_SHA256 ||
+    !RITABRATA_GRB_APPROVED_GOLDEN_SHA256
+  ) return unavailable("asset-parity-unverified");
+  if (
+    assets.provenanceSha256 !== RITABRATA_GRB_APPROVED_PROVENANCE_SHA256 ||
+    assets.rootParity.goldenOutputSha256 !== RITABRATA_GRB_APPROVED_GOLDEN_SHA256 ||
     assets.rootParity.assetProvenanceSha256 !== assets.provenanceSha256 ||
     !assets.rootParity.goldenFixtureId.trim() || !assets.rootParity.goldenOutputSha256.trim()
   ) return unavailable("asset-provenance-mismatch");

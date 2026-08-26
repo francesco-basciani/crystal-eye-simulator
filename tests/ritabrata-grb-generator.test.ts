@@ -77,14 +77,14 @@ test("pre-aggregated mean and variance kernels produce counts and ROOT-style err
   assert.equal(response.selectedDatabaseDirection.responseKey, "41_117");
 });
 
-test("runtime generation fails closed until parity is bound to exact assets", () => {
+test("runtime generation fails closed until code-pinned trust anchors are approved", () => {
   const parameters = { normalization: 1, spectralIndex: 0, peakEnergyKeV: 100 };
   assert.deepEqual(generateRitabrataGrbResponse(40, 120, parameters, syntheticAssets()), {
     status: "unavailable",
     reason: "asset-parity-unverified",
   });
   const result = generateRitabrataGrbResponse(40, 120, parameters, syntheticAssets(true));
-  assert.equal(result.status, "available");
+  assert.deepEqual(result, { status: "unavailable", reason: "asset-parity-unverified" });
 });
 
 test("invalid physical spectrum parameters are rejected", () => {
