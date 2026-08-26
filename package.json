@@ -12,7 +12,8 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
-    "validate:ritabrata-localizer": "node --experimental-strip-types scripts/validate-ritabrata-localizer.ts"
+    "validate:ritabrata-localizer": "node --experimental-strip-types scripts/validate-ritabrata-localizer.ts",
+    "validate:ritabrata-grb-generator": "node --experimental-strip-types scripts/validate-ritabrata-grb-generator.ts"
   },
   "dependencies": {
     "astronomy-engine": "^2.1.19",
