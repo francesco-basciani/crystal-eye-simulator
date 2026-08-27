@@ -4,22 +4,31 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 import {
+  RITABRATA_GRB_APPROVED_GOLDEN_SHA256,
+  RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
+  RITABRATA_GRB_APPROVED_PROVENANCE_SHA256,
   computeRitabrataGrbResponse,
   type RitabrataGrbGeneratorAssets,
 } from "../app/lib/ritabrata-grb-generator.ts";
 
-const directory = resolve(process.argv[2] ?? "");
-if (!process.argv[2]) throw new Error("Usage: validate-ritabrata-grb-generator.ts <converted-directory>");
-const manifest = JSON.parse(readFileSync(
-  resolve(directory, "ritabrata-grb-generator.manifest.json"), "utf8",
-));
-const golden = JSON.parse(readFileSync(resolve(directory, manifest.goldenFixture.file), "utf8"));
+const directory = resolve(process.argv[2] ?? "public/data/ritabrata-grb-generator");
+const manifestBytes = readFileSync(resolve(directory, "ritabrata-grb-generator.manifest.json"));
+const manifestHash = createHash("sha256").update(manifestBytes).digest("hex");
+assert.equal(manifestHash, RITABRATA_GRB_APPROVED_MANIFEST_SHA256);
+const manifest = JSON.parse(manifestBytes.toString("utf8"));
+const goldenBytes = readFileSync(resolve(directory, manifest.goldenFixture.file));
+assert.equal(createHash("sha256").update(goldenBytes).digest("hex"), manifest.goldenFixture.sha256);
+const golden = JSON.parse(goldenBytes.toString("utf8"));
 assert.equal(manifest.directionCount, 985);
 assert.equal(manifest.pixelCount, 126);
 assert.equal(manifest.primaryEnergyBinCount, 100);
 assert.equal(manifest.depositedEnergyBinCount, 100);
 assert.equal(manifest.sourceFilesSha256["sampleDataSet.root"],
   "2f3ca611e3252aac0cac2c5f12ee470d66a75914cba0f9d3c7aa23ff21749ba2");
+assert.equal(manifest.provenanceSha256, RITABRATA_GRB_APPROVED_PROVENANCE_SHA256);
+assert.equal(manifest.rootParity.verified, true);
+assert.equal(manifest.rootParity.goldenOutputSha256, RITABRATA_GRB_APPROVED_GOLDEN_SHA256);
+assert.equal(manifest.rootParity.assetProvenanceSha256, manifest.provenanceSha256);
 
 const directionIndex = manifest.directions.findIndex(
   (direction: { sourceId: string }) => direction.sourceId === golden.selectedDirection.sourceId,
@@ -44,6 +53,7 @@ function loadMember(name: string): Float32Array {
 
 const assets: RitabrataGrbGeneratorAssets = {
   assetVersion: manifest.assetVersion,
+  manifestSha256: manifestHash,
   directionFrame: manifest.directionFrame,
   pixelCount: manifest.pixelCount,
   sourceAreaCm2: manifest.sourceAreaCm2,
@@ -91,7 +101,8 @@ function compare(
 }
 
 compare("pixel counts", computed.pixelCountsPerSecond, golden.pixelCountsPerSecond, 1e-4, 2e-6);
-compare("pixel errors", computed.pixelErrorsPerSecond, golden.pixelErrorsPerSecond, 1e-6, 2e-6);
+compare("pixel MC Sumw2 errors", computed.pixelMcSumw2ErrorsPerSecond,
+  golden.pixelErrorsPerSecond, 1e-6, 2e-6);
 compare(
   "deposited-energy counts",
   computed.depositedEnergyCountsPerSecond,
@@ -101,7 +112,7 @@ compare(
 );
 compare(
   "deposited-energy errors",
-  computed.depositedEnergyErrorsPerSecond,
+  computed.depositedEnergyMcSumw2ErrorsPerSecond,
   golden.depositedEnergyErrorsPerSecond,
   1e-6,
   1e-4,

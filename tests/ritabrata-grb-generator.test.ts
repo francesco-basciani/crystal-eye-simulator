@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
   RITABRATA_GRB_PIXEL_COUNT,
   RITABRATA_GRB_SOURCE_AREA_CM2,
   computeRitabrataGrbResponse,
@@ -22,6 +23,7 @@ function syntheticAssets(parityVerified = false): RitabrataGrbGeneratorAssets {
   pixelVariance[0] = 0.25;
   return {
     assetVersion: "synthetic-test-only",
+    manifestSha256: RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
     directionFrame: RITABRATA_DETECTOR_FRAME,
     pixelCount: RITABRATA_GRB_PIXEL_COUNT,
     sourceAreaCm2: RITABRATA_GRB_SOURCE_AREA_CM2,
@@ -71,22 +73,22 @@ test("pre-aggregated mean and variance kernels produce counts and ROOT-style err
   assert.ok(!("status" in response));
   const incidentRate = integrateCutoffPowerLaw(20, 30, parameters) * RITABRATA_GRB_SOURCE_AREA_CM2;
   assert.ok(Math.abs(response.pixelCountsPerSecond[0] - 0.5 * incidentRate) < 1e-9);
-  assert.ok(Math.abs(response.pixelErrorsPerSecond[0] - 0.5 * incidentRate) < 1e-9);
+  assert.ok(Math.abs(response.pixelMcSumw2ErrorsPerSecond[0] - 0.5 * incidentRate) < 1e-9);
   assert.ok(Math.abs(response.depositedEnergyCountsPerSecond[0] - 0.25 * incidentRate) < 1e-9);
-  assert.ok(Math.abs(response.depositedEnergyErrorsPerSecond[0] - 0.25 * incidentRate) < 1e-9);
+  assert.ok(Math.abs(response.depositedEnergyMcSumw2ErrorsPerSecond[0] - 0.25 * incidentRate) < 1e-9);
   assert.equal(response.requestedDirection.phiDeg, 120);
   assert.equal(response.selectedDatabaseDirection.responseKey, "41_117");
   assert.equal(response.directionFrame, RITABRATA_DETECTOR_FRAME);
 });
 
-test("runtime generation fails closed until code-pinned trust anchors are approved", () => {
+test("runtime generation rejects assets outside the code-pinned trust anchors", () => {
   const parameters = { normalization: 1, spectralIndex: 0, peakEnergyKeV: 100 };
   assert.deepEqual(generateRitabrataGrbResponse(40, 120, parameters, syntheticAssets()), {
     status: "unavailable",
     reason: "asset-parity-unverified",
   });
   const result = generateRitabrataGrbResponse(40, 120, parameters, syntheticAssets(true));
-  assert.deepEqual(result, { status: "unavailable", reason: "asset-parity-unverified" });
+  assert.deepEqual(result, { status: "unavailable", reason: "asset-provenance-mismatch" });
 });
 
 test("invalid physical spectrum parameters are rejected", () => {

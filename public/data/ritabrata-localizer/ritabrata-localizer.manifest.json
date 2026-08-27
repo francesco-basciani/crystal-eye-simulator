@@ -14141,7 +14141,7 @@
     }
   ],
   "templateResponse": {
-    "file": "ritabrata-template-response.f32.gz",
+    "file": "ritabrata-template-response.f32.bin",
     "encoding": "gzip-float32-little-endian",
     "layout": "template,pixel,energy",
     "uncompressedByteLength": 37396800,

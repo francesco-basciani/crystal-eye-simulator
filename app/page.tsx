@@ -142,6 +142,15 @@ import {
   type PixelConfiguration,
   type PixelConfigurationEntry,
 } from "./lib/pixel-configuration";
+import {
+  runRitabrataProvisionalPipeline,
+  type RitabrataPipelineResult,
+} from "./lib/ritabrata-provisional-pipeline";
+import {
+  createThreeDetectorLocalVector,
+  ritabrataAnglesFromDirection,
+  threeDetectorLocalToRitabrata,
+} from "./lib/detector-local-frame-adapter";
 
 type Sample = {
   observed: number;
@@ -226,6 +235,11 @@ type TestBurstDraft = {
   spreadPixels: number;
   durationSeconds: number;
 };
+
+type RitabrataRuntimeDisplay =
+  | Readonly<{ status: "idle" }>
+  | Readonly<{ status: "loading"; burstId: number }>
+  | Readonly<{ status: "complete"; burstId: number; result: RitabrataPipelineResult }>;
 
 type CameraMode = "orbit" | "satellite";
 type OrbitScenarioMode = "canonical" | "parametric";
@@ -4383,6 +4397,9 @@ export default function Home() {
   const [burstNotificationVisible, setBurstNotificationVisible] =
     useState(false);
   const [burstArchiveError, setBurstArchiveError] = useState<string | null>(null);
+  const [ritabrataRuntime, setRitabrataRuntime] = useState<RitabrataRuntimeDisplay>({
+    status: "idle",
+  });
   const [eventLog, setEventLog] = useState<EventRecord[]>(() => {
     const utc = new Date().toISOString();
     return [
@@ -5276,6 +5293,45 @@ export default function Home() {
         ticksRemaining: Math.max(1, Math.round(durationSeconds / 0.2)),
       },
     ];
+    const rootDirection = threeDetectorLocalToRitabrata(
+      createThreeDetectorLocalVector(...localDirection),
+    );
+    const requestedAngles = ritabrataAnglesFromDirection(rootDirection);
+    const boresightSnapshot = [...satelliteDirectionRef.current] as [number, number, number];
+    setRitabrataRuntime({ status: "loading", burstId });
+    void runRitabrataProvisionalPipeline({
+      generatorManifestUrl: `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-grb-generator/ritabrata-grb-generator.manifest.json`,
+      localizerManifestUrl: `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-localizer/ritabrata-localizer.manifest.json`,
+      requestedThetaDeg: requestedAngles.thetaDeg,
+      requestedPhiDeg: requestedAngles.phiDeg,
+      spectrum: {
+        normalization: 0.026,
+        spectralIndex: -1.07,
+        peakEnergyKeV: 756.4,
+      },
+      radialBoresight: boresightSnapshot,
+      truth: { raDeg, decDeg },
+      detectorNormals: getV2R8CandidateNormals(physicalGeometry),
+      frameIndex: photonBinRef.current + 1,
+      acquisitionTimeSeconds: (photonBinRef.current + 1) * PIXEL_BACKGROUND_BIN_SECONDS,
+    }).then((result) => {
+      setRitabrataRuntime((current) =>
+        current.status === "loading" && current.burstId === burstId
+          ? { status: "complete", burstId, result }
+          : current);
+    }).catch((error: unknown) => {
+      setRitabrataRuntime((current) =>
+        current.status === "loading" && current.burstId === burstId
+          ? {
+              status: "complete",
+              burstId,
+              result: {
+                status: "unavailable",
+                reason: error instanceof Error ? error.message : "runtime-load-failed",
+              },
+            }
+          : current);
+    });
     setEventLog((current) => [
       ...current,
       {
@@ -5521,6 +5577,7 @@ export default function Home() {
     unresolvedBurstIdsRef.current = new Set();
     archivedBurstIdsRef.current = new Set();
     setLatestBurstDetection(null);
+    setRitabrataRuntime({ status: "idle" });
     setBurstNotificationVisible(false);
     if (burstNotificationTimerRef.current !== null) {
       window.clearTimeout(burstNotificationTimerRef.current);
@@ -6219,6 +6276,61 @@ export default function Home() {
               </div>
             </div>
           </form>
+
+          <section className="ritabrata-pipeline-panel collapsible-panel" aria-live="polite">
+            <div className="unified-panel-header">
+              <div>
+                <small>PROVISIONAL RITABRATA PIPELINE</small>
+                <strong>CEGenGRB → CELoc · centroid comparison</strong>
+              </div>
+              <span className="panel-header-badge">CELoc ROOT parity pending</span>
+            </div>
+            <div className="ritabrata-pipeline-body">
+              {ritabrataRuntime.status === "idle" && (
+                <p>Inject a configured or random GRB to run the source-response and localization pipeline.</p>
+              )}
+              {ritabrataRuntime.status === "loading" && (
+                <p>GRB #{ritabrataRuntime.burstId} · loading the nearest verified response members…</p>
+              )}
+              {ritabrataRuntime.status === "complete" &&
+                ritabrataRuntime.result.status === "unavailable" && (
+                  <p>GRB #{ritabrataRuntime.burstId} · pipeline unavailable · {ritabrataRuntime.result.reason}</p>
+                )}
+              {ritabrataRuntime.status === "complete" &&
+                ritabrataRuntime.result.status === "available" && (() => {
+                  const result = ritabrataRuntime.result;
+                  return (
+                    <>
+                      <div className="ritabrata-pipeline-grid">
+                        <span>
+                          <small>REQUESTED DETECTOR DIRECTION</small>
+                          <strong>θ {result.requestedDirection.thetaDeg.toFixed(2)}° · φ {result.requestedDirection.phiDeg.toFixed(2)}°</strong>
+                        </span>
+                        <span>
+                          <small>SELECTED RESPONSE DATABASE</small>
+                          <strong>θ {result.selectedDatabaseDirection.thetaDeg.toFixed(2)}° · φ {result.selectedDatabaseDirection.phiDeg.toFixed(2)}°</strong>
+                          <em>quantization {result.quantizationErrorDeg.toFixed(2)}°</em>
+                        </span>
+                        <span>
+                          <small>RITABRATA / CELOC RECONSTRUCTION</small>
+                          <strong>RA {result.ritabrata.raDeg.toFixed(2)}° · Dec {result.ritabrata.decDeg.toFixed(2)}°</strong>
+                          <em>selected DB → reconstruction {result.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
+                          <em>requested truth → reconstruction {result.requestedToReconstructedDeg.toFixed(2)}°</em>
+                        </span>
+                        <span>
+                          <small>POSITIVE-EXCESS CENTROID</small>
+                          <strong>RA {result.centroid.reconstruction.raDeg.toFixed(2)}° · Dec {result.centroid.reconstruction.decDeg.toFixed(2)}°</strong>
+                          <em>requested truth → centroid {result.centroid.truthAngularErrorDeg.toFixed(2)}°</em>
+                        </span>
+                      </div>
+                      <p>
+                        {result.method} · default Ritabrata CPL A=0.026, α=−1.07, Epeak=756.4 keV · source-only expected response. Displayed angular separations are diagnostics, not confidence intervals.
+                      </p>
+                    </>
+                  );
+                })()}
+            </div>
+          </section>
 
           <section className={`detector-section collapsible-panel ${collapsedRailPanels.detector ? "is-collapsed" : ""}`}>
             <div className="detector-section-header unified-panel-header">

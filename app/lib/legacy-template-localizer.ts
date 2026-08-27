@@ -37,7 +37,10 @@ export type LegacyKsAssetBundle = Readonly<{
   geometryVersion: typeof RITABRATA_KS_GEOMETRY_VERSION;
   directionFrame: typeof RITABRATA_DETECTOR_FRAME;
   pixelPositionFrame: typeof CELOC_UPCAL_RAW_COMPONENT_FRAME;
+  /** Canonical ROOT histogram-bin identity, always 0..125. */
   pixelIds: NumericVector;
+  /** Literal upCal.txt row IDs; CELoc ignores these IDs and preserves row order. */
+  pixelPositionRowIds: NumericVector;
   pixelPositionVectors: readonly CelocRawPixelVector3[];
   energyBinEdgesKeV: NumericVector;
   templates: readonly LegacyKsTemplate[];
@@ -109,6 +112,14 @@ function finiteStrictlyIncreasing(values: NumericVector): boolean {
 }
 
 function hasCanonicalIds(ids: NumericVector): boolean {
+  if (ids.length !== RITABRATA_KS_PIXEL_COUNT) return false;
+  for (let index = 0; index < ids.length; index += 1) {
+    if (ids[index] !== index) return false;
+  }
+  return true;
+}
+
+function hasPixelIdBijection(ids: NumericVector): boolean {
   if (ids.length !== RITABRATA_KS_PIXEL_COUNT) return false;
   const unique = new Set<number>();
   for (let index = 0; index < ids.length; index += 1) {
@@ -232,6 +243,7 @@ function validateInputs(
   if (!observation.depositedEnergyCounts.length) return "energy-spectrum-unavailable";
   if (!observation.pixelErrors.length) return "pixel-errors-unavailable";
   if (!hasCanonicalIds(assets.pixelIds)) return "dimension-mismatch";
+  if (!hasPixelIdBijection(assets.pixelPositionRowIds)) return "dimension-mismatch";
 
   const energyBinCount = observation.depositedEnergyCounts.length;
   const expectedResponseLength = assets.templates.length * RITABRATA_KS_PIXEL_COUNT * energyBinCount;
@@ -240,6 +252,7 @@ function validateInputs(
     observation.pixelErrors.length !== RITABRATA_KS_PIXEL_COUNT ||
     observation.pixelIds.length !== RITABRATA_KS_PIXEL_COUNT ||
     assets.pixelPositionVectors.length !== RITABRATA_KS_PIXEL_COUNT ||
+    assets.pixelPositionRowIds.length !== RITABRATA_KS_PIXEL_COUNT ||
     observation.energyBinEdgesKeV.length !== energyBinCount + 1 ||
     assets.energyBinEdgesKeV.length !== energyBinCount + 1 ||
     assets.effectiveArea.length === 0 ||

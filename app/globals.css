@@ -6053,6 +6053,66 @@ button {
   gap: 5px;
 }
 
+.ritabrata-pipeline-panel {
+  flex: 0 0 auto;
+  border-bottom: 1px solid rgba(98, 217, 255, 0.2);
+  background: rgba(3, 19, 28, 0.72);
+}
+
+.ritabrata-pipeline-body {
+  padding: 9px 10px 10px;
+}
+
+.ritabrata-pipeline-body p {
+  margin: 0;
+  color: #789aa7;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.ritabrata-pipeline-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.ritabrata-pipeline-grid > span {
+  min-width: 0;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(98, 217, 255, 0.14);
+  background: rgba(8, 34, 45, 0.46);
+}
+
+.ritabrata-pipeline-grid small,
+.ritabrata-pipeline-grid strong,
+.ritabrata-pipeline-grid em {
+  font-family: var(--font-geist-mono), monospace;
+  font-style: normal;
+}
+
+.ritabrata-pipeline-grid small {
+  color: #5f8998;
+  font-size: 6px;
+  letter-spacing: 0.07em;
+}
+
+.ritabrata-pipeline-grid strong {
+  color: #c9e9f2;
+  font-size: 8px;
+  font-weight: 520;
+  line-height: 1.3;
+}
+
+.ritabrata-pipeline-grid em {
+  color: #86aab7;
+  font-size: 6px;
+  line-height: 1.3;
+}
+
 .celestial-card .chart-header {
   margin: 0;
 }

@@ -214,7 +214,7 @@ def load_sample(
         "rootExpectedReconstructionStatus": "REQUESTED_FROM_DOMAIN_AUTHOR",
         "geometryVersion": GEOMETRY_VERSION,
         "directionFrame": DIRECTION_FRAME,
-        "pixelIds": pixel_ids,
+        "pixelIds": list(range(PIXEL_COUNT)),
         "energyBinEdgesKeV": energy_edges,
     }
 
@@ -234,7 +234,7 @@ def main() -> None:
     pixel_ids, pixel_vectors = load_pixel_positions(input_dir / "upCal.txt")
     directions, templates = load_template_directions(input_dir / "srcpos-5deg.txt")
     energy_edges, effective_area = load_effective_area(input_dir / "allEffArea.root")
-    response_name = "ritabrata-template-response.f32.gz"
+    response_name = "ritabrata-template-response.f32.bin"
     response_path = output_dir / response_name
     uncompressed_bytes, response_hash = write_template_response(
         input_dir / "temEdepPix5deg.root", directions, energy_edges, response_path

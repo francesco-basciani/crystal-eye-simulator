@@ -1,5 +1,6 @@
 import {
   RITABRATA_GRB_PIXEL_COUNT,
+  RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
   RITABRATA_GRB_SOURCE_AREA_CM2,
   selectNearestRitabrataGrbDirection,
   type RitabrataGrbDatabaseDirection,
@@ -60,6 +61,17 @@ const KERNEL_NAMES: readonly KernelName[] = [
   "depositedEnergyMean",
   "depositedEnergyVariance",
 ];
+
+const manifestCache = new Map<string, Promise<Readonly<{
+  manifest: RitabrataGrbGeneratorManifest;
+  resolvedUrl: string;
+}>>>();
+const directionAssetCache = new Map<string, Promise<RitabrataGrbGeneratorAssets>>();
+export const RITABRATA_GRB_DIRECTION_CACHE_CAPACITY = 24;
+
+function cacheKey(url: string | URL): string {
+  return typeof url === "string" ? new URL(url, globalThis.location?.href).href : url.href;
+}
 
 function assertSha256(value: string): void {
   if (!/^[a-f0-9]{64}$/.test(value)) throw new RangeError("Invalid SHA-256 metadata.");
@@ -162,6 +174,39 @@ async function loadKernelMember(
   return littleEndianFloat32(uncompressed);
 }
 
+async function loadManifest(
+  manifestUrl: string | URL,
+): Promise<Readonly<{ manifest: RitabrataGrbGeneratorManifest; resolvedUrl: string }>> {
+  const key = cacheKey(manifestUrl);
+  let pending = manifestCache.get(key);
+  if (!pending) {
+    pending = (async () => {
+      const response = await fetch(key);
+      if (!response.ok) throw new Error(`Cannot load GRB generator manifest (${response.status}).`);
+      const bytes = await response.arrayBuffer();
+      const manifestSha256 = await sha256Hex(bytes);
+      if (manifestSha256 !== RITABRATA_GRB_APPROVED_MANIFEST_SHA256) {
+        throw new Error("Ritabrata GRB manifest SHA-256 mismatch.");
+      }
+      const manifest = JSON.parse(new TextDecoder().decode(bytes)) as RitabrataGrbGeneratorManifest;
+      assertManifest(manifest);
+      return Object.freeze({ manifest, resolvedUrl: response.url || key });
+    })();
+    manifestCache.set(key, pending);
+    const created = pending;
+    created.catch(() => {
+      if (manifestCache.get(key) === created) manifestCache.delete(key);
+    });
+  }
+  return pending;
+}
+
+/** Test/support boundary; runtime normally retains manifest and direction members. */
+export function clearRitabrataGrbGeneratorAssetCache(): void {
+  manifestCache.clear();
+  directionAssetCache.clear();
+}
+
 /**
  * Load only the nearest database direction using HTTP byte ranges. The four
  * response members are fetched lazily; the ~698 MB ROOT source is never shipped.
@@ -171,33 +216,53 @@ export async function loadRitabrataGrbGeneratorDirectionAssets(
   thetaDeg: number,
   phiDeg: number,
 ): Promise<RitabrataGrbGeneratorAssets> {
-  const response = await fetch(manifestUrl);
-  if (!response.ok) throw new Error(`Cannot load GRB generator manifest (${response.status}).`);
-  const manifest = await response.json() as RitabrataGrbGeneratorManifest;
-  assertManifest(manifest);
+  const { manifest, resolvedUrl } = await loadManifest(manifestUrl);
   const selection = selectNearestRitabrataGrbDirection(thetaDeg, phiDeg, manifest.directions);
   if (!selection) throw new RangeError("Requested GRB direction is invalid.");
   const directionIndex = manifest.directions.indexOf(selection.direction);
-  const loaded = await Promise.all(KERNEL_NAMES.map((name) =>
-    loadKernelMember(response.url || manifestUrl, manifest.kernels[name], directionIndex)));
-  return Object.freeze({
-    assetVersion: manifest.assetVersion,
-    directionFrame: manifest.directionFrame,
-    pixelCount: manifest.pixelCount,
-    sourceAreaCm2: manifest.sourceAreaCm2,
-    primaryEnergyBinEdgesKeV: Object.freeze([...manifest.primaryEnergyBinEdgesKeV]),
-    depositedEnergyBinEdgesKeV: Object.freeze([...manifest.depositedEnergyBinEdgesKeV]),
-    directions: Object.freeze([selection.direction]),
-    pixelMeanKernel: loaded[0],
-    pixelVarianceKernel: loaded[1],
-    depositedEnergyMeanKernel: loaded[2],
-    depositedEnergyVarianceKernel: loaded[3],
-    provenanceSha256: manifest.provenanceSha256,
-    rootParity: Object.freeze({
-      verified: manifest.rootParity.verified,
-      goldenFixtureId: manifest.rootParity.goldenFixtureId,
-      goldenOutputSha256: manifest.rootParity.goldenOutputSha256,
-      assetProvenanceSha256: manifest.rootParity.assetProvenanceSha256,
-    }),
-  });
+  const directionKey = `${cacheKey(manifestUrl)}#${directionIndex}`;
+  let pending = directionAssetCache.get(directionKey);
+  if (!pending) {
+    pending = (async () => {
+      const loaded = await Promise.all(KERNEL_NAMES.map((name) =>
+        loadKernelMember(resolvedUrl, manifest.kernels[name], directionIndex)));
+      return Object.freeze({
+        assetVersion: manifest.assetVersion,
+        manifestSha256: RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
+        directionFrame: manifest.directionFrame,
+        pixelCount: manifest.pixelCount,
+        sourceAreaCm2: manifest.sourceAreaCm2,
+        primaryEnergyBinEdgesKeV: Object.freeze([...manifest.primaryEnergyBinEdgesKeV]),
+        depositedEnergyBinEdgesKeV: Object.freeze([...manifest.depositedEnergyBinEdgesKeV]),
+        directions: Object.freeze([selection.direction]),
+        pixelMeanKernel: loaded[0],
+        pixelVarianceKernel: loaded[1],
+        depositedEnergyMeanKernel: loaded[2],
+        depositedEnergyVarianceKernel: loaded[3],
+        provenanceSha256: manifest.provenanceSha256,
+        rootParity: Object.freeze({
+          verified: manifest.rootParity.verified,
+          goldenFixtureId: manifest.rootParity.goldenFixtureId,
+          goldenOutputSha256: manifest.rootParity.goldenOutputSha256,
+          assetProvenanceSha256: manifest.rootParity.assetProvenanceSha256,
+        }),
+      });
+    })();
+    directionAssetCache.set(directionKey, pending);
+    while (directionAssetCache.size > RITABRATA_GRB_DIRECTION_CACHE_CAPACITY) {
+      const oldestKey = directionAssetCache.keys().next().value as string | undefined;
+      if (!oldestKey) break;
+      directionAssetCache.delete(oldestKey);
+    }
+    const created = pending;
+    created.catch(() => {
+      if (directionAssetCache.get(directionKey) === created) {
+        directionAssetCache.delete(directionKey);
+      }
+    });
+  } else {
+    directionAssetCache.delete(directionKey);
+    directionAssetCache.set(directionKey, pending);
+  }
+  return pending;
 }

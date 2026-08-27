@@ -54,7 +54,8 @@ const assets: LegacyKsAssetBundle = {
   geometryVersion: manifest.geometryVersion,
   directionFrame: manifest.directionFrame,
   pixelPositionFrame: manifest.pixelPositionFrame,
-  pixelIds: manifest.pixelIdsInSourceFileOrder,
+  pixelIds: Array.from({ length: 126 }, (_, pixelId) => pixelId),
+  pixelPositionRowIds: manifest.pixelIdsInSourceFileOrder,
   pixelPositionVectors: manifest.pixelPositionVectorsInSourceFileOrder.map((vector) =>
     createCelocRawPixelVector(vector[0], vector[1], vector[2])),
   energyBinEdgesKeV: manifest.energyBinEdgesKeV,
@@ -78,7 +79,11 @@ const results = [];
 for (const fixture of fixtureDocument.fixtures) {
   assert.equal(fixture.rootExpectedReconstruction, null);
   assert.equal(fixture.rootExpectedReconstructionStatus, "REQUESTED_FROM_DOMAIN_AUTHOR");
-  const reconstruction = computeLegacyKsLocalization(fixture, assets);
+  const reconstruction = computeLegacyKsLocalization({
+    ...fixture,
+    // ROOT histogram bins are canonical 0..125; upCal row IDs are separate metadata.
+    pixelIds: assets.pixelIds,
+  }, assets);
   assert.ok(!("status" in reconstruction), `${fixture.fixtureId} must be computable`);
   const expected = derivedCharacterization.get(fixture.fixtureId);
   assert.ok(expected, `Missing derived characterization for ${fixture.fixtureId}`);

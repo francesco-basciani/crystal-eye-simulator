@@ -5,10 +5,14 @@ import {
 
 export const RITABRATA_GRB_PIXEL_COUNT = 126;
 export const RITABRATA_GRB_SOURCE_AREA_CM2 = 4 * 18 * 18;
-// Intentionally empty until the author approves one exact converted bundle.
-// A downloaded manifest cannot authorize itself: activation requires a code change.
-export const RITABRATA_GRB_APPROVED_PROVENANCE_SHA256 = "";
-export const RITABRATA_GRB_APPROVED_GOLDEN_SHA256 = "";
+// Author-approved, code-pinned trust anchors for the converted web bundle.
+// A downloaded manifest cannot authorize itself: changing either value requires code review.
+export const RITABRATA_GRB_APPROVED_PROVENANCE_SHA256 =
+  "ac3ecb79f205c1d7436e9343b01f61211800abf03f0cae0e06ff892980fb40ea";
+export const RITABRATA_GRB_APPROVED_GOLDEN_SHA256 =
+  "dc146bd6678ceb70667695f66180add745fd64946b4135ba95ab83ffbf897ffe";
+export const RITABRATA_GRB_APPROVED_MANIFEST_SHA256 =
+  "0c1c608ad0c541936d70ea3472ee4b164b1fd069c7b54ab7cb64d1cf2cd01922";
 
 type NumericVector = ArrayLike<number>;
 
@@ -27,6 +31,7 @@ export type RitabrataGrbDatabaseDirection = Readonly<{
 
 export type RitabrataGrbGeneratorAssets = Readonly<{
   assetVersion: string;
+  manifestSha256: string;
   directionFrame: typeof RITABRATA_DETECTOR_FRAME;
   pixelCount: number;
   sourceAreaCm2: number;
@@ -56,10 +61,13 @@ export type GeneratedGrbResponse = Readonly<{
   selectedDatabaseDirection: RitabrataGrbDatabaseDirection;
   quantizationErrorDeg: number;
   spectrum: CutoffPowerLawParameters;
+  depositedEnergyBinEdgesKeV: readonly number[];
   pixelCountsPerSecond: Float64Array;
-  pixelErrorsPerSecond: Float64Array;
+  /** ROOT hNormEdepPix errors derived from the converted MC Sumw2 kernel. */
+  pixelMcSumw2ErrorsPerSecond: Float64Array;
   depositedEnergyCountsPerSecond: Float64Array;
-  depositedEnergyErrorsPerSecond: Float64Array;
+  /** ROOT hNormEdepTotCal errors derived from the converted MC Sumw2 kernel. */
+  depositedEnergyMcSumw2ErrorsPerSecond: Float64Array;
 }>;
 
 export type GrbGenerationUnavailableReason =
@@ -242,6 +250,9 @@ export function integrateCutoffPowerLaw(
 
 function validateAssets(assets: RitabrataGrbGeneratorAssets): GrbGenerationUnavailableReason | null {
   if (!assets.assetVersion.trim() || !assets.provenanceSha256.trim()) return "asset-data-unavailable";
+  if (assets.manifestSha256 !== RITABRATA_GRB_APPROVED_MANIFEST_SHA256) {
+    return "asset-provenance-mismatch";
+  }
   if (assets.directionFrame !== RITABRATA_DETECTOR_FRAME) return "direction-frame-unavailable";
   if (
     assets.pixelCount !== RITABRATA_GRB_PIXEL_COUNT ||
@@ -326,10 +337,11 @@ export function computeRitabrataGrbResponse(
     selectedDatabaseDirection: selection.direction,
     quantizationErrorDeg: selection.separationDeg,
     spectrum: Object.freeze({ ...spectrum }),
+    depositedEnergyBinEdgesKeV: Object.freeze(Array.from(assets.depositedEnergyBinEdgesKeV)),
     pixelCountsPerSecond: pixelCounts,
-    pixelErrorsPerSecond: Float64Array.from(pixelVariances, Math.sqrt),
+    pixelMcSumw2ErrorsPerSecond: Float64Array.from(pixelVariances, Math.sqrt),
     depositedEnergyCountsPerSecond: depositedCounts,
-    depositedEnergyErrorsPerSecond: Float64Array.from(depositedVariances, Math.sqrt),
+    depositedEnergyMcSumw2ErrorsPerSecond: Float64Array.from(depositedVariances, Math.sqrt),
   });
 }
 

@@ -32,6 +32,7 @@ const assets: LegacyKsAssetBundle = {
   directionFrame: RITABRATA_DETECTOR_FRAME,
   pixelPositionFrame: CELOC_UPCAL_RAW_COMPONENT_FRAME,
   pixelIds: Array.from({ length: 126 }, (_, pixelId) => pixelId),
+  pixelPositionRowIds: Array.from({ length: 126 }, (_, pixelId) => pixelId),
   pixelPositionVectors: Array.from({ length: 126 }, () => createCelocRawPixelVector(0, 0, 1)),
   energyBinEdgesKeV: [10, 20],
   templates: [{ templateId: "fixture-0", thetaDeg: 0, phiDeg: 0 }],

@@ -111,7 +111,8 @@ export function createRitabrataAssetBundle(
     geometryVersion: manifest.geometryVersion,
     directionFrame: manifest.directionFrame,
     pixelPositionFrame: manifest.pixelPositionFrame,
-    pixelIds: Object.freeze([...manifest.pixelIdsInSourceFileOrder]),
+    pixelIds: Object.freeze(Array.from({ length: RITABRATA_KS_PIXEL_COUNT }, (_, pixelId) => pixelId)),
+    pixelPositionRowIds: Object.freeze([...manifest.pixelIdsInSourceFileOrder]),
     pixelPositionVectors: Object.freeze(
       manifest.pixelPositionVectorsInSourceFileOrder.map((vector) =>
         createCelocRawPixelVector(vector[0], vector[1], vector[2])),

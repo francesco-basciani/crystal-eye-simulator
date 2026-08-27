@@ -80,6 +80,7 @@ test("official ROOT parity remains explicitly unverified", () => {
   for (const fixture of samples.fixtures) {
     assert.equal(fixture.rootExpectedReconstruction, null);
     assert.equal(fixture.rootExpectedReconstructionStatus, "REQUESTED_FROM_DOMAIN_AUTHOR");
+    assert.deepEqual(fixture.pixelIds, Array.from({ length: 126 }, (_, pixelId) => pixelId));
   }
 });
 
@@ -113,6 +114,8 @@ test("the browser loader fetches, hashes and decompresses the frozen asset", asy
     assert.equal(assets.rootParity.verified, false);
     assert.equal(assets.directionFrame, RITABRATA_DETECTOR_FRAME);
     assert.equal(assets.pixelPositionFrame, CELOC_UPCAL_RAW_COMPONENT_FRAME);
+    assert.deepEqual(assets.pixelIds, Array.from({ length: 126 }, (_, pixelId) => pixelId));
+    assert.deepEqual(assets.pixelPositionRowIds, manifest.pixelIdsInSourceFileOrder);
     assert.deepEqual(
       assets.pixelPositionVectors[0],
       manifest.pixelPositionVectorsInSourceFileOrder[0],

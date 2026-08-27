@@ -87,7 +87,7 @@ unchanged. Only explicit frame metadata changed in the tracked JSON files:
 
 | File | Before SHA-256 | After SHA-256 |
 |---|---|---|
-| `ritabrata-localizer.manifest.json` | `c15afbfedd63d7462f185e56b1b950b99000030dd70da66ca35e0105963c577a` | `afefef86beffde3b1dcae20b4b5b08f9fe6314b30a6db093e32da1c040642a8f` |
+| `ritabrata-localizer.manifest.json` | `c15afbfedd63d7462f185e56b1b950b99000030dd70da66ca35e0105963c577a` | `74b3b64c196089cbe81ae3b2725315b0054900d4f34bb4ad7918d4e93f11ce98` |
 | `ritabrata-localizer-samples.json` | `63c8ff81931feefe870624cd4734cd0b243e68cbdf90b74fe66abc0d3e26757d` | `de3e30de52ae776232f8f12ecc1c46d540d9f48dec77ecf3121ce4fcddc6d524` |
 
 The converter scripts emit the same explicit metadata. `upCal` component values
