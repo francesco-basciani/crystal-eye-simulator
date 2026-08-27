@@ -151,4 +151,11 @@ test("invalid dimensions and missing errors fail closed", () => {
     localizeWithLegacyKsTemplates({ ...observation, energyBinEdgesKeV: [10, 21] }, assets),
     { status: "unavailable", reason: "dimension-mismatch" },
   );
+  assert.deepEqual(
+    computeLegacyKsLocalization(observation, {
+      ...assets,
+      templatePixelUnscaledProjectionFlow: new Float32Array(125),
+    }),
+    { status: "unavailable", reason: "dimension-mismatch" },
+  );
 });

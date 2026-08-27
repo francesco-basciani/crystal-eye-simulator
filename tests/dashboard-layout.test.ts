@@ -108,6 +108,16 @@ test("rails separate observation context from injection and science response", (
   );
 });
 
+test("test bursts accept detector-frame theta phi and expose both localization grids", () => {
+  assert.match(pageSource, /DETECTOR θ \/ φ/);
+  assert.match(pageSource, /DETECTOR ZENITH · θ/);
+  assert.match(pageSource, /DETECTOR AZIMUTH · φ/);
+  assert.match(pageSource, /ritabrataDirectionFromAngles\(requestedThetaDeg, requestedPhiDeg\)/);
+  assert.match(pageSource, /localizerGrid === "2deg"/);
+  assert.match(pageSource, /selected DB → reconstruction/);
+  assert.match(pageSource, /requested truth → reconstruction/);
+});
+
 test("rail window headings share one visible type hierarchy", () => {
   assert.match(pageSource, /burst-inline-header unified-panel-header/);
   assert.match(pageSource, /chart-header unified-panel-header/);

@@ -45,6 +45,8 @@ export type LegacyKsAssetBundle = Readonly<{
   energyBinEdgesKeV: NumericVector;
   templates: readonly LegacyKsTemplate[];
   templatePixelEnergyResponse: NumericVector;
+  /** ROOT ProjectionX includes unscaled energy under/overflow bins. */
+  templatePixelUnscaledProjectionFlow?: NumericVector;
   effectiveArea: readonly LegacyKsEffectiveAreaRow[];
   provenanceSha256: string;
   rootParity: Readonly<{
@@ -257,7 +259,10 @@ function validateInputs(
     assets.energyBinEdgesKeV.length !== energyBinCount + 1 ||
     assets.effectiveArea.length === 0 ||
     assets.effectiveArea.some((row) => row.areaByEnergyBin.length !== energyBinCount) ||
-    assets.templatePixelEnergyResponse.length !== expectedResponseLength
+    assets.templatePixelEnergyResponse.length !== expectedResponseLength ||
+    (assets.templatePixelUnscaledProjectionFlow !== undefined &&
+      assets.templatePixelUnscaledProjectionFlow.length !==
+        assets.templates.length * RITABRATA_KS_PIXEL_COUNT)
   ) return "dimension-mismatch";
 
   for (let index = 0; index < assets.pixelIds.length; index += 1) {
@@ -289,6 +294,8 @@ function validateInputs(
       template.templateId.trim() === "" || !Number.isFinite(template.thetaDeg) ||
       template.thetaDeg < 0 || template.thetaDeg > 90 || !Number.isFinite(template.phiDeg)) ||
     !finiteNonNegative(assets.templatePixelEnergyResponse) ||
+    (assets.templatePixelUnscaledProjectionFlow !== undefined &&
+      !finiteNonNegative(assets.templatePixelUnscaledProjectionFlow)) ||
     assets.provenanceSha256.trim() === ""
   ) return "invalid-input";
   return null;
@@ -357,6 +364,9 @@ export function computeLegacyKsLocalization(
           response[pixelOffset + energyIndex] * incidentFlux[energyIndex],
         );
       }
+      projectedCount += assets.templatePixelUnscaledProjectionFlow?.[
+        templateIndex * RITABRATA_KS_PIXEL_COUNT + pixelIndex
+      ] ?? 0;
       templatePixelCounts[pixelIndex] = projectedCount;
     }
     const comparison = rootHistogramKsComparison(

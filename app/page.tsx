@@ -146,9 +146,12 @@ import {
   runRitabrataProvisionalPipeline,
   type RitabrataPipelineResult,
 } from "./lib/ritabrata-provisional-pipeline";
+import { LOCALIZATION_COMPARISON_EVIDENCE } from "./lib/localization-comparison-evidence";
 import {
   createThreeDetectorLocalVector,
   ritabrataAnglesFromDirection,
+  ritabrataDirectionFromAngles,
+  ritabrataToThreeDetectorLocal,
   threeDetectorLocalToRitabrata,
 } from "./lib/detector-local-frame-adapter";
 
@@ -229,8 +232,11 @@ type BurstEvent = {
 };
 
 type TestBurstDraft = {
+  coordinateMode: "equatorial" | "detector";
   raDeg: number;
   decDeg: number;
+  detectorThetaDeg: number;
+  detectorPhiDeg: number;
   intensity: number;
   spreadPixels: number;
   durationSeconds: number;
@@ -244,8 +250,11 @@ type RitabrataRuntimeDisplay =
 type CameraMode = "orbit" | "satellite";
 type OrbitScenarioMode = "canonical" | "parametric";
 type SimulatorMode = "reference" | "simulation";
+type LocalizerGrid = "5deg" | "2deg";
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const LOCALIZATION_EVIDENCE_SOURCE_URL =
+  "https://github.com/francesco-basciani/crystal-eye-simulator/blob/main/docs/evidence/grb-localizer-comparison-stratified-theta-20260827.json";
 const TIME_WARP_PRESETS = [1, 50, 200, 500] as const;
 const DEFAULT_ORBIT_ALTITUDE_KM = 550;
 const MIN_ORBIT_ALTITUDE_KM = 400;
@@ -2295,6 +2304,114 @@ function HistoryDialog({
               NEWER
             </button>
           </div>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function LocalizationComparisonDialog({ onClose }: { onClose: () => void }) {
+  const evidence = LOCALIZATION_COMPARISON_EVIDENCE;
+  const downloadSummary = () => {
+    const url = URL.createObjectURL(new Blob(
+      [JSON.stringify(evidence, null, 2)],
+      { type: "application/json" },
+    ));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${evidence.evidenceId}-summary.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div
+      className="history-backdrop localization-comparison-backdrop"
+      role="presentation"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <section
+        className="history-dialog localization-comparison-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="localization-comparison-title"
+      >
+        <header>
+          <div>
+            <small>{evidence.status} · STRATIFIED DETECTOR-ZENITH BENCHMARK</small>
+            <strong id="localization-comparison-title">Localization Comparison</strong>
+          </div>
+          <div className="history-header-actions">
+            <button type="button" onClick={downloadSummary}>
+              <Download size={14} /> EXPORT JSON
+            </button>
+            <button type="button" onClick={onClose} aria-label="Close localization comparison">
+              <X size={17} />
+            </button>
+          </div>
+        </header>
+
+        <div className="localization-comparison-protocol" role="note">
+          <strong>Source-only · noise-free</strong>
+          <span>{evidence.sampling}</span>
+          <span>Median requested direction → reconstructed direction angular error.</span>
+        </div>
+
+        <div className="history-table-wrap localization-comparison-table-wrap">
+          <table className="history-table localization-comparison-table">
+            <thead>
+              <tr>
+                <th>DETECTOR θ</th>
+                <th>N</th>
+                <th>CENTROID<br />MEDIAN ERROR</th>
+                <th>KS 5°<br />MEDIAN ERROR</th>
+                <th>KS 5° WINS<br />VS CENTROID</th>
+                <th>KS 2°<br />MEDIAN ERROR</th>
+                <th>KS 2° WINS<br />VS CENTROID</th>
+                <th>KS 2° WINS<br />VS KS 5°</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="localization-comparison-overall">
+                <td>ALL BANDS</td>
+                <td>{evidence.overall.sampleCount}</td>
+                <td>{evidence.overall.centroidMedianErrorDeg.toFixed(2)}°</td>
+                <td>{evidence.overall.ks5MedianErrorDeg.toFixed(2)}°</td>
+                <td>{evidence.overall.ks5PairedWins} / {evidence.overall.sampleCount}</td>
+                <td>{evidence.overall.ks2MedianErrorDeg.toFixed(2)}°</td>
+                <td>{evidence.overall.ks2PairedWins} / {evidence.overall.sampleCount}</td>
+                <td>{evidence.overall.ks2VsKs5PairedWins} / {evidence.overall.sampleCount}</td>
+              </tr>
+              {evidence.bands.map((band) => (
+                <tr key={`${band.minimumThetaDeg}-${band.maximumThetaDeg}`}>
+                  <td>{band.minimumThetaDeg}°–{band.maximumThetaDeg}°</td>
+                  <td>{band.sampleCount}</td>
+                  <td>{band.centroidMedianErrorDeg.toFixed(2)}°</td>
+                  <td>{band.ks5MedianErrorDeg.toFixed(2)}°</td>
+                  <td>{band.ks5PairedWins} / {band.sampleCount}</td>
+                  <td>{band.ks2MedianErrorDeg.toFixed(2)}°</td>
+                  <td>{band.ks2PairedWins} / {band.sampleCount}</td>
+                  <td>{band.ks2VsKs5PairedWins} / {band.sampleCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <footer className="localization-comparison-footer">
+          <div>
+            <span>
+              Single-host median runtime reference · centroid {evidence.runtimeReference.centroidMedianMs.toFixed(3)} ms ·
+              KS 5° {evidence.runtimeReference.ks5MedianMs.toFixed(1)} ms ·
+              KS 2° {evidence.runtimeReference.ks2MedianMs.toFixed(1)} ms
+            </span>
+            <span>Seed {evidence.seed} · medians are descriptive, not confidence intervals.</span>
+          </div>
+          <a href={LOCALIZATION_EVIDENCE_SOURCE_URL} target="_blank" rel="noreferrer">
+            SOURCE EVIDENCE
+          </a>
         </footer>
       </section>
     </div>
@@ -4352,6 +4469,7 @@ export default function Home() {
   const [selectedPixel, setSelectedPixel] = useState(43);
   const [detectorExpanded, setDetectorExpanded] = useState(false);
   const [historyView, setHistoryView] = useState<"events" | null>(null);
+  const [localizationComparisonOpen, setLocalizationComparisonOpen] = useState(false);
   const [collapsedRailPanels, setCollapsedRailPanels] = useState({
     burst: false,
     celestial: false,
@@ -4361,8 +4479,11 @@ export default function Home() {
   const [simulatorMode, setSimulatorMode] =
     useState<SimulatorMode>("reference");
   const [testBurstDraft, setTestBurstDraft] = useState<TestBurstDraft>({
+    coordinateMode: "equatorial",
     raDeg: 0,
     decDeg: 0,
+    detectorThetaDeg: 0,
+    detectorPhiDeg: 0,
     intensity: 100,
     spreadPixels: 18,
     durationSeconds: 1.2,
@@ -4400,6 +4521,7 @@ export default function Home() {
   const [ritabrataRuntime, setRitabrataRuntime] = useState<RitabrataRuntimeDisplay>({
     status: "idle",
   });
+  const [localizerGrid, setLocalizerGrid] = useState<LocalizerGrid>("5deg");
   const [eventLog, setEventLog] = useState<EventRecord[]>(() => {
     const utc = new Date().toISOString();
     return [
@@ -4825,14 +4947,15 @@ export default function Home() {
   ]);
 
   useEffect(() => {
-    if (!detectorExpanded && !historyView) return;
+    if (!detectorExpanded && !historyView && !localizationComparisonOpen) return;
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setDetectorExpanded(false);
       if (event.key === "Escape") setHistoryView(null);
+      if (event.key === "Escape") setLocalizationComparisonOpen(false);
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [detectorExpanded, historyView]);
+  }, [detectorExpanded, historyView, localizationComparisonOpen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -5301,7 +5424,9 @@ export default function Home() {
     setRitabrataRuntime({ status: "loading", burstId });
     void runRitabrataProvisionalPipeline({
       generatorManifestUrl: `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-grb-generator/ritabrata-grb-generator.manifest.json`,
-      localizerManifestUrl: `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-localizer/ritabrata-localizer.manifest.json`,
+      localizerManifestUrl: `${window.location.origin}${PUBLIC_BASE_PATH}/data/${
+        localizerGrid === "2deg" ? "ritabrata-localizer-2deg" : "ritabrata-localizer"
+      }/ritabrata-localizer.manifest.json`,
       requestedThetaDeg: requestedAngles.thetaDeg,
       requestedPhiDeg: requestedAngles.phiDeg,
       spectrum: {
@@ -5343,7 +5468,7 @@ export default function Home() {
         kind: "grb",
       },
     ]);
-  }, [selectPixel]);
+  }, [localizerGrid, selectPixel]);
 
   const injectGRB = useCallback((options?: {
     random?: () => number;
@@ -5463,12 +5588,55 @@ export default function Home() {
       ...current,
       raDeg: Number(coordinates.raDeg.toFixed(3)),
       decDeg: Number(coordinates.decDeg.toFixed(3)),
+      detectorThetaDeg: 0,
+      detectorPhiDeg: 0,
     }));
   }, []);
 
   const injectTestBurst = useCallback(() => {
-    const raDeg = ((testBurstDraft.raDeg % 360) + 360) % 360;
-    const decDeg = THREE.MathUtils.clamp(testBurstDraft.decDeg, -90, 90);
+    const detectorMode = testBurstDraft.coordinateMode === "detector";
+    const requestedThetaDeg = THREE.MathUtils.clamp(
+      testBurstDraft.detectorThetaDeg,
+      0,
+      90,
+    );
+    const requestedPhiDeg = ((testBurstDraft.detectorPhiDeg % 360) + 360) % 360;
+    const boresight = satelliteDirectionRef.current;
+    const localSource = detectorMode
+      ? new THREE.Vector3().fromArray(
+          ritabrataToThreeDetectorLocal(
+            ritabrataDirectionFromAngles(requestedThetaDeg, requestedPhiDeg),
+          ),
+        )
+      : (() => {
+          const requestedRaDeg = ((testBurstDraft.raDeg % 360) + 360) % 360;
+          const requestedDecDeg = THREE.MathUtils.clamp(testBurstDraft.decDeg, -90, 90);
+          return new THREE.Vector3()
+            .fromArray(equatorialToSceneDirection(requestedRaDeg, requestedDecDeg))
+            .applyQuaternion(
+              new THREE.Quaternion()
+                .setFromUnitVectors(
+                  new THREE.Vector3(0, 1, 0),
+                  new THREE.Vector3().fromArray(boresight),
+                )
+                .invert(),
+            )
+            .normalize();
+        })();
+    const sourceDirection = localSource
+      .clone()
+      .applyQuaternion(
+        new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          new THREE.Vector3().fromArray(boresight),
+        ),
+      )
+      .normalize();
+    const coordinates = sceneDirectionToEquatorial(
+      sourceDirection.toArray() as [number, number, number],
+    );
+    const raDeg = coordinates.raDeg;
+    const decDeg = coordinates.decDeg;
     const intensity = THREE.MathUtils.clamp(
       testBurstDraft.intensity,
       0,
@@ -5482,20 +5650,6 @@ export default function Home() {
       0.2,
       10,
     );
-    const sourceDirection = equatorialToSceneDirection(raDeg, decDeg);
-    const boresight = satelliteDirectionRef.current;
-    const sourceVector = new THREE.Vector3().fromArray(sourceDirection);
-    const localSource = sourceVector
-      .clone()
-      .applyQuaternion(
-        new THREE.Quaternion()
-          .setFromUnitVectors(
-            new THREE.Vector3(0, 1, 0),
-            new THREE.Vector3().fromArray(boresight),
-          )
-          .invert(),
-      )
-      .normalize();
     const pixelBackground = backgroundProfileRef.current;
     if (!pixelBackground) return;
     const physicalGeometry = createV2R8CandidateDetectorGeometry(
@@ -5514,7 +5668,10 @@ export default function Home() {
         targetPixel = index;
       }
     });
-    const separation = angleBetween(sourceDirection, boresight);
+    const separation = angleBetween(
+      sourceDirection.toArray() as [number, number, number],
+      boresight,
+    );
     const inField =
       separation <=
       getMountEffectiveFov(
@@ -6147,7 +6304,11 @@ export default function Home() {
             <div className="burst-inline-header unified-panel-header">
               <div>
                 <small>TEST BURST CONFIGURATION</small>
-                <strong>Equatorial source · current epoch</strong>
+                <strong>
+                  {testBurstDraft.coordinateMode === "detector"
+                    ? "Detector-frame source · ROOT θ/φ"
+                    : "Equatorial source · current epoch"}
+                </strong>
               </div>
               <div className="panel-header-actions">
                 <button type="button" className="panel-header-action" onClick={aimTestBurstAtBoresight}>
@@ -6169,41 +6330,106 @@ export default function Home() {
             </div>
 
             <div className="collapsible-panel-body burst-panel-body">
+              <div className="burst-coordinate-mode" role="group" aria-label="Burst coordinate frame">
+                <button
+                  type="button"
+                  className={testBurstDraft.coordinateMode === "equatorial" ? "is-active" : ""}
+                  aria-pressed={testBurstDraft.coordinateMode === "equatorial"}
+                  onClick={() => setTestBurstDraft((current) => ({
+                    ...current,
+                    coordinateMode: "equatorial",
+                  }))}
+                >
+                  RA / DEC
+                </button>
+                <button
+                  type="button"
+                  className={testBurstDraft.coordinateMode === "detector" ? "is-active" : ""}
+                  aria-pressed={testBurstDraft.coordinateMode === "detector"}
+                  onClick={() => setTestBurstDraft((current) => ({
+                    ...current,
+                    coordinateMode: "detector",
+                  }))}
+                >
+                  DETECTOR θ / φ
+                </button>
+              </div>
               <div className="burst-inline-fields burst-coordinate-fields">
-                <label>
-                  <span>RIGHT ASCENSION · RA</span>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      max="360"
-                      step="0.001"
-                      value={testBurstDraft.raDeg}
-                      onChange={(event) => setTestBurstDraft((current) => ({
-                        ...current,
-                        raDeg: Number(event.target.value),
-                      }))}
-                    />
-                    <em>deg</em>
-                  </div>
-                </label>
-                <label>
-                  <span>DECLINATION · DEC</span>
-                  <div>
-                    <input
-                      type="number"
-                      min="-90"
-                      max="90"
-                      step="0.001"
-                      value={testBurstDraft.decDeg}
-                      onChange={(event) => setTestBurstDraft((current) => ({
-                        ...current,
-                        decDeg: Number(event.target.value),
-                      }))}
-                    />
-                    <em>deg</em>
-                  </div>
-                </label>
+                {testBurstDraft.coordinateMode === "equatorial" ? (
+                  <>
+                    <label>
+                      <span>RIGHT ASCENSION · RA</span>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="360"
+                          step="0.001"
+                          value={testBurstDraft.raDeg}
+                          onChange={(event) => setTestBurstDraft((current) => ({
+                            ...current,
+                            raDeg: Number(event.target.value),
+                          }))}
+                        />
+                        <em>deg</em>
+                      </div>
+                    </label>
+                    <label>
+                      <span>DECLINATION · DEC</span>
+                      <div>
+                        <input
+                          type="number"
+                          min="-90"
+                          max="90"
+                          step="0.001"
+                          value={testBurstDraft.decDeg}
+                          onChange={(event) => setTestBurstDraft((current) => ({
+                            ...current,
+                            decDeg: Number(event.target.value),
+                          }))}
+                        />
+                        <em>deg</em>
+                      </div>
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      <span>DETECTOR ZENITH · θ</span>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="90"
+                          step="0.001"
+                          value={testBurstDraft.detectorThetaDeg}
+                          onChange={(event) => setTestBurstDraft((current) => ({
+                            ...current,
+                            detectorThetaDeg: Number(event.target.value),
+                          }))}
+                        />
+                        <em>deg</em>
+                      </div>
+                    </label>
+                    <label>
+                      <span>DETECTOR AZIMUTH · φ</span>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="360"
+                          step="0.001"
+                          value={testBurstDraft.detectorPhiDeg}
+                          onChange={(event) => setTestBurstDraft((current) => ({
+                            ...current,
+                            detectorPhiDeg: Number(event.target.value),
+                          }))}
+                        />
+                        <em>deg</em>
+                      </div>
+                    </label>
+                  </>
+                )}
               </div>
 
               <div className="burst-inline-fields burst-response-fields">
@@ -6281,9 +6507,22 @@ export default function Home() {
             <div className="unified-panel-header">
               <div>
                 <small>PROVISIONAL GRB LOCALIZATION</small>
-                <strong>CEGenGRB → CELoc · centroid comparison</strong>
+                <strong>CEGenGRB → CELoc {localizerGrid === "2deg" ? "2°" : "5°"} · centroid comparison</strong>
               </div>
-              <span className="panel-header-badge">CELoc ROOT parity pending</span>
+              <div className="localizer-grid-selector" role="group" aria-label="KS template grid">
+                <button
+                  type="button"
+                  className={localizerGrid === "5deg" ? "is-active" : ""}
+                  aria-pressed={localizerGrid === "5deg"}
+                  onClick={() => setLocalizerGrid("5deg")}
+                >5°</button>
+                <button
+                  type="button"
+                  className={localizerGrid === "2deg" ? "is-active" : ""}
+                  aria-pressed={localizerGrid === "2deg"}
+                  onClick={() => setLocalizerGrid("2deg")}
+                >2°</button>
+              </div>
             </div>
             <div className="ritabrata-pipeline-body">
               {ritabrataRuntime.status === "idle" && (
@@ -6313,14 +6552,17 @@ export default function Home() {
                         </span>
                         <span>
                           <small>TEMPLATE / KS RECONSTRUCTION</small>
+                          <strong>θ {result.ritabrata.thetaDeg.toFixed(2)}° · φ {result.ritabrata.phiDeg.toFixed(2)}°</strong>
                           <strong>RA {result.ritabrata.raDeg.toFixed(2)}° · Dec {result.ritabrata.decDeg.toFixed(2)}°</strong>
                           <em>selected DB → reconstruction {result.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
                           <em>requested truth → reconstruction {result.requestedToReconstructedDeg.toFixed(2)}°</em>
                         </span>
                         <span>
                           <small>POSITIVE-EXCESS CENTROID</small>
+                          <strong>θ {result.centroid.thetaDeg.toFixed(2)}° · φ {result.centroid.phiDeg.toFixed(2)}°</strong>
                           <strong>RA {result.centroid.reconstruction.raDeg.toFixed(2)}° · Dec {result.centroid.reconstruction.decDeg.toFixed(2)}°</strong>
-                          <em>requested truth → centroid {result.centroid.truthAngularErrorDeg.toFixed(2)}°</em>
+                          <em>selected DB → reconstruction {result.centroid.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
+                          <em>requested truth → reconstruction {result.centroid.requestedToReconstructedDeg.toFixed(2)}°</em>
                         </span>
                       </div>
                       <p>
@@ -6329,6 +6571,14 @@ export default function Home() {
                     </>
                   );
                 })()}
+              <button
+                type="button"
+                className="localization-comparison-launch"
+                onClick={() => setLocalizationComparisonOpen(true)}
+              >
+                OPEN LOCALIZATION COMPARISON
+                <ChevronRight size={14} />
+              </button>
             </div>
           </section>
 
@@ -6452,6 +6702,12 @@ export default function Home() {
         <HistoryDialog
           events={eventLog}
           onClose={() => setHistoryView(null)}
+        />
+      )}
+
+      {localizationComparisonOpen && (
+        <LocalizationComparisonDialog
+          onClose={() => setLocalizationComparisonOpen(false)}
         />
       )}
 

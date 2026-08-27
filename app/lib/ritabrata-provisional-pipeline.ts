@@ -18,7 +18,12 @@ import {
   type Vector3,
 } from "./burst-direction-reconstruction.ts";
 import { angularSeparationDeg } from "./burst-direction-truth-score.ts";
-import { ritabrataDirectionFromAngles } from "./detector-local-frame-adapter.ts";
+import {
+  createThreeDetectorLocalVector,
+  ritabrataAnglesFromDirection,
+  ritabrataDirectionFromAngles,
+  threeDetectorLocalToRitabrata,
+} from "./detector-local-frame-adapter.ts";
 
 export const RITABRATA_PROVISIONAL_PIPELINE_VERSION =
   "ritabrata-cegengrb-to-celoc-provisional-v1" as const;
@@ -94,6 +99,10 @@ export type RitabrataPipelineAvailable = Readonly<{
   }>;
   centroid: Readonly<{
     reconstruction: BurstDirectionReconstruction;
+    thetaDeg: number;
+    phiDeg: number;
+    selectedDatabaseToReconstructedDeg: number;
+    requestedToReconstructedDeg: number;
     truthAngularErrorDeg: number;
   }>;
 }>;
@@ -165,6 +174,10 @@ export function runRitabrataProvisionalPipelineFromAssets(input: Readonly<{
   const rootSeparation = (first: Vector3, second: Vector3) => Math.acos(Math.max(-1, Math.min(1,
     first[0] * second[0] + first[1] * second[1] + first[2] * second[2],
   ))) * 180 / Math.PI;
+  const centroidRoot = threeDetectorLocalToRitabrata(
+    createThreeDetectorLocalVector(...centroid.localDirection),
+  );
+  const centroidAngles = ritabrataAnglesFromDirection(centroidRoot);
   return Object.freeze({
     status: "available",
     validationStatus: "PROVISIONAL",
@@ -187,6 +200,9 @@ export function runRitabrataProvisionalPipelineFromAssets(input: Readonly<{
     }),
     centroid: Object.freeze({
       reconstruction: centroid,
+      ...centroidAngles,
+      selectedDatabaseToReconstructedDeg: rootSeparation(selectedRoot, centroidRoot),
+      requestedToReconstructedDeg: rootSeparation(requestedRoot, centroidRoot),
       truthAngularErrorDeg: angularSeparationDeg(centroid, input.truth),
     }),
   });

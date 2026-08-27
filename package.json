@@ -8,12 +8,15 @@
   "scripts": {
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext build",
-    "build:pages": "npm run validate:ritabrata-grb-generator && GITHUB_PAGES=true NEXT_PUBLIC_BASE_PATH=/crystal-eye-simulator next build",
+    "build:pages": "npm run validate:ritabrata-grb-generator && npm run validate:localizer-grids && GITHUB_PAGES=true NEXT_PUBLIC_BASE_PATH=/crystal-eye-simulator next build",
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "validate:ritabrata-localizer": "node --experimental-strip-types scripts/validate-ritabrata-localizer.ts",
-    "validate:ritabrata-grb-generator": "node --experimental-strip-types scripts/validate-ritabrata-grb-generator.ts"
+    "validate:ritabrata-grb-generator": "node --experimental-strip-types scripts/validate-ritabrata-grb-generator.ts",
+    "validate:localizer-grids": "node --experimental-strip-types scripts/validate-ritabrata-localizer-grid.ts public/data/ritabrata-localizer && node --experimental-strip-types scripts/validate-ritabrata-localizer-grid.ts public/data/ritabrata-localizer-2deg",
+    "benchmark:grb-localizers": "node --experimental-strip-types scripts/benchmark-grb-localizers.ts public/data/ritabrata-grb-generator docs/evidence/grb-localizer-comparison-20260827.json 128 public/data/ritabrata-localizer public/data/ritabrata-localizer-2deg",
+    "benchmark:grb-localizers:stratified": "GRB_BENCHMARK_SAMPLING=stratified-theta node --experimental-strip-types scripts/benchmark-grb-localizers.ts public/data/ritabrata-grb-generator docs/evidence/grb-localizer-comparison-stratified-theta-20260827.json 24 public/data/ritabrata-localizer public/data/ritabrata-localizer-2deg"
   },
   "dependencies": {
     "astronomy-engine": "^2.1.19",

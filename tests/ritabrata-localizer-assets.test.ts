@@ -5,6 +5,7 @@ import { createServer } from "node:http";
 import test from "node:test";
 import { gunzipSync } from "node:zlib";
 import {
+  APPROVED_LOCALIZER_MANIFEST_SHA256,
   createRitabrataAssetBundle,
   loadRitabrataLocalizerAssets,
 } from "../app/lib/ritabrata-localizer-assets.ts";
@@ -33,6 +34,10 @@ const expectedSourceHashes = {
 };
 
 test("Ritabrata source provenance and converted dimensions are frozen", () => {
+  assert.equal(
+    createHash("sha256").update(manifestBytes).digest("hex"),
+    APPROVED_LOCALIZER_MANIFEST_SHA256[manifest.assetVersion as keyof typeof APPROVED_LOCALIZER_MANIFEST_SHA256],
+  );
   assert.deepEqual(manifest.sourceFilesSha256, expectedSourceHashes);
   assert.equal(manifest.pixelCount, 126);
   assert.equal(manifest.directionFrame, RITABRATA_DETECTOR_FRAME);

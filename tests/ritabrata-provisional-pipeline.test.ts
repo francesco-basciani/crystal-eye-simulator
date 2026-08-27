@@ -109,6 +109,10 @@ test("the provisional vertical slice reports three separate angular metrics", ()
     assert.equal(result.quantizationErrorDeg, 0);
     assert.equal(result.selectedDatabaseToReconstructedDeg, 0);
     assert.equal(result.requestedToReconstructedDeg, 0);
+    assert.equal(result.centroid.thetaDeg, 0);
+    assert.equal(result.centroid.phiDeg, 0);
+    assert.equal(result.centroid.selectedDatabaseToReconstructedDeg, 0);
+    assert.equal(result.centroid.requestedToReconstructedDeg, 0);
     assert.equal(result.centroid.truthAngularErrorDeg, 0);
   }
 });

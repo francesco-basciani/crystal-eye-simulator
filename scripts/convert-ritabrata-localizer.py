@@ -29,8 +29,7 @@ except ImportError as error:  # pragma: no cover - exercised by the operator env
 PIXEL_COUNT = 126
 ENERGY_BIN_COUNT = 100
 EFFECTIVE_AREA_COUNT = 91
-TEMPLATE_COUNT = 742
-ASSET_VERSION = "ritabrata-standalone-celoc-v1"
+DEFAULT_TEMPLATE_COUNT = 742
 GEOMETRY_VERSION = "CESimulation-V2R8-candidate"
 DIRECTION_FRAME = "RITABRATA_ROOT_PLUS_Z_POLAR_PHI_ATAN2_Y_X"
 PIXEL_POSITION_FRAME = "CELOC_UPCAL_RAW_COMPONENT_ORDER_UNVALIDATED"
@@ -38,11 +37,6 @@ REQUIRED_FILES = (
     "CELoc.cc",
     "upCal.txt",
     "allEffArea.root",
-    "srcpos-5deg.txt",
-    "temEdepPix5deg.root",
-    "sample-src-41-117.root",
-    "sample-src-74-349.root",
-    "CMakeLists.txt",
 )
 GOOGLE_DRIVE_FILE_IDS = {
     "allEffArea.root": "1yqtIT39ob3SDJtnCzD8RW1ia1Dgl2m0F",
@@ -52,6 +46,8 @@ GOOGLE_DRIVE_FILE_IDS = {
     "sample-src-74-349.root": "1iIVFGPss43bfT5V8fCQZ_625TTGf5nWP",
     "srcpos-5deg.txt": "1iRrU-5NvL6T3tYqvzVJ8kQy2m33tLQNC",
     "temEdepPix5deg.root": "1K9QMaYaJv5zMseI-t9_7O8SFNrMckRNk",
+    "srcpos-2deg.txt": "1ZvcEVFJweJGIVwdwEAgkNyzh_Jhz_28t",
+    "temEdepPix2deg.root": "1Jp_DSPS5ODZKN0c2XijFbbiqSPDUweTU",
     "upCal.txt": "1XRglTfOSB9SuOiGRF5okQrjMepl0MtcE",
 }
 
@@ -91,10 +87,8 @@ def load_pixel_positions(path: Path) -> tuple[list[int], list[list[float]]]:
 def load_template_directions(path: Path) -> tuple[np.ndarray, list[dict[str, Any]]]:
     # SetTemPosInfoFile binds the text fields to Float_t.
     directions = np.loadtxt(path, dtype=np.float32)
-    if directions.shape != (TEMPLATE_COUNT, 2):
-        raise ValueError(
-            f"srcpos must have shape ({TEMPLATE_COUNT}, 2), got {directions.shape}."
-        )
+    if directions.ndim != 2 or directions.shape[1] != 2 or directions.shape[0] <= 0:
+        raise ValueError(f"srcpos must have shape (N, 2), got {directions.shape}.")
     templates = [
         {
             "templateId": f"hEdepPix_{int(theta)}_{int(phi)}",
@@ -103,7 +97,7 @@ def load_template_directions(path: Path) -> tuple[np.ndarray, list[dict[str, Any
         }
         for theta, phi in directions
     ]
-    if len({template["templateId"] for template in templates}) != TEMPLATE_COUNT:
+    if len({template["templateId"] for template in templates}) != len(templates):
         raise ValueError("Integer-truncated ROOT template names are not unique.")
     return directions, templates
 
@@ -137,17 +131,25 @@ def write_template_response(
     directions: np.ndarray,
     expected_energy_edges: list[float],
     output_path: Path,
-) -> tuple[int, str]:
+    flow_output_path: Path,
+) -> tuple[int, str, int, str, int]:
     root_file = uproot.open(input_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("wb") as raw_output:
+    nonzero_flow_cells = 0
+    with output_path.open("wb") as raw_output, flow_output_path.open("wb") as raw_flow_output:
         with gzip.GzipFile(
             filename="ritabrata-template-response.f32",
             mode="wb",
             fileobj=raw_output,
             compresslevel=9,
             mtime=0,
-        ) as compressed:
+        ) as compressed, gzip.GzipFile(
+            filename="ritabrata-template-projection-flow.f32",
+            mode="wb",
+            fileobj=raw_flow_output,
+            compresslevel=9,
+            mtime=0,
+        ) as compressed_flow:
             for theta, phi in directions:
                 name = f"hEdepPix_{int(theta)}_{int(phi)}"
                 histogram = root_file[name]
@@ -161,13 +163,26 @@ def write_template_response(
                 if not np.array_equal(energy_edges, np.asarray(expected_energy_edges)):
                     raise ValueError(f"Unexpected {name} energy axis.")
                 flow = np.asarray(histogram.values(flow=True), dtype=np.float64)
-                if np.any(flow[0, :]) or np.any(flow[-1, :]) or np.any(flow[:, 0]) or np.any(flow[:, -1]):
-                    raise ValueError(f"{name} underflow/overflow must be zero.")
-                if not np.isfinite(values).all() or np.any(values < 0):
+                if np.any(flow[0, :]) or np.any(flow[-1, :]):
+                    raise ValueError(f"{name} pixel-axis underflow/overflow must be zero.")
+                projection_flow = np.asarray(flow[1:-1, 0] + flow[1:-1, -1], dtype="<f4")
+                if (
+                    not np.isfinite(values).all() or np.any(values < 0) or
+                    not np.isfinite(projection_flow).all() or np.any(projection_flow < 0)
+                ):
                     raise ValueError(f"{name} contains invalid response values.")
+                nonzero_flow_cells += int(np.count_nonzero(projection_flow))
                 compressed.write(values.tobytes(order="C"))
-    uncompressed_bytes = TEMPLATE_COUNT * PIXEL_COUNT * ENERGY_BIN_COUNT * struct.calcsize("<f")
-    return uncompressed_bytes, sha256(output_path)
+                compressed_flow.write(projection_flow.tobytes(order="C"))
+    uncompressed_bytes = len(directions) * PIXEL_COUNT * ENERGY_BIN_COUNT * struct.calcsize("<f")
+    flow_uncompressed_bytes = len(directions) * PIXEL_COUNT * struct.calcsize("<f")
+    return (
+        uncompressed_bytes,
+        sha256(output_path),
+        flow_uncompressed_bytes,
+        sha256(flow_output_path),
+        nonzero_flow_cells,
+    )
 
 
 def sample_truth_from_name(path: Path) -> dict[str, float]:
@@ -223,26 +238,47 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("input_dir", type=Path)
     parser.add_argument("output_dir", type=Path)
+    parser.add_argument("--grid", choices=("5deg", "2deg"), default="5deg")
     arguments = parser.parse_args()
     input_dir = arguments.input_dir.resolve()
     output_dir = arguments.output_dir.resolve()
-    missing = [name for name in REQUIRED_FILES if not (input_dir / name).is_file()]
+    direction_name = f"srcpos-{arguments.grid}.txt"
+    response_root_name = f"temEdepPix{arguments.grid}.root"
+    fixture_names = ("sample-src-41-117.root", "sample-src-74-349.root")
+    optional_five_degree_files = (*fixture_names, "CMakeLists.txt") if arguments.grid == "5deg" else ()
+    source_names = (*REQUIRED_FILES, direction_name, response_root_name, *optional_five_degree_files)
+    missing = [name for name in source_names if not (input_dir / name).is_file()]
     if missing:
         raise SystemExit(f"Missing required input files: {', '.join(missing)}")
 
-    source_hashes = {name: sha256(input_dir / name) for name in REQUIRED_FILES}
+    source_hashes = {name: sha256(input_dir / name) for name in source_names}
     pixel_ids, pixel_vectors = load_pixel_positions(input_dir / "upCal.txt")
-    directions, templates = load_template_directions(input_dir / "srcpos-5deg.txt")
+    directions, templates = load_template_directions(input_dir / direction_name)
     energy_edges, effective_area = load_effective_area(input_dir / "allEffArea.root")
     response_name = "ritabrata-template-response.f32.bin"
     response_path = output_dir / response_name
-    uncompressed_bytes, response_hash = write_template_response(
-        input_dir / "temEdepPix5deg.root", directions, energy_edges, response_path
+    flow_name = "ritabrata-template-projection-flow.f32.bin"
+    flow_path = output_dir / flow_name
+    (
+        uncompressed_bytes,
+        response_hash,
+        flow_uncompressed_bytes,
+        flow_hash,
+        nonzero_flow_cells,
+    ) = write_template_response(
+        input_dir / response_root_name,
+        directions,
+        energy_edges,
+        response_path,
+        flow_path,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    fixture_names = ("sample-src-41-117.root", "sample-src-74-349.root")
-    fixtures = [load_sample(input_dir / name, energy_edges, pixel_ids) for name in fixture_names]
+    fixtures = (
+        [load_sample(input_dir / name, energy_edges, pixel_ids) for name in fixture_names]
+        if arguments.grid == "5deg"
+        else []
+    )
     fixture_path = output_dir / "ritabrata-localizer-samples.json"
     fixture_path.write_text(
         json.dumps({"schemaVersion": 1, "fixtures": fixtures}, indent=2) + "\n",
@@ -252,13 +288,17 @@ def main() -> None:
     provenance_hash = canonical_hash(source_hashes)
     manifest = {
         "schemaVersion": 1,
-        "assetVersion": ASSET_VERSION,
+        "assetVersion": (
+            "ritabrata-standalone-celoc-v1"
+            if arguments.grid == "5deg"
+            else "ritabrata-standalone-celoc-2deg-v1"
+        ),
         "geometryVersion": GEOMETRY_VERSION,
         "directionFrame": DIRECTION_FRAME,
         "pixelPositionFrame": PIXEL_POSITION_FRAME,
         "pixelCount": PIXEL_COUNT,
         "energyBinCount": ENERGY_BIN_COUNT,
-        "templateCount": TEMPLATE_COUNT,
+        "templateCount": len(templates),
         "effectiveAreaThetaCount": EFFECTIVE_AREA_COUNT,
         "pixelIdsInSourceFileOrder": pixel_ids,
         "pixelPositionVectorsInSourceFileOrder": pixel_vectors,
@@ -272,8 +312,23 @@ def main() -> None:
             "uncompressedByteLength": uncompressed_bytes,
             "sha256": response_hash,
         },
+        **({
+            "templateProjectionFlow": {
+                "file": flow_name,
+                "encoding": "gzip-float32-little-endian",
+                "layout": "template,pixel",
+                "uncompressedByteLength": flow_uncompressed_bytes,
+                "sha256": flow_hash,
+                "nonzeroCellCount": nonzero_flow_cells,
+                "semantics": "Unscaled energy-axis underflow plus overflow included by ROOT TH2::ProjectionX defaults",
+            }
+        } if nonzero_flow_cells > 0 else {}),
         "sourceFilesSha256": source_hashes,
-        "sourceFilesGoogleDriveIds": GOOGLE_DRIVE_FILE_IDS,
+        "sourceFilesGoogleDriveIds": {
+            name: GOOGLE_DRIVE_FILE_IDS[name]
+            for name in source_names
+            if name in GOOGLE_DRIVE_FILE_IDS
+        },
         "provenanceSha256": provenance_hash,
         "rootParity": {
             "verified": False,
@@ -287,6 +342,7 @@ def main() -> None:
             "upCal source-file row order is preserved because CELoc.cc ignores the ID column",
             "the supplied C++ erases from fVProb during range iteration; this port applies the stated >=1% filter deterministically",
             "detector-local theta/phi to spacecraft or RA/Dec conversion is outside this asset",
+            f"template direction grid supplied by the domain author: {arguments.grid}",
         ],
     }
     manifest_path = output_dir / "ritabrata-localizer.manifest.json"
@@ -297,6 +353,8 @@ def main() -> None:
         "templateResponse": str(response_path),
         "provenanceSha256": provenance_hash,
         "templateResponseSha256": response_hash,
+        "templateProjectionFlowSha256": flow_hash,
+        "templateProjectionFlowNonzeroCellCount": nonzero_flow_cells,
     }, indent=2))
 
 

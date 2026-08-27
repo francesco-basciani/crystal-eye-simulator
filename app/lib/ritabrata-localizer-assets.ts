@@ -12,6 +12,13 @@ import {
   type CelocRawPixelVector3,
 } from "./detector-local-frame-adapter.ts";
 
+export const APPROVED_LOCALIZER_MANIFEST_SHA256 = Object.freeze({
+  "ritabrata-standalone-celoc-v1":
+    "74b3b64c196089cbe81ae3b2725315b0054900d4f34bb4ad7918d4e93f11ce98",
+  "ritabrata-standalone-celoc-2deg-v1":
+    "c81131bba54231bbd06505b100c4700293879a1421d4f8b901c0cacaadff3538",
+} as const);
+
 export type RitabrataLocalizerManifest = Readonly<{
   schemaVersion: 1;
   assetVersion: string;
@@ -28,11 +35,27 @@ export type RitabrataLocalizerManifest = Readonly<{
   templates: readonly LegacyKsTemplate[];
   effectiveArea: readonly LegacyKsEffectiveAreaRow[];
   templateResponse: Readonly<{
-    file: string;
     encoding: "gzip-float32-little-endian";
     layout: "template,pixel,energy";
     uncompressedByteLength: number;
+    file?: string;
+    sha256?: string;
+    shards?: readonly Readonly<{
+      file: string;
+      templateStart: number;
+      templateCount: number;
+      uncompressedByteLength: number;
+      sha256: string;
+    }>[];
+  }>;
+  templateProjectionFlow?: Readonly<{
+    file: string;
+    encoding: "gzip-float32-little-endian";
+    layout: "template,pixel";
+    uncompressedByteLength: number;
     sha256: string;
+    nonzeroCellCount: number;
+    semantics: string;
   }>;
   provenanceSha256: string;
   rootParity: Readonly<{
@@ -77,12 +100,49 @@ function assertManifest(manifest: RitabrataLocalizerManifest): void {
     manifest.effectiveArea.length !== manifest.effectiveAreaThetaCount ||
     manifest.templateResponse.encoding !== "gzip-float32-little-endian" ||
     manifest.templateResponse.layout !== "template,pixel,energy" ||
-    !/^[a-f0-9]{64}$/.test(manifest.templateResponse.sha256) ||
     !/^[a-f0-9]{64}$/.test(manifest.provenanceSha256)
   ) throw new RangeError("GRB localizer manifest is invalid or incompatible.");
   const expectedBytes = manifest.templateCount * manifest.pixelCount * manifest.energyBinCount * 4;
   if (manifest.templateResponse.uncompressedByteLength !== expectedBytes) {
     throw new RangeError("GRB template-response dimensions do not match its byte length.");
+  }
+  const monolithic = manifest.templateResponse.file && manifest.templateResponse.sha256;
+  const shards = manifest.templateResponse.shards;
+  if (Boolean(monolithic) === Boolean(shards)) {
+    throw new RangeError("GRB localizer response must be monolithic or sharded, not both.");
+  }
+  if (monolithic && !/^[a-f0-9]{64}$/.test(manifest.templateResponse.sha256!)) {
+    throw new RangeError("GRB localizer response hash is invalid.");
+  }
+  if (shards) {
+    let expectedTemplateStart = 0;
+    let shardBytes = 0;
+    for (const shard of shards) {
+      if (
+        shard.templateStart !== expectedTemplateStart ||
+        !Number.isInteger(shard.templateCount) || shard.templateCount <= 0 ||
+        shard.uncompressedByteLength !== shard.templateCount * manifest.pixelCount *
+          manifest.energyBinCount * 4 ||
+        !/^[a-f0-9]{64}$/.test(shard.sha256)
+      ) throw new RangeError("GRB localizer response shards are invalid.");
+      expectedTemplateStart += shard.templateCount;
+      shardBytes += shard.uncompressedByteLength;
+    }
+    if (expectedTemplateStart !== manifest.templateCount || shardBytes !== expectedBytes) {
+      throw new RangeError("GRB localizer response shards are incomplete.");
+    }
+  }
+  if (manifest.templateProjectionFlow) {
+    const flow = manifest.templateProjectionFlow;
+    if (
+      flow.encoding !== "gzip-float32-little-endian" ||
+      flow.layout !== "template,pixel" ||
+      flow.uncompressedByteLength !== manifest.templateCount * manifest.pixelCount * 4 ||
+      !/^[a-f0-9]{64}$/.test(flow.sha256) ||
+      !Number.isInteger(flow.nonzeroCellCount) ||
+      flow.nonzeroCellCount < 0 ||
+      flow.nonzeroCellCount > manifest.templateCount * manifest.pixelCount
+    ) throw new RangeError("GRB localizer projection-flow descriptor is invalid.");
   }
 }
 
@@ -102,10 +162,18 @@ async function decompressGzip(bytes: ArrayBuffer): Promise<ArrayBuffer> {
 export function createRitabrataAssetBundle(
   manifest: RitabrataLocalizerManifest,
   uncompressedTemplateResponse: ArrayBuffer,
+  uncompressedTemplateProjectionFlow?: ArrayBuffer,
 ): LegacyKsAssetBundle {
   assertManifest(manifest);
   if (uncompressedTemplateResponse.byteLength !== manifest.templateResponse.uncompressedByteLength) {
     throw new RangeError("GRB template response has an unexpected uncompressed byte length.");
+  }
+  if (
+    manifest.templateProjectionFlow &&
+    uncompressedTemplateProjectionFlow?.byteLength !==
+      manifest.templateProjectionFlow.uncompressedByteLength
+  ) {
+    throw new RangeError("GRB template projection-flow has an unexpected uncompressed byte length.");
   }
   return Object.freeze({
     geometryVersion: manifest.geometryVersion,
@@ -120,6 +188,9 @@ export function createRitabrataAssetBundle(
     energyBinEdgesKeV: Object.freeze([...manifest.energyBinEdgesKeV]),
     templates: Object.freeze(manifest.templates.map((template) => Object.freeze({ ...template }))),
     templatePixelEnergyResponse: littleEndianFloat32(uncompressedTemplateResponse),
+    templatePixelUnscaledProjectionFlow: manifest.templateProjectionFlow
+      ? littleEndianFloat32(uncompressedTemplateProjectionFlow!)
+      : undefined,
     effectiveArea: Object.freeze(manifest.effectiveArea.map((row) => Object.freeze({
       thetaDeg: row.thetaDeg,
       areaByEnergyBin: Object.freeze(Array.from(row.areaByEnergyBin)),
@@ -141,15 +212,67 @@ export async function loadRitabrataLocalizerAssets(
 ): Promise<LegacyKsAssetBundle> {
   const manifestResponse = await fetch(manifestUrl);
   if (!manifestResponse.ok) throw new Error(`Cannot load localizer manifest (${manifestResponse.status}).`);
-  const manifest = await manifestResponse.json() as RitabrataLocalizerManifest;
-  assertManifest(manifest);
-  const responseUrl = new URL(manifest.templateResponse.file, manifestResponse.url || manifestUrl);
-  const response = await fetch(responseUrl);
-  if (!response.ok) throw new Error(`Cannot load localizer template response (${response.status}).`);
-  const compressed = await response.arrayBuffer();
-  const actualHash = await sha256Hex(compressed);
-  if (actualHash !== manifest.templateResponse.sha256) {
-    throw new Error("GRB template-response SHA-256 mismatch.");
+  const manifestBytes = await manifestResponse.arrayBuffer();
+  const manifest = JSON.parse(new TextDecoder().decode(manifestBytes)) as RitabrataLocalizerManifest;
+  const approvedHash = APPROVED_LOCALIZER_MANIFEST_SHA256[
+    manifest.assetVersion as keyof typeof APPROVED_LOCALIZER_MANIFEST_SHA256
+  ];
+  if (!approvedHash || await sha256Hex(manifestBytes) !== approvedHash) {
+    throw new Error("GRB localizer manifest is outside the approved trust root.");
   }
-  return createRitabrataAssetBundle(manifest, await decompressGzip(compressed));
+  assertManifest(manifest);
+  const baseUrl = manifestResponse.url || manifestUrl;
+  let uncompressedResponse: ArrayBuffer;
+  if (manifest.templateResponse.shards) {
+    const result = new Uint8Array(manifest.templateResponse.uncompressedByteLength);
+    let byteOffset = 0;
+    for (const shard of manifest.templateResponse.shards) {
+      const shardResponse = await fetch(new URL(shard.file, baseUrl));
+      if (!shardResponse.ok) {
+        throw new Error(`Cannot load localizer template-response shard (${shardResponse.status}).`);
+      }
+      const compressedShard = await shardResponse.arrayBuffer();
+      if (await sha256Hex(compressedShard) !== shard.sha256) {
+        throw new Error("GRB template-response shard SHA-256 mismatch.");
+      }
+      const uncompressedShard = await decompressGzip(compressedShard);
+      if (uncompressedShard.byteLength !== shard.uncompressedByteLength) {
+        throw new Error("GRB template-response shard byte-length mismatch.");
+      }
+      result.set(new Uint8Array(uncompressedShard), byteOffset);
+      byteOffset += uncompressedShard.byteLength;
+    }
+    uncompressedResponse = result.buffer;
+  } else {
+    const responseUrl = new URL(manifest.templateResponse.file!, baseUrl);
+    const response = await fetch(responseUrl);
+    if (!response.ok) throw new Error(`Cannot load localizer template response (${response.status}).`);
+    const compressed = await response.arrayBuffer();
+    const actualHash = await sha256Hex(compressed);
+    if (actualHash !== manifest.templateResponse.sha256) {
+      throw new Error("GRB template-response SHA-256 mismatch.");
+    }
+    uncompressedResponse = await decompressGzip(compressed);
+  }
+  let projectionFlow: ArrayBuffer | undefined;
+  if (manifest.templateProjectionFlow) {
+    const flowUrl = new URL(
+      manifest.templateProjectionFlow.file,
+      baseUrl,
+    );
+    const flowResponse = await fetch(flowUrl);
+    if (!flowResponse.ok) {
+      throw new Error(`Cannot load localizer projection flow (${flowResponse.status}).`);
+    }
+    const compressedFlow = await flowResponse.arrayBuffer();
+    if (await sha256Hex(compressedFlow) !== manifest.templateProjectionFlow.sha256) {
+      throw new Error("GRB template projection-flow SHA-256 mismatch.");
+    }
+    projectionFlow = await decompressGzip(compressedFlow);
+  }
+  return createRitabrataAssetBundle(
+    manifest,
+    uncompressedResponse,
+    projectionFlow,
+  );
 }
