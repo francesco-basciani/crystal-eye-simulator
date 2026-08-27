@@ -1,3 +1,8 @@
+import {
+  RITABRATA_DETECTOR_FRAME,
+  ritabrataDirectionFromAngles,
+} from "./detector-local-frame-adapter.ts";
+
 export const RITABRATA_GRB_PIXEL_COUNT = 126;
 export const RITABRATA_GRB_SOURCE_AREA_CM2 = 4 * 18 * 18;
 // Intentionally empty until the author approves one exact converted bundle.
@@ -22,7 +27,7 @@ export type RitabrataGrbDatabaseDirection = Readonly<{
 
 export type RitabrataGrbGeneratorAssets = Readonly<{
   assetVersion: string;
-  directionFrame: string;
+  directionFrame: typeof RITABRATA_DETECTOR_FRAME;
   pixelCount: number;
   sourceAreaCm2: number;
   primaryEnergyBinEdgesKeV: NumericVector;
@@ -46,6 +51,7 @@ export type RitabrataGrbGeneratorAssets = Readonly<{
 }>;
 
 export type GeneratedGrbResponse = Readonly<{
+  directionFrame: typeof RITABRATA_DETECTOR_FRAME;
   requestedDirection: Readonly<{ thetaDeg: number; phiDeg: number }>;
   selectedDatabaseDirection: RitabrataGrbDatabaseDirection;
   quantizationErrorDeg: number;
@@ -99,13 +105,7 @@ function normalizedPhi(phiDeg: number): number {
 }
 
 function directionVector(thetaDeg: number, phiDeg: number): readonly [number, number, number] {
-  const theta = thetaDeg * Math.PI / 180;
-  const phi = phiDeg * Math.PI / 180;
-  return [
-    Math.sin(theta) * Math.cos(phi),
-    Math.sin(theta) * Math.sin(phi),
-    Math.cos(theta),
-  ];
+  return ritabrataDirectionFromAngles(thetaDeg, phiDeg);
 }
 
 function angularSeparationDeg(
@@ -242,7 +242,7 @@ export function integrateCutoffPowerLaw(
 
 function validateAssets(assets: RitabrataGrbGeneratorAssets): GrbGenerationUnavailableReason | null {
   if (!assets.assetVersion.trim() || !assets.provenanceSha256.trim()) return "asset-data-unavailable";
-  if (!assets.directionFrame.trim()) return "direction-frame-unavailable";
+  if (assets.directionFrame !== RITABRATA_DETECTOR_FRAME) return "direction-frame-unavailable";
   if (
     assets.pixelCount !== RITABRATA_GRB_PIXEL_COUNT ||
     assets.sourceAreaCm2 !== RITABRATA_GRB_SOURCE_AREA_CM2 ||
@@ -321,6 +321,7 @@ export function computeRitabrataGrbResponse(
   }
 
   return Object.freeze({
+    directionFrame: RITABRATA_DETECTOR_FRAME,
     requestedDirection: Object.freeze({ thetaDeg, phiDeg: normalizedPhi(phiDeg) }),
     selectedDatabaseDirection: selection.direction,
     quantizationErrorDeg: selection.separationDeg,

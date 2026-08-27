@@ -11,10 +11,15 @@ import {
   type LegacyKsAssetBundle,
   type LegacyKsObservation,
 } from "../app/lib/legacy-template-localizer.ts";
+import {
+  CELOC_UPCAL_RAW_COMPONENT_FRAME,
+  RITABRATA_DETECTOR_FRAME,
+  createCelocRawPixelVector,
+} from "../app/lib/detector-local-frame-adapter.ts";
 
 const observation: LegacyKsObservation = {
   geometryVersion: V2R8_CANDIDATE_GEOMETRY_VERSION,
-  directionFrame: "ROOT TVector3 local frame (+Z polar axis)",
+  directionFrame: RITABRATA_DETECTOR_FRAME,
   pixelIds: Array.from({ length: 126 }, (_, pixelId) => pixelId),
   energyBinEdgesKeV: [10, 20],
   pixelCounts: Array.from({ length: 126 }, () => 2),
@@ -24,9 +29,10 @@ const observation: LegacyKsObservation = {
 
 const assets: LegacyKsAssetBundle = {
   geometryVersion: V2R8_CANDIDATE_GEOMETRY_VERSION,
-  directionFrame: "ROOT TVector3 local frame (+Z polar axis)",
+  directionFrame: RITABRATA_DETECTOR_FRAME,
+  pixelPositionFrame: CELOC_UPCAL_RAW_COMPONENT_FRAME,
   pixelIds: Array.from({ length: 126 }, (_, pixelId) => pixelId),
-  pixelPositionVectors: Array.from({ length: 126 }, () => [0, 0, 1] as const),
+  pixelPositionVectors: Array.from({ length: 126 }, () => createCelocRawPixelVector(0, 0, 1)),
   energyBinEdgesKeV: [10, 20],
   templates: [{ templateId: "fixture-0", thetaDeg: 0, phiDeg: 0 }],
   templatePixelEnergyResponse: new Float32Array(126).fill(1),
@@ -67,6 +73,8 @@ test("the TypeScript core ports centroid, response projection, KS and weighted d
   assert.equal(reconstruction.effectiveAreaThetaDeg, 0);
   assert.equal(reconstruction.maximumProbability, 1);
   assert.equal(reconstruction.selectedTemplateCount, 1);
+  assert.deepEqual(reconstruction.rootLocalDirection, [0, 0, 1]);
+  assert.deepEqual(reconstruction.localDirection, [0, 1, -0]);
 });
 
 test("the runtime boundary never fabricates localization without assets", () => {
@@ -105,6 +113,20 @@ test("the verified wrapper exposes the declared standalone method", () => {
 });
 
 test("invalid dimensions and missing errors fail closed", () => {
+  assert.deepEqual(
+    localizeWithLegacyKsTemplates({
+      ...observation,
+      directionFrame: "wrong-frame" as typeof observation.directionFrame,
+    }, assets),
+    { status: "unavailable", reason: "direction-frame-unavailable" },
+  );
+  assert.deepEqual(
+    localizeWithLegacyKsTemplates(observation, {
+      ...assets,
+      pixelPositionFrame: "wrong-frame" as typeof assets.pixelPositionFrame,
+    }),
+    { status: "unavailable", reason: "direction-frame-unavailable" },
+  );
   assert.deepEqual(
     localizeWithLegacyKsTemplates({ ...observation, pixelErrors: [] }, assets),
     { status: "unavailable", reason: "pixel-errors-unavailable" },

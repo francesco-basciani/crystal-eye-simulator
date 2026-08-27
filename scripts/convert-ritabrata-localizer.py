@@ -32,7 +32,8 @@ EFFECTIVE_AREA_COUNT = 91
 TEMPLATE_COUNT = 742
 ASSET_VERSION = "ritabrata-standalone-celoc-v1"
 GEOMETRY_VERSION = "CESimulation-V2R8-candidate"
-DIRECTION_FRAME = "ROOT TVector3 local frame (+Z polar axis); spacecraft mapping unvalidated"
+DIRECTION_FRAME = "RITABRATA_ROOT_PLUS_Z_POLAR_PHI_ATAN2_Y_X"
+PIXEL_POSITION_FRAME = "CELOC_UPCAL_RAW_COMPONENT_ORDER_UNVALIDATED"
 REQUIRED_FILES = (
     "CELoc.cc",
     "upCal.txt",
@@ -254,6 +255,7 @@ def main() -> None:
         "assetVersion": ASSET_VERSION,
         "geometryVersion": GEOMETRY_VERSION,
         "directionFrame": DIRECTION_FRAME,
+        "pixelPositionFrame": PIXEL_POSITION_FRAME,
         "pixelCount": PIXEL_COUNT,
         "energyBinCount": ENERGY_BIN_COUNT,
         "templateCount": TEMPLATE_COUNT,

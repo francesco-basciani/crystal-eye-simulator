@@ -5,8 +5,14 @@ import {
   V2R8_CANDIDATE_GEOMETRY_VERSION,
   createV2R8CandidateDetectorGeometry,
   getV2R8CosineIncidence,
+  getV2R8ScientificCosineIncidence,
   rankV2R8PixelsForDirection,
 } from "../app/lib/detector-geometry-v2r8.ts";
+import {
+  RITABRATA_DETECTOR_FRAME,
+  THREE_DETECTOR_LOCAL_FRAME,
+  ritabrataToThreeDetectorLocal,
+} from "../app/lib/detector-local-frame-adapter.ts";
 import { parsePixelBackgroundTsv } from "../app/lib/pixel-background.ts";
 
 const datasetUrl = new URL("../public/data/pixbkg.txt", import.meta.url);
@@ -35,14 +41,28 @@ test("the candidate geometry exposes 126 canonical layered modules", async () =>
   assert.equal(geometry.bottomAcd.scope, "GLOBAL");
 });
 
-test("the detector frame follows +Y polar and phi=atan2(-Z,X)", async () => {
+test("scientific normals are ROOT +Z and compatibility normals are adapter-derived +Y", async () => {
   const geometry = await loadGeometry();
   const first = geometry.modules[0].normal;
   const thetaDeg = Math.acos(first[1]) * 180 / Math.PI;
   const phiDeg = Math.atan2(-first[2], first[0]) * 180 / Math.PI;
   assert.ok(Math.abs(thetaDeg - 40.629) < 1e-10);
   assert.ok(Math.abs(phiDeg - (-19.2146)) < 1e-10);
-  assert.equal(geometry.coordinateFrame, "+Y_POLAR_PHI_ATAN2_NEG_Z_X");
+  assert.equal(geometry.scientificCoordinateFrame, RITABRATA_DETECTOR_FRAME);
+  assert.equal(geometry.coordinateFrame, THREE_DETECTOR_LOCAL_FRAME);
+  for (const detectorModule of geometry.modules) {
+    assert.deepEqual(
+      detectorModule.normal,
+      ritabrataToThreeDetectorLocal(detectorModule.scientificNormal),
+    );
+    assert.ok(Math.abs(
+      getV2R8ScientificCosineIncidence(
+        geometry,
+        detectorModule.pixelId,
+        detectorModule.scientificNormal,
+      ) - 1,
+    ) < 1e-12);
+  }
 });
 
 test("directional ranking is physical, deterministic, and fail-closed", async () => {

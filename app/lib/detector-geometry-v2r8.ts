@@ -1,3 +1,13 @@
+import {
+  RITABRATA_DETECTOR_FRAME,
+  THREE_DETECTOR_LOCAL_FRAME,
+  createRitabrataDetectorVector,
+  ritabrataDirectionFromAngles,
+  ritabrataToThreeDetectorLocal,
+  type RitabrataDetectorVector3,
+  type ThreeDetectorLocalVector3,
+} from "./detector-local-frame-adapter.ts";
+
 export const V2R8_CANDIDATE_PIXEL_COUNT = 126;
 export const V2R8_CANDIDATE_GEOMETRY_VERSION = "CESimulation-V2R8-candidate" as const;
 
@@ -23,13 +33,17 @@ export type DetectorModuleV2R8Candidate = Readonly<{
   lowerCrystalId: null;
   upperAcdId: null;
   position: DetectorVector3;
-  normal: DetectorVector3;
+  /** Canonical scientific normal in Ritabrata/ROOT detector coordinates. */
+  scientificNormal: RitabrataDetectorVector3;
+  /** Adapter-derived Three.js local normal retained for rendering consumers. */
+  normal: ThreeDetectorLocalVector3;
   layers: readonly DetectorLayerDefinition[];
 }>;
 export type DetectorGeometryV2R8Candidate = Readonly<{
   geometryVersion: typeof V2R8_CANDIDATE_GEOMETRY_VERSION;
   status: "PROVISIONAL";
-  coordinateFrame: "+Y_POLAR_PHI_ATAN2_NEG_Z_X";
+  scientificCoordinateFrame: typeof RITABRATA_DETECTOR_FRAME;
+  coordinateFrame: typeof THREE_DETECTOR_LOCAL_FRAME;
   positionScale: "UNIT_SPHERE";
   modules: readonly DetectorModuleV2R8Candidate[];
   bottomAcd: Readonly<{
@@ -39,7 +53,6 @@ export type DetectorGeometryV2R8Candidate = Readonly<{
   }>;
 }>;
 
-const DEG_TO_RAD = Math.PI / 180;
 function createLayers(pixelId: number): readonly DetectorLayerDefinition[] {
   return Object.freeze([
   Object.freeze({
@@ -82,16 +95,6 @@ function unit(vector: DetectorVector3): DetectorVector3 | null {
   ] as const);
 }
 
-function directionFromAngles(thetaDeg: number, phiDeg: number): DetectorVector3 {
-  const theta = thetaDeg * DEG_TO_RAD;
-  const phi = phiDeg * DEG_TO_RAD;
-  return Object.freeze([
-    Math.sin(theta) * Math.cos(phi),
-    Math.cos(theta),
-    -Math.sin(theta) * Math.sin(phi),
-  ] as const);
-}
-
 const geometryCache = new WeakMap<object, DetectorGeometryV2R8Candidate>();
 
 export function createV2R8CandidateDetectorGeometry(
@@ -118,13 +121,15 @@ export function createV2R8CandidateDetectorGeometry(
     }
   });
   const modules = Object.freeze(sorted.map((record) => {
-    const normal = directionFromAngles(record.thetaDeg, record.phiDeg);
+    const scientificNormal = ritabrataDirectionFromAngles(record.thetaDeg, record.phiDeg);
+    const normal = ritabrataToThreeDetectorLocal(scientificNormal);
     return Object.freeze({
       pixelId: record.pixelId,
       upperCrystalId: record.pixelId,
       lowerCrystalId: null,
       upperAcdId: null,
       position: normal,
+      scientificNormal,
       normal,
       layers: createLayers(record.pixelId),
     });
@@ -132,7 +137,8 @@ export function createV2R8CandidateDetectorGeometry(
   const geometry = Object.freeze({
     geometryVersion: V2R8_CANDIDATE_GEOMETRY_VERSION,
     status: "PROVISIONAL" as const,
-    coordinateFrame: "+Y_POLAR_PHI_ATAN2_NEG_Z_X" as const,
+    scientificCoordinateFrame: RITABRATA_DETECTOR_FRAME,
+    coordinateFrame: THREE_DETECTOR_LOCAL_FRAME,
     positionScale: "UNIT_SPHERE" as const,
     modules,
     bottomAcd: Object.freeze({
@@ -149,6 +155,36 @@ export function getV2R8CandidateNormals(
   geometry: DetectorGeometryV2R8Candidate,
 ): readonly DetectorVector3[] {
   return geometry.modules.map((detectorModule) => detectorModule.normal);
+}
+
+export function getV2R8CandidateScientificNormals(
+  geometry: DetectorGeometryV2R8Candidate,
+): readonly RitabrataDetectorVector3[] {
+  return geometry.modules.map((detectorModule) => detectorModule.scientificNormal);
+}
+
+export function getV2R8ScientificCosineIncidence(
+  geometry: DetectorGeometryV2R8Candidate,
+  pixelId: number,
+  rawSourceDirection: RitabrataDetectorVector3,
+): number {
+  const magnitude = Math.hypot(...rawSourceDirection);
+  const detectorModule = geometry.modules[pixelId];
+  if (!Number.isFinite(magnitude) || magnitude <= Number.EPSILON) {
+    throw new RangeError("V2R8 scientific incidence requires a finite non-zero source direction.");
+  }
+  if (!detectorModule || detectorModule.pixelId !== pixelId) {
+    throw new RangeError(`Unknown V2R8 candidate physical pixel ID ${pixelId}.`);
+  }
+  const direction = createRitabrataDetectorVector(
+    rawSourceDirection[0] / magnitude,
+    rawSourceDirection[1] / magnitude,
+    rawSourceDirection[2] / magnitude,
+  );
+  const normal = detectorModule.scientificNormal;
+  return Math.max(0,
+    normal[0] * direction[0] + normal[1] * direction[1] + normal[2] * direction[2],
+  );
 }
 
 export function getV2R8CosineIncidence(

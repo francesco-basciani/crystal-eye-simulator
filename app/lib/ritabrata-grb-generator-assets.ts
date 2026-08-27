@@ -5,6 +5,7 @@ import {
   type RitabrataGrbDatabaseDirection,
   type RitabrataGrbGeneratorAssets,
 } from "./ritabrata-grb-generator.ts";
+import { RITABRATA_DETECTOR_FRAME } from "./detector-local-frame-adapter.ts";
 
 type KernelName =
   | "pixelMean"
@@ -33,7 +34,7 @@ type KernelDescriptor = Readonly<{
 export type RitabrataGrbGeneratorManifest = Readonly<{
   schemaVersion: 1;
   assetVersion: string;
-  directionFrame: string;
+  directionFrame: typeof RITABRATA_DETECTOR_FRAME;
   pixelCount: number;
   directionCount: number;
   primaryEnergyBinCount: number;
@@ -66,7 +67,8 @@ function assertSha256(value: string): void {
 
 function assertManifest(manifest: RitabrataGrbGeneratorManifest): void {
   if (
-    manifest.schemaVersion !== 1 || !manifest.assetVersion.trim() || !manifest.directionFrame.trim() ||
+    manifest.schemaVersion !== 1 || !manifest.assetVersion.trim() ||
+    manifest.directionFrame !== RITABRATA_DETECTOR_FRAME ||
     manifest.pixelCount !== RITABRATA_GRB_PIXEL_COUNT ||
     manifest.sourceAreaCm2 !== RITABRATA_GRB_SOURCE_AREA_CM2 ||
     manifest.directionCount !== manifest.directions.length || manifest.directionCount <= 0 ||

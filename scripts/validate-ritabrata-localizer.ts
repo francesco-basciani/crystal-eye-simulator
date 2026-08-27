@@ -7,12 +7,18 @@ import {
   type LegacyKsAssetBundle,
   type LegacyKsObservation,
 } from "../app/lib/legacy-template-localizer.ts";
+import {
+  CELOC_UPCAL_RAW_COMPONENT_FRAME,
+  RITABRATA_DETECTOR_FRAME,
+  createCelocRawPixelVector,
+} from "../app/lib/detector-local-frame-adapter.ts";
 
 type Manifest = Readonly<{
   geometryVersion: LegacyKsAssetBundle["geometryVersion"];
-  directionFrame: string;
+  directionFrame: typeof RITABRATA_DETECTOR_FRAME;
+  pixelPositionFrame: typeof CELOC_UPCAL_RAW_COMPONENT_FRAME;
   pixelIdsInSourceFileOrder: readonly number[];
-  pixelPositionVectorsInSourceFileOrder: LegacyKsAssetBundle["pixelPositionVectors"];
+  pixelPositionVectorsInSourceFileOrder: readonly (readonly [number, number, number])[];
   energyBinEdgesKeV: readonly number[];
   templates: LegacyKsAssetBundle["templates"];
   effectiveArea: LegacyKsAssetBundle["effectiveArea"];
@@ -47,8 +53,10 @@ const responseBuffer = binary.buffer.slice(
 const assets: LegacyKsAssetBundle = {
   geometryVersion: manifest.geometryVersion,
   directionFrame: manifest.directionFrame,
+  pixelPositionFrame: manifest.pixelPositionFrame,
   pixelIds: manifest.pixelIdsInSourceFileOrder,
-  pixelPositionVectors: manifest.pixelPositionVectorsInSourceFileOrder,
+  pixelPositionVectors: manifest.pixelPositionVectorsInSourceFileOrder.map((vector) =>
+    createCelocRawPixelVector(vector[0], vector[1], vector[2])),
   energyBinEdgesKeV: manifest.energyBinEdgesKeV,
   templates: manifest.templates,
   templatePixelEnergyResponse: new Float32Array(responseBuffer),

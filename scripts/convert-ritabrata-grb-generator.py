@@ -32,7 +32,7 @@ PRIMARY_BIN_COUNT = 100
 DEPOSITED_BIN_COUNT = 100
 SOURCE_AREA_CM2 = 4 * 18 * 18
 ASSET_VERSION = "ritabrata-cegengrb-nearest-template-v1-candidate"
-DIRECTION_FRAME = "ROOT TVector3 detector-local theta/phi; spacecraft axes unvalidated"
+DIRECTION_FRAME = "RITABRATA_ROOT_PLUS_Z_POLAR_PHI_ATAN2_Y_X"
 REQUIRED_FILES = (
     "CEGenGRB.cc",
     "srcpos-sam-set7.txt",

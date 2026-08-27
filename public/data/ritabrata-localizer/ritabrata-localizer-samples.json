@@ -370,7 +370,7 @@
       "rootExpectedReconstruction": null,
       "rootExpectedReconstructionStatus": "REQUESTED_FROM_DOMAIN_AUTHOR",
       "geometryVersion": "CESimulation-V2R8-candidate",
-      "directionFrame": "ROOT TVector3 local frame (+Z polar axis); spacecraft mapping unvalidated",
+      "directionFrame": "RITABRATA_ROOT_PLUS_Z_POLAR_PHI_ATAN2_Y_X",
       "pixelIds": [
         0,
         1,
@@ -972,7 +972,7 @@
       "rootExpectedReconstruction": null,
       "rootExpectedReconstructionStatus": "REQUESTED_FROM_DOMAIN_AUTHOR",
       "geometryVersion": "CESimulation-V2R8-candidate",
-      "directionFrame": "ROOT TVector3 local frame (+Z polar axis); spacecraft mapping unvalidated",
+      "directionFrame": "RITABRATA_ROOT_PLUS_Z_POLAR_PHI_ATAN2_Y_X",
       "pixelIds": [
         0,
         1,

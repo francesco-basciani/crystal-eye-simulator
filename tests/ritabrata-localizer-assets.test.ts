@@ -8,6 +8,10 @@ import {
   createRitabrataAssetBundle,
   loadRitabrataLocalizerAssets,
 } from "../app/lib/ritabrata-localizer-assets.ts";
+import {
+  CELOC_UPCAL_RAW_COMPONENT_FRAME,
+  RITABRATA_DETECTOR_FRAME,
+} from "../app/lib/detector-local-frame-adapter.ts";
 
 const assetDirectory = new URL("../public/data/ritabrata-localizer/", import.meta.url);
 const manifestBytes = readFileSync(new URL("ritabrata-localizer.manifest.json", assetDirectory));
@@ -31,6 +35,8 @@ const expectedSourceHashes = {
 test("Ritabrata source provenance and converted dimensions are frozen", () => {
   assert.deepEqual(manifest.sourceFilesSha256, expectedSourceHashes);
   assert.equal(manifest.pixelCount, 126);
+  assert.equal(manifest.directionFrame, RITABRATA_DETECTOR_FRAME);
+  assert.equal(manifest.pixelPositionFrame, CELOC_UPCAL_RAW_COMPONENT_FRAME);
   assert.equal(manifest.energyBinCount, 100);
   assert.equal(manifest.templateCount, 742);
   assert.equal(manifest.effectiveAreaThetaCount, 91);
@@ -105,6 +111,13 @@ test("the browser loader fetches, hashes and decompresses the frozen asset", asy
     assert.equal(assets.templatePixelEnergyResponse.length, 742 * 126 * 100);
     assert.equal(assets.provenanceSha256, manifest.provenanceSha256);
     assert.equal(assets.rootParity.verified, false);
+    assert.equal(assets.directionFrame, RITABRATA_DETECTOR_FRAME);
+    assert.equal(assets.pixelPositionFrame, CELOC_UPCAL_RAW_COMPONENT_FRAME);
+    assert.deepEqual(
+      assets.pixelPositionVectors[0],
+      manifest.pixelPositionVectorsInSourceFileOrder[0],
+      "upCal raw components must be preserved literally",
+    );
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => error ? reject(error) : resolve()));
@@ -115,5 +128,22 @@ test("the asset constructor rejects a mismatched decompressed length", () => {
   assert.throws(
     () => createRitabrataAssetBundle(manifest, new ArrayBuffer(4)),
     /unexpected uncompressed byte length/,
+  );
+});
+
+test("the asset constructor rejects incompatible frame metadata", () => {
+  assert.throws(
+    () => createRitabrataAssetBundle(
+      { ...manifest, directionFrame: "wrong-frame" },
+      new ArrayBuffer(manifest.templateResponse.uncompressedByteLength),
+    ),
+    /invalid or incompatible/,
+  );
+  assert.throws(
+    () => createRitabrataAssetBundle(
+      { ...manifest, pixelPositionFrame: "wrong-frame" },
+      new ArrayBuffer(manifest.templateResponse.uncompressedByteLength),
+    ),
+    /invalid or incompatible/,
   );
 });

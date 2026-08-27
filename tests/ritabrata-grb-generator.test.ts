@@ -10,6 +10,7 @@ import {
   selectNearestRitabrataGrbDirection,
   type RitabrataGrbGeneratorAssets,
 } from "../app/lib/ritabrata-grb-generator.ts";
+import { RITABRATA_DETECTOR_FRAME } from "../app/lib/detector-local-frame-adapter.ts";
 
 const provenance = "a".repeat(64);
 const golden = "b".repeat(64);
@@ -21,7 +22,7 @@ function syntheticAssets(parityVerified = false): RitabrataGrbGeneratorAssets {
   pixelVariance[0] = 0.25;
   return {
     assetVersion: "synthetic-test-only",
-    directionFrame: "ROOT detector-local test frame",
+    directionFrame: RITABRATA_DETECTOR_FRAME,
     pixelCount: RITABRATA_GRB_PIXEL_COUNT,
     sourceAreaCm2: RITABRATA_GRB_SOURCE_AREA_CM2,
     primaryEnergyBinEdgesKeV: [20, 30],
@@ -75,6 +76,7 @@ test("pre-aggregated mean and variance kernels produce counts and ROOT-style err
   assert.ok(Math.abs(response.depositedEnergyErrorsPerSecond[0] - 0.25 * incidentRate) < 1e-9);
   assert.equal(response.requestedDirection.phiDeg, 120);
   assert.equal(response.selectedDatabaseDirection.responseKey, "41_117");
+  assert.equal(response.directionFrame, RITABRATA_DETECTOR_FRAME);
 });
 
 test("runtime generation fails closed until code-pinned trust anchors are approved", () => {
@@ -95,4 +97,20 @@ test("invalid physical spectrum parameters are rejected", () => {
     syntheticAssets(),
   );
   assert.deepEqual(response, { status: "unavailable", reason: "invalid-spectrum" });
+});
+
+test("assets with an incompatible detector frame fail closed", () => {
+  const incompatible = {
+    ...syntheticAssets(),
+    directionFrame: "THREE_LOCAL_PLUS_Y" as typeof RITABRATA_DETECTOR_FRAME,
+  };
+  assert.deepEqual(
+    computeRitabrataGrbResponse(
+      40,
+      120,
+      { normalization: 0.026, spectralIndex: -1.07, peakEnergyKeV: 756.4 },
+      incompatible,
+    ),
+    { status: "unavailable", reason: "direction-frame-unavailable" },
+  );
 });

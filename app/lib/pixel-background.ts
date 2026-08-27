@@ -1,3 +1,5 @@
+import { RITABRATA_DETECTOR_FRAME } from "./detector-local-frame-adapter.ts";
+
 export const PIXEL_BACKGROUND_PIXEL_COUNT = 126;
 export const PIXEL_BACKGROUND_BIN_SECONDS = 0.2;
 export const PIXEL_BACKGROUND_SHA256 =
@@ -11,6 +13,7 @@ export type PixelBackgroundRecord = Readonly<{
 }>;
 
 export type PixelBackgroundProfile = Readonly<{
+  angularCoordinateFrame: typeof RITABRATA_DETECTOR_FRAME;
   records: readonly PixelBackgroundRecord[];
   ratesCountsPerSecond: readonly number[];
   expectedCountsPerBin: readonly number[];
@@ -126,6 +129,7 @@ export async function loadPixelBackgroundProfile(
   );
 
   return Object.freeze({
+    angularCoordinateFrame: RITABRATA_DETECTOR_FRAME,
     records,
     ratesCountsPerSecond,
     expectedCountsPerBin,

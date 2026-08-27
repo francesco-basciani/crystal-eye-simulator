@@ -1,4 +1,14 @@
 import type { DetectorVector3 } from "./detector-geometry-v2r8";
+import {
+  RITABRATA_DETECTOR_FRAME,
+  CELOC_UPCAL_RAW_COMPONENT_FRAME,
+  createRitabrataDetectorVector,
+  ritabrataDirectionFromAngles,
+  ritabrataToThreeDetectorLocal,
+  type CelocRawPixelVector3,
+  type RitabrataDetectorVector3,
+  type ThreeDetectorLocalVector3,
+} from "./detector-local-frame-adapter.ts";
 
 export const RITABRATA_KS_PIXEL_COUNT = 126;
 export const RITABRATA_KS_GEOMETRY_VERSION = "CESimulation-V2R8-candidate" as const;
@@ -7,7 +17,7 @@ type NumericVector = ArrayLike<number>;
 
 export type LegacyKsObservation = Readonly<{
   geometryVersion: typeof RITABRATA_KS_GEOMETRY_VERSION;
-  directionFrame: string;
+  directionFrame: typeof RITABRATA_DETECTOR_FRAME;
   pixelIds: NumericVector;
   energyBinEdgesKeV: NumericVector;
   pixelCounts: NumericVector;
@@ -25,9 +35,10 @@ export type LegacyKsEffectiveAreaRow = Readonly<{
 }>;
 export type LegacyKsAssetBundle = Readonly<{
   geometryVersion: typeof RITABRATA_KS_GEOMETRY_VERSION;
-  directionFrame: string;
+  directionFrame: typeof RITABRATA_DETECTOR_FRAME;
+  pixelPositionFrame: typeof CELOC_UPCAL_RAW_COMPONENT_FRAME;
   pixelIds: NumericVector;
-  pixelPositionVectors: readonly DetectorVector3[];
+  pixelPositionVectors: readonly CelocRawPixelVector3[];
   energyBinEdgesKeV: NumericVector;
   templates: readonly LegacyKsTemplate[];
   templatePixelEnergyResponse: NumericVector;
@@ -59,8 +70,12 @@ export type LegacyKsRankedTemplate = Readonly<{
   ksDistance: number;
 }>;
 export type LegacyKsComputedLocalization = Readonly<{
-  localDirection: DetectorVector3;
-  weightedDirectionVector: DetectorVector3;
+  /** Canonical result in the Ritabrata/ROOT +Z-polar detector frame. */
+  rootLocalDirection: RitabrataDetectorVector3;
+  rootWeightedDirectionVector: RitabrataDetectorVector3;
+  /** Explicit adapter boundary for existing Three.js +Y-local consumers. */
+  localDirection: ThreeDetectorLocalVector3;
+  weightedDirectionVector: ThreeDetectorLocalVector3;
   thetaDeg: number;
   phiDeg: number;
   provisionalThetaDeg: number;
@@ -111,14 +126,8 @@ function unavailable(reason: LegacyKsUnavailableReason): Readonly<{
   return Object.freeze({ status: "unavailable", reason });
 }
 
-function vectorFromRootAngles(thetaDeg: number, phiDeg: number): DetectorVector3 {
-  const theta = thetaDeg * Math.PI / 180;
-  const phi = phiDeg * Math.PI / 180;
-  return [
-    Math.sin(theta) * Math.cos(phi),
-    Math.sin(theta) * Math.sin(phi),
-    Math.cos(theta),
-  ];
+function vectorFromRootAngles(thetaDeg: number, phiDeg: number): RitabrataDetectorVector3 {
+  return ritabrataDirectionFromAngles(thetaDeg, phiDeg);
 }
 
 function normalized(vector: DetectorVector3): DetectorVector3 | null {
@@ -213,8 +222,13 @@ function validateInputs(
 ): LegacyKsUnavailableReason | null {
   if (assets.geometryVersion !== RITABRATA_KS_GEOMETRY_VERSION) return "geometry-version-mismatch";
   if (observation.geometryVersion !== assets.geometryVersion) return "geometry-version-mismatch";
-  if (!assets.directionFrame.trim()) return "direction-frame-unavailable";
-  if (observation.directionFrame !== assets.directionFrame) return "direction-frame-unavailable";
+  if (assets.directionFrame !== RITABRATA_DETECTOR_FRAME) return "direction-frame-unavailable";
+  if (assets.pixelPositionFrame !== CELOC_UPCAL_RAW_COMPONENT_FRAME) {
+    return "direction-frame-unavailable";
+  }
+  if (observation.directionFrame !== RITABRATA_DETECTOR_FRAME) {
+    return "direction-frame-unavailable";
+  }
   if (!observation.depositedEnergyCounts.length) return "energy-spectrum-unavailable";
   if (!observation.pixelErrors.length) return "pixel-errors-unavailable";
   if (!hasCanonicalIds(assets.pixelIds)) return "dimension-mismatch";
@@ -369,13 +383,19 @@ export function computeLegacyKsLocalization(
     weighted[1] += direction[1] * weight;
     weighted[2] += direction[2] * weight;
   }
-  const localDirection = normalized(weighted);
-  if (!localDirection) return unavailable("zero-template-probability");
-  const thetaDeg = Math.acos(Math.max(-1, Math.min(1, localDirection[2]))) * 180 / Math.PI;
-  const phiDeg = Math.atan2(localDirection[1], localDirection[0]) * 180 / Math.PI;
+  const normalizedRootDirection = normalized(weighted);
+  if (!normalizedRootDirection) return unavailable("zero-template-probability");
+  const rootLocalDirection = createRitabrataDetectorVector(...normalizedRootDirection);
+  const rootWeightedDirectionVector = createRitabrataDetectorVector(...weighted);
+  const localDirection = ritabrataToThreeDetectorLocal(rootLocalDirection);
+  const weightedDirectionVector = ritabrataToThreeDetectorLocal(rootWeightedDirectionVector);
+  const thetaDeg = Math.acos(Math.max(-1, Math.min(1, rootLocalDirection[2]))) * 180 / Math.PI;
+  const phiDeg = Math.atan2(rootLocalDirection[1], rootLocalDirection[0]) * 180 / Math.PI;
   return Object.freeze({
+    rootLocalDirection,
+    rootWeightedDirectionVector,
     localDirection,
-    weightedDirectionVector: Object.freeze([...weighted]) as DetectorVector3,
+    weightedDirectionVector,
     thetaDeg,
     phiDeg,
     provisionalThetaDeg,

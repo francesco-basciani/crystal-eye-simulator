@@ -5,19 +5,25 @@ import {
   type LegacyKsEffectiveAreaRow,
   type LegacyKsTemplate,
 } from "./legacy-template-localizer.ts";
-import type { DetectorVector3 } from "./detector-geometry-v2r8.ts";
+import {
+  RITABRATA_DETECTOR_FRAME,
+  CELOC_UPCAL_RAW_COMPONENT_FRAME,
+  createCelocRawPixelVector,
+  type CelocRawPixelVector3,
+} from "./detector-local-frame-adapter.ts";
 
 export type RitabrataLocalizerManifest = Readonly<{
   schemaVersion: 1;
   assetVersion: string;
   geometryVersion: typeof RITABRATA_KS_GEOMETRY_VERSION;
-  directionFrame: string;
+  directionFrame: typeof RITABRATA_DETECTOR_FRAME;
+  pixelPositionFrame: typeof CELOC_UPCAL_RAW_COMPONENT_FRAME;
   pixelCount: number;
   energyBinCount: number;
   templateCount: number;
   effectiveAreaThetaCount: number;
   pixelIdsInSourceFileOrder: readonly number[];
-  pixelPositionVectorsInSourceFileOrder: readonly DetectorVector3[];
+  pixelPositionVectorsInSourceFileOrder: readonly CelocRawPixelVector3[];
   energyBinEdgesKeV: readonly number[];
   templates: readonly LegacyKsTemplate[];
   effectiveArea: readonly LegacyKsEffectiveAreaRow[];
@@ -59,6 +65,8 @@ function assertManifest(manifest: RitabrataLocalizerManifest): void {
   if (
     manifest.schemaVersion !== 1 ||
     manifest.geometryVersion !== RITABRATA_KS_GEOMETRY_VERSION ||
+    manifest.directionFrame !== RITABRATA_DETECTOR_FRAME ||
+    manifest.pixelPositionFrame !== CELOC_UPCAL_RAW_COMPONENT_FRAME ||
     manifest.pixelCount !== RITABRATA_KS_PIXEL_COUNT ||
     manifest.energyBinCount <= 0 ||
     manifest.templateCount <= 0 ||
@@ -102,10 +110,11 @@ export function createRitabrataAssetBundle(
   return Object.freeze({
     geometryVersion: manifest.geometryVersion,
     directionFrame: manifest.directionFrame,
+    pixelPositionFrame: manifest.pixelPositionFrame,
     pixelIds: Object.freeze([...manifest.pixelIdsInSourceFileOrder]),
     pixelPositionVectors: Object.freeze(
       manifest.pixelPositionVectorsInSourceFileOrder.map((vector) =>
-        Object.freeze([...vector]) as DetectorVector3),
+        createCelocRawPixelVector(vector[0], vector[1], vector[2])),
     ),
     energyBinEdgesKeV: Object.freeze([...manifest.energyBinEdgesKeV]),
     templates: Object.freeze(manifest.templates.map((template) => Object.freeze({ ...template }))),

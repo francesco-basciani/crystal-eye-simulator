@@ -10,6 +10,7 @@ import {
   parsePixelBackgroundTsv,
   rateToExpectedCountsPerBin,
 } from "../app/lib/pixel-background.ts";
+import { RITABRATA_DETECTOR_FRAME } from "../app/lib/detector-local-frame-adapter.ts";
 
 const datasetUrl = new URL("../public/data/pixbkg.txt", import.meta.url);
 
@@ -44,6 +45,7 @@ test("the provisional mapping and deterministic 0.2 s bin are exact", async () =
   assert.deepEqual(profile.records.map((record) => record.pixelId),
     Array.from({ length: 126 }, (_, index) => index));
   assert.equal(profile.status, "PROVISIONAL");
+  assert.equal(profile.angularCoordinateFrame, RITABRATA_DETECTOR_FRAME);
   assert.equal(profile.binSeconds, PIXEL_BACKGROUND_BIN_SECONDS);
   assert.ok(Math.abs(profile.totalRateCountsPerSecond - 5711.5784) < 1e-9);
   assert.ok(Math.abs(profile.totalExpectedCountsPerBin - 1142.31568) < 1e-9);
