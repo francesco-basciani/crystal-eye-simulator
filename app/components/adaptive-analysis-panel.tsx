@@ -121,14 +121,14 @@ export function AdaptiveAnalysisPanel({
         </div>
         <div className="analysis-provenance">
           {mode === "simulation"
-            ? `SEEDED POISSON · VISIBLE SUN/MOON/EARTH ONLY · RITO EXCLUDED · SEPARATE RNG · SEED ${seed}`
-            : "DETERMINISTIC REFERENCE · RITO + VISIBLE SUN/MOON/EARTH"}
+            ? `SEEDED POISSON · VISIBLE SUN/MOON/EARTH ONLY · REFERENCE BASELINE EXCLUDED · SEPARATE RNG · SEED ${seed}`
+            : "DETERMINISTIC REFERENCE · PIXEL BASELINE + VISIBLE SUN/MOON/EARTH"}
           {" · "}KNOWN INJECTED SOURCE BINS SKIP FILTER UPDATE
         </div>
         <div className="analysis-oracle-warning">SOURCE-CONDITIONED ORACLE · NOT A BLIND DETECTOR · NOT FLIGHT TELEMETRY</div>
         <div className="analysis-legend">
           <span className="observed">{mode === "simulation" ? "seeded Poisson stream" : "deterministic stream"}</span>
-          <span className="configured">{mode === "simulation" ? "visible environment background" : "Rito + visible environment"}</span>
+          <span className="configured">{mode === "simulation" ? "visible environment background" : "pixel baseline + visible environment"}</span>
           <span className="estimate">cyan estimate ±1σ</span>
           <span className="onset">one marker per burst onset</span>
         </div>

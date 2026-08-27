@@ -609,7 +609,7 @@ function createDetectorExpectedResponse({
   aggregateSourceCounts: number;
 }) {
   if (mode === "reference" && !pixelBackground) {
-    throw new Error("Reference Mode requires the Rito pixel background profile.");
+    throw new Error("Reference Mode requires the supplied pixel background profile.");
   }
   if (!pixelBackground) {
     throw new Error("V2R8 candidate geometry requires the validated pixel angular profile.");
@@ -5999,8 +5999,8 @@ export default function Home() {
               </div>
               <p>
                 PROVISIONAL derived response · {simulatorMode === "simulation"
-                  ? "visible Sun + Moon + Earth only; Rito excluded"
-                  : "Rito reference + visible Sun + Moon + Earth"}. Not flight telemetry or a calibrated detector model.
+                  ? "visible Sun + Moon + Earth only; supplied baseline excluded"
+                  : "supplied pixel baseline + visible Sun + Moon + Earth"}. Not flight telemetry or a calibrated detector model.
               </p>
             </div>
           </section>
@@ -6280,7 +6280,7 @@ export default function Home() {
           <section className="ritabrata-pipeline-panel collapsible-panel" aria-live="polite">
             <div className="unified-panel-header">
               <div>
-                <small>PROVISIONAL RITABRATA PIPELINE</small>
+                <small>PROVISIONAL GRB LOCALIZATION</small>
                 <strong>CEGenGRB → CELoc · centroid comparison</strong>
               </div>
               <span className="panel-header-badge">CELoc ROOT parity pending</span>
@@ -6312,7 +6312,7 @@ export default function Home() {
                           <em>quantization {result.quantizationErrorDeg.toFixed(2)}°</em>
                         </span>
                         <span>
-                          <small>RITABRATA / CELOC RECONSTRUCTION</small>
+                          <small>TEMPLATE / KS RECONSTRUCTION</small>
                           <strong>RA {result.ritabrata.raDeg.toFixed(2)}° · Dec {result.ritabrata.decDeg.toFixed(2)}°</strong>
                           <em>selected DB → reconstruction {result.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
                           <em>requested truth → reconstruction {result.requestedToReconstructedDeg.toFixed(2)}°</em>
@@ -6324,7 +6324,7 @@ export default function Home() {
                         </span>
                       </div>
                       <p>
-                        {result.method} · default Ritabrata CPL A=0.026, α=−1.07, Epeak=756.4 keV · source-only expected response. Displayed angular separations are diagnostics, not confidence intervals.
+                        CEGenGRB → CELoc provisional pipeline · default CPL A=0.026, α=−1.07, Epeak=756.4 keV · source-only expected response. Displayed angular separations are diagnostics, not confidence intervals.
                       </p>
                     </>
                   );

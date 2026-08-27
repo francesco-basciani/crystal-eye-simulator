@@ -79,10 +79,10 @@ function assertManifest(manifest: RitabrataLocalizerManifest): void {
     manifest.templateResponse.layout !== "template,pixel,energy" ||
     !/^[a-f0-9]{64}$/.test(manifest.templateResponse.sha256) ||
     !/^[a-f0-9]{64}$/.test(manifest.provenanceSha256)
-  ) throw new RangeError("Ritabrata localizer manifest is invalid or incompatible.");
+  ) throw new RangeError("GRB localizer manifest is invalid or incompatible.");
   const expectedBytes = manifest.templateCount * manifest.pixelCount * manifest.energyBinCount * 4;
   if (manifest.templateResponse.uncompressedByteLength !== expectedBytes) {
-    throw new RangeError("Ritabrata template response dimensions do not match its byte length.");
+    throw new RangeError("GRB template-response dimensions do not match its byte length.");
   }
 }
 
@@ -105,7 +105,7 @@ export function createRitabrataAssetBundle(
 ): LegacyKsAssetBundle {
   assertManifest(manifest);
   if (uncompressedTemplateResponse.byteLength !== manifest.templateResponse.uncompressedByteLength) {
-    throw new RangeError("Ritabrata template response has an unexpected uncompressed byte length.");
+    throw new RangeError("GRB template response has an unexpected uncompressed byte length.");
   }
   return Object.freeze({
     geometryVersion: manifest.geometryVersion,
@@ -149,7 +149,7 @@ export async function loadRitabrataLocalizerAssets(
   const compressed = await response.arrayBuffer();
   const actualHash = await sha256Hex(compressed);
   if (actualHash !== manifest.templateResponse.sha256) {
-    throw new Error("Ritabrata template response SHA-256 mismatch.");
+    throw new Error("GRB template-response SHA-256 mismatch.");
   }
   return createRitabrataAssetBundle(manifest, await decompressGzip(compressed));
 }

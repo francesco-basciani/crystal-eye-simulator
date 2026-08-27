@@ -14,7 +14,7 @@ export function composeModeBackgroundCounts(
   earthCounts: number,
 ): number {
   [ritoCounts, sunCounts, moonCounts, earthCounts].forEach((value, index) =>
-    requireCount(value, ["Rito", "Sun", "Moon", "Earth"][index]),
+    requireCount(value, ["pixel baseline", "Sun", "Moon", "Earth"][index]),
   );
   return (mode === "reference" ? ritoCounts : 0) + sunCounts + moonCounts + earthCounts;
 }

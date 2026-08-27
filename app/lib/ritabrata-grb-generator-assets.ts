@@ -86,7 +86,7 @@ function assertManifest(manifest: RitabrataGrbGeneratorManifest): void {
     manifest.directionCount !== manifest.directions.length || manifest.directionCount <= 0 ||
     manifest.primaryEnergyBinEdgesKeV.length !== manifest.primaryEnergyBinCount + 1 ||
     manifest.depositedEnergyBinEdgesKeV.length !== manifest.depositedEnergyBinCount + 1
-  ) throw new RangeError("Ritabrata GRB generator manifest is invalid or incompatible.");
+  ) throw new RangeError("GRB response-generator manifest is invalid or incompatible.");
   assertSha256(manifest.provenanceSha256);
   for (const name of KERNEL_NAMES) {
     const descriptor = manifest.kernels[name];
@@ -165,7 +165,7 @@ async function loadKernelMember(
     memberBytes = responseBytes.slice(member.offset, lastByte + 1);
   }
   if (await sha256Hex(memberBytes) !== member.sha256) {
-    throw new Error("Ritabrata GRB kernel member SHA-256 mismatch.");
+    throw new Error("GRB response-kernel member SHA-256 mismatch.");
   }
   const uncompressed = await decompressGzip(memberBytes);
   if (uncompressed.byteLength !== member.uncompressedByteLength) {
@@ -186,7 +186,7 @@ async function loadManifest(
       const bytes = await response.arrayBuffer();
       const manifestSha256 = await sha256Hex(bytes);
       if (manifestSha256 !== RITABRATA_GRB_APPROVED_MANIFEST_SHA256) {
-        throw new Error("Ritabrata GRB manifest SHA-256 mismatch.");
+        throw new Error("GRB response-generator manifest SHA-256 mismatch.");
       }
       const manifest = JSON.parse(new TextDecoder().decode(bytes)) as RitabrataGrbGeneratorManifest;
       assertManifest(manifest);

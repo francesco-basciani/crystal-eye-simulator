@@ -154,8 +154,8 @@ test("mode-B composition, excitation glow, and persisted placement are wired con
   assert.match(pageSource, /earthIllumination,[\s\S]*?earthAlbedoAzimuth,[\s\S]*?earthAlbedoDirectional,[\s\S]*?mountX,[\s\S]*?mountZ/);
   assert.match(pageSource, /saved locally/i);
   assert.match(pageSource, /EXPOSED OUTER PIXELS/);
-  assert.match(analysisPanelSource, /VISIBLE SUN\/MOON\/EARTH ONLY · RITO EXCLUDED/);
-  assert.match(analysisPanelSource, /RITO \+ VISIBLE SUN\/MOON\/EARTH/);
+  assert.match(analysisPanelSource, /VISIBLE SUN\/MOON\/EARTH ONLY · REFERENCE BASELINE EXCLUDED/);
+  assert.match(analysisPanelSource, /PIXEL BASELINE \+ VISIBLE SUN\/MOON\/EARTH/);
 });
 
 test("Simulation schedules one Sun-overlap burst before sparse deterministic random bursts", () => {

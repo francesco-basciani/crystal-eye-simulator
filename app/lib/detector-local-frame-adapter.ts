@@ -80,7 +80,7 @@ export function ritabrataDirectionFromAngles(
     !Number.isFinite(thetaDeg) || thetaDeg < 0 || thetaDeg > 180 ||
     !Number.isFinite(phiDeg)
   ) {
-    throw new RangeError("Ritabrata theta/phi must be finite, with theta within [0, 180].");
+    throw new RangeError("Detector-frame theta/phi must be finite, with theta within [0, 180].");
   }
   const theta = thetaDeg * Math.PI / 180;
   const phi = phiDeg * Math.PI / 180;
@@ -96,7 +96,7 @@ export function ritabrataAnglesFromDirection(
 ): Readonly<{ thetaDeg: number; phiDeg: number }> {
   const magnitude = Math.hypot(...rawVector);
   if (!Number.isFinite(magnitude) || magnitude <= Number.EPSILON) {
-    throw new RangeError("Ritabrata angles require a finite non-zero vector.");
+    throw new RangeError("Detector-frame angles require a finite non-zero vector.");
   }
   return Object.freeze({
     thetaDeg: Math.acos(Math.max(-1, Math.min(1, rawVector[2] / magnitude))) * 180 / Math.PI,
