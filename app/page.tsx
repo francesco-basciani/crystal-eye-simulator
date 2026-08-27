@@ -253,6 +253,8 @@ type SimulatorMode = "reference" | "simulation";
 type LocalizerGrid = "5deg" | "2deg";
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const IMMUTABLE_2DEG_LOCALIZER_MANIFEST_URL =
+  "https://raw.githubusercontent.com/francesco-basciani/crystal-eye-simulator/ecbbf60/public/data/ritabrata-localizer-2deg/ritabrata-localizer.manifest.json";
 const LOCALIZATION_EVIDENCE_SOURCE_URL =
   "https://github.com/francesco-basciani/crystal-eye-simulator/blob/main/docs/evidence/grb-localizer-comparison-stratified-theta-20260827.json";
 const TIME_WARP_PRESETS = [1, 50, 200, 500] as const;
@@ -5424,9 +5426,9 @@ export default function Home() {
     setRitabrataRuntime({ status: "loading", burstId });
     void runRitabrataProvisionalPipeline({
       generatorManifestUrl: `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-grb-generator/ritabrata-grb-generator.manifest.json`,
-      localizerManifestUrl: `${window.location.origin}${PUBLIC_BASE_PATH}/data/${
-        localizerGrid === "2deg" ? "ritabrata-localizer-2deg" : "ritabrata-localizer"
-      }/ritabrata-localizer.manifest.json`,
+      localizerManifestUrl: localizerGrid === "2deg"
+        ? IMMUTABLE_2DEG_LOCALIZER_MANIFEST_URL
+        : `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-localizer/ritabrata-localizer.manifest.json`,
       requestedThetaDeg: requestedAngles.thetaDeg,
       requestedPhiDeg: requestedAngles.phiDeg,
       spectrum: {

@@ -153,3 +153,7 @@ The two npm benchmark commands expand to the exact generator directory, evidence
 - Rito should confirm that nominal “2°/5°” means target angular grid separation, since theta-ring increments are not exactly 2°/5°.
 - Scientific interpretation and any claim of improved localization require physicist validation and explicit author approval.
 - Google Drive is mutable and non-archival. The Drive IDs and SHA-256 checks permit present-day verification, but the source package should later be deposited in an immutable research archive.
+
+## GitHub Pages packaging decision
+
+The first publication attempt from commit `ecbbf60` built successfully but the GitHub Pages deploy timed out after 10 minutes because the generated artifact was 267 MB. The scientific assets and numerical results were not changed. The 2-degree bundle remains versioned and content-hash verified in Git, while the browser loads it lazily from the immutable raw GitHub URL pinned to commit `ecbbf60`. It is stored outside `public/` in subsequent commits so that it is not duplicated in each Pages deployment artifact. The 5-degree default bundle remains packaged with the application. This hosting-only change preserves the approved manifest hash and all member hashes.
