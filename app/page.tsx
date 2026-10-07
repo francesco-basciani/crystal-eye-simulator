@@ -30,6 +30,11 @@ import {
 import * as THREE from "three";
 import { Body, Illumination } from "astronomy-engine";
 import { AppNav } from "./components/app-nav";
+import { saveSkyLocalizationEvent } from "./lib/sky-localization-archive";
+import {
+  createSkyLocalizationEvent,
+  completeSkyLocalizationEvent,
+} from "./lib/sky-localization";
 import {
   AdaptiveAnalysisPanel,
   type ReconstructionDisplay,
@@ -146,6 +151,7 @@ import {
   runRitabrataProvisionalPipeline,
   type RitabrataPipelineResult,
 } from "./lib/ritabrata-provisional-pipeline";
+import { RITABRATA_GRB_MAXIMUM_REQUESTED_THETA_DEG } from "./lib/ritabrata-grb-generator";
 import { LOCALIZATION_COMPARISON_EVIDENCE } from "./lib/localization-comparison-evidence";
 import {
   createThreeDetectorLocalVector,
@@ -251,8 +257,12 @@ type CameraMode = "orbit" | "satellite";
 type OrbitScenarioMode = "canonical" | "parametric";
 type SimulatorMode = "reference" | "simulation";
 type LocalizerGrid = "5deg" | "2deg";
+type GrbPipelineVersion = "updated" | "legacy";
 
 const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
+const UPDATED_GRB_ASSET_BASE_URL = (
+  process.env.NEXT_PUBLIC_RITO_V2_ASSET_BASE_URL ?? ""
+).replace(/\/$/, "");
 const IMMUTABLE_2DEG_LOCALIZER_MANIFEST_URL =
   "https://raw.githubusercontent.com/francesco-basciani/crystal-eye-simulator/ecbbf60/public/data/ritabrata-localizer-2deg/ritabrata-localizer.manifest.json";
 const LOCALIZATION_EVIDENCE_SOURCE_URL =
@@ -4524,6 +4534,8 @@ export default function Home() {
     status: "idle",
   });
   const [localizerGrid, setLocalizerGrid] = useState<LocalizerGrid>("5deg");
+  const [grbPipelineVersion, setGrbPipelineVersion] =
+    useState<GrbPipelineVersion>("updated");
   const [eventLog, setEventLog] = useState<EventRecord[]>(() => {
     const utc = new Date().toISOString();
     return [
@@ -5388,6 +5400,92 @@ export default function Home() {
     selectPixel(targetPixel);
     const burstId = nextBurstIdRef.current;
     nextBurstIdRef.current += 1;
+    const skyRunId = photonRunIdRef.current;
+    const skyEventKey = `${skyRunId}:${burstId}`;
+    const skyEvent = createSkyLocalizationEvent({
+      eventKey: skyEventKey,
+      burstId,
+      simulatedDate: new Date(settingsRef.current.epochMs + elapsedRef.current * 1000).toISOString(),
+      raDeg,
+      decDeg,
+      gridLabel: `${grbPipelineVersion === "updated" ? "Updated" : "Legacy"} · KS ${localizerGrid === "2deg" ? "2°" : "5°"}`,
+    });
+    void saveSkyLocalizationEvent(skyEvent).catch(() => {
+      setBurstArchiveError("Sky localization archive is unavailable.");
+    });
+    const completeSkyEvent = (result: RitabrataPipelineResult) => {
+      const completed = completeSkyLocalizationEvent([skyEvent], skyEventKey, result)[0];
+      void saveSkyLocalizationEvent(completed).catch(() => {
+        setBurstArchiveError("Sky localization archive is unavailable.");
+      });
+    };
+    const rootDirection = threeDetectorLocalToRitabrata(
+      createThreeDetectorLocalVector(...localDirection),
+    );
+    const requestedAngles = ritabrataAnglesFromDirection(rootDirection);
+    const boresightSnapshot = [...satelliteDirectionRef.current] as [number, number, number];
+    if (requestedAngles.thetaDeg <= RITABRATA_GRB_MAXIMUM_REQUESTED_THETA_DEG) {
+      setRitabrataRuntime({ status: "loading", burstId });
+      const useUpdatedPipeline = grbPipelineVersion === "updated";
+      if (useUpdatedPipeline && UPDATED_GRB_ASSET_BASE_URL.length === 0) {
+        completeSkyEvent({ status: "unavailable", reason: "updated-assets-not-configured" });
+        setRitabrataRuntime({
+          status: "complete",
+          burstId,
+          result: { status: "unavailable", reason: "updated-assets-not-configured" },
+        });
+      } else void runRitabrataProvisionalPipeline({
+        generatorManifestUrl: useUpdatedPipeline
+          ? `${UPDATED_GRB_ASSET_BASE_URL}/generator/cegengrb-v2.manifest.json`
+          : `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-grb-generator/ritabrata-grb-generator.manifest.json`,
+        localizerManifestUrl: useUpdatedPipeline
+          ? `${UPDATED_GRB_ASSET_BASE_URL}/${localizerGrid === "2deg" ? "localizer-2deg" : "localizer-5deg"}/ritabrata-localizer.manifest.json`
+          : localizerGrid === "2deg"
+            ? IMMUTABLE_2DEG_LOCALIZER_MANIFEST_URL
+            : `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-localizer/ritabrata-localizer.manifest.json`,
+        requestedThetaDeg: requestedAngles.thetaDeg,
+        requestedPhiDeg: requestedAngles.phiDeg,
+        spectrum: {
+          normalization: 0.026,
+          spectralIndex: -1.07,
+          peakEnergyKeV: 756.4,
+        },
+        radialBoresight: boresightSnapshot,
+        truth: { raDeg, decDeg },
+        detectorNormals: getV2R8CandidateNormals(physicalGeometry),
+        frameIndex: photonBinRef.current + 1,
+        acquisitionTimeSeconds: (photonBinRef.current + 1) * PIXEL_BACKGROUND_BIN_SECONDS,
+      }).then((result) => {
+        completeSkyEvent(result);
+        setRitabrataRuntime((current) =>
+          photonRunIdRef.current === skyRunId && current.status === "loading" && current.burstId === burstId
+            ? { status: "complete", burstId, result }
+            : current);
+      }).catch((error: unknown) => {
+        completeSkyEvent({
+          status: "unavailable",
+          reason: error instanceof Error ? error.message : "runtime-load-failed",
+        });
+        setRitabrataRuntime((current) =>
+          photonRunIdRef.current === skyRunId && current.status === "loading" && current.burstId === burstId
+            ? {
+                status: "complete",
+                burstId,
+                result: {
+                  status: "unavailable",
+                  reason: error instanceof Error ? error.message : "runtime-load-failed",
+                },
+              }
+            : current);
+      });
+    } else {
+      completeSkyEvent({ status: "unavailable", reason: "requested-direction-outside-113deg-fov" });
+      setRitabrataRuntime({
+        status: "complete",
+        burstId,
+        result: { status: "unavailable", reason: "requested-direction-outside-113deg-fov" },
+      });
+    }
     if (transmission <= 0) {
       setEventLog((current) => [
         ...current,
@@ -5418,47 +5516,6 @@ export default function Home() {
         ticksRemaining: Math.max(1, Math.round(durationSeconds / 0.2)),
       },
     ];
-    const rootDirection = threeDetectorLocalToRitabrata(
-      createThreeDetectorLocalVector(...localDirection),
-    );
-    const requestedAngles = ritabrataAnglesFromDirection(rootDirection);
-    const boresightSnapshot = [...satelliteDirectionRef.current] as [number, number, number];
-    setRitabrataRuntime({ status: "loading", burstId });
-    void runRitabrataProvisionalPipeline({
-      generatorManifestUrl: `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-grb-generator/ritabrata-grb-generator.manifest.json`,
-      localizerManifestUrl: localizerGrid === "2deg"
-        ? IMMUTABLE_2DEG_LOCALIZER_MANIFEST_URL
-        : `${window.location.origin}${PUBLIC_BASE_PATH}/data/ritabrata-localizer/ritabrata-localizer.manifest.json`,
-      requestedThetaDeg: requestedAngles.thetaDeg,
-      requestedPhiDeg: requestedAngles.phiDeg,
-      spectrum: {
-        normalization: 0.026,
-        spectralIndex: -1.07,
-        peakEnergyKeV: 756.4,
-      },
-      radialBoresight: boresightSnapshot,
-      truth: { raDeg, decDeg },
-      detectorNormals: getV2R8CandidateNormals(physicalGeometry),
-      frameIndex: photonBinRef.current + 1,
-      acquisitionTimeSeconds: (photonBinRef.current + 1) * PIXEL_BACKGROUND_BIN_SECONDS,
-    }).then((result) => {
-      setRitabrataRuntime((current) =>
-        current.status === "loading" && current.burstId === burstId
-          ? { status: "complete", burstId, result }
-          : current);
-    }).catch((error: unknown) => {
-      setRitabrataRuntime((current) =>
-        current.status === "loading" && current.burstId === burstId
-          ? {
-              status: "complete",
-              burstId,
-              result: {
-                status: "unavailable",
-                reason: error instanceof Error ? error.message : "runtime-load-failed",
-              },
-            }
-          : current);
-    });
     setEventLog((current) => [
       ...current,
       {
@@ -5470,7 +5527,7 @@ export default function Home() {
         kind: "grb",
       },
     ]);
-  }, [localizerGrid, selectPixel]);
+  }, [grbPipelineVersion, localizerGrid, selectPixel]);
 
   const injectGRB = useCallback((options?: {
     random?: () => number;
@@ -5600,7 +5657,7 @@ export default function Home() {
     const requestedThetaDeg = THREE.MathUtils.clamp(
       testBurstDraft.detectorThetaDeg,
       0,
-      90,
+      RITABRATA_GRB_MAXIMUM_REQUESTED_THETA_DEG,
     );
     const requestedPhiDeg = ((testBurstDraft.detectorPhiDeg % 360) + 360) % 360;
     const boresight = satelliteDirectionRef.current;
@@ -6268,6 +6325,13 @@ export default function Home() {
                     </em>
                   </span>
                   <a
+                    href={`${PUBLIC_BASE_PATH}/sky-localization/?event=${encodeURIComponent(latestBurstDetection.eventKey)}`}
+                    target="_blank" rel="noopener noreferrer"
+                  >
+                    OPEN SKY LOCALIZATION
+                    <ChevronRight size={12} />
+                  </a>
+                  <a
                     href={`${PUBLIC_BASE_PATH}/event-history/?event=${encodeURIComponent(latestBurstDetection.eventKey)}`}
                   >
                     OPEN EVENT RECORD
@@ -6402,7 +6466,7 @@ export default function Home() {
                         <input
                           type="number"
                           min="0"
-                          max="90"
+                          max={RITABRATA_GRB_MAXIMUM_REQUESTED_THETA_DEG}
                           step="0.001"
                           value={testBurstDraft.detectorThetaDeg}
                           onChange={(event) => setTestBurstDraft((current) => ({
@@ -6509,21 +6573,31 @@ export default function Home() {
             <div className="unified-panel-header">
               <div>
                 <small>PROVISIONAL GRB LOCALIZATION</small>
-                <strong>CEGenGRB → CELoc {localizerGrid === "2deg" ? "2°" : "5°"} · centroid comparison</strong>
+                <strong>{grbPipelineVersion === "updated" ? "Three-template" : "Legacy single-template"} GRB response → CELoc {localizerGrid === "2deg" ? "2°" : "5°"}</strong>
               </div>
-              <div className="localizer-grid-selector" role="group" aria-label="KS template grid">
-                <button
-                  type="button"
-                  className={localizerGrid === "5deg" ? "is-active" : ""}
-                  aria-pressed={localizerGrid === "5deg"}
-                  onClick={() => setLocalizerGrid("5deg")}
-                >5°</button>
-                <button
-                  type="button"
-                  className={localizerGrid === "2deg" ? "is-active" : ""}
-                  aria-pressed={localizerGrid === "2deg"}
-                  onClick={() => setLocalizerGrid("2deg")}
-                >2°</button>
+              <div className="localizer-selectors">
+                <div className="localizer-grid-selector" role="group" aria-label="GRB response pipeline">
+                  <button type="button" className={grbPipelineVersion === "updated" ? "is-active" : ""}
+                    aria-pressed={grbPipelineVersion === "updated"}
+                    onClick={() => setGrbPipelineVersion("updated")}>UPDATED</button>
+                  <button type="button" className={grbPipelineVersion === "legacy" ? "is-active" : ""}
+                    aria-pressed={grbPipelineVersion === "legacy"}
+                    onClick={() => setGrbPipelineVersion("legacy")}>LEGACY</button>
+                </div>
+                <div className="localizer-grid-selector" role="group" aria-label="KS template grid">
+                  <button
+                    type="button"
+                    className={localizerGrid === "5deg" ? "is-active" : ""}
+                    aria-pressed={localizerGrid === "5deg"}
+                    onClick={() => setLocalizerGrid("5deg")}
+                  >5°</button>
+                  <button
+                    type="button"
+                    className={localizerGrid === "2deg" ? "is-active" : ""}
+                    aria-pressed={localizerGrid === "2deg"}
+                    onClick={() => setLocalizerGrid("2deg")}
+                  >2°</button>
+                </div>
               </div>
             </div>
             <div className="ritabrata-pipeline-body">
@@ -6531,7 +6605,11 @@ export default function Home() {
                 <p>Inject a configured or random GRB to run the source-response and localization pipeline.</p>
               )}
               {ritabrataRuntime.status === "loading" && (
-                <p>GRB #{ritabrataRuntime.burstId} · loading the nearest verified response members…</p>
+                <p>
+                  GRB #{ritabrataRuntime.burstId} · {grbPipelineVersion === "updated"
+                    ? "loading the three nearest response templates…"
+                    : "loading the explicitly selected legacy single-template baseline…"}
+                </p>
               )}
               {ritabrataRuntime.status === "complete" &&
                 ritabrataRuntime.result.status === "unavailable" && (
@@ -6547,28 +6625,44 @@ export default function Home() {
                           <small>REQUESTED DETECTOR DIRECTION</small>
                           <strong>θ {result.requestedDirection.thetaDeg.toFixed(2)}° · φ {result.requestedDirection.phiDeg.toFixed(2)}°</strong>
                         </span>
-                        <span>
-                          <small>SELECTED RESPONSE DATABASE</small>
-                          <strong>θ {result.selectedDatabaseDirection.thetaDeg.toFixed(2)}° · φ {result.selectedDatabaseDirection.phiDeg.toFixed(2)}°</strong>
-                          <em>quantization {result.quantizationErrorDeg.toFixed(2)}°</em>
+                        <span className="ritabrata-neighbour-list">
+                          <small>{result.selectedDatabaseDirections.length > 1
+                            ? "INTERPOLATED RESPONSE TEMPLATES"
+                            : "SELECTED RESPONSE TEMPLATE"}</small>
+                          {result.selectedDatabaseDirections.map((selection, index) => (
+                            <strong key={`${selection.direction.sourceId}-${index}`}>
+                              {index + 1}. θ {selection.direction.thetaDeg.toFixed(2)}° · φ {selection.direction.phiDeg.toFixed(2)}°
+                              <em>{selection.separationDeg.toFixed(2)}° · weight {(selection.weight * 100).toFixed(1)}%</em>
+                            </strong>
+                          ))}
+                          {result.containmentWarning && (
+                            <em className="ritabrata-containment-warning">
+                              {result.containmentWarning === "outside-neighbour-triangle"
+                                ? "requested direction lies outside the nearest-template triangle"
+                                : "nearest-template triangle is degenerate"}
+                            </em>
+                          )}
                         </span>
                         <span>
                           <small>TEMPLATE / KS RECONSTRUCTION</small>
                           <strong>θ {result.ritabrata.thetaDeg.toFixed(2)}° · φ {result.ritabrata.phiDeg.toFixed(2)}°</strong>
                           <strong>RA {result.ritabrata.raDeg.toFixed(2)}° · Dec {result.ritabrata.decDeg.toFixed(2)}°</strong>
-                          <em>selected DB → reconstruction {result.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
+                          <em>nearest template → reconstruction {result.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
                           <em>requested truth → reconstruction {result.requestedToReconstructedDeg.toFixed(2)}°</em>
                         </span>
                         <span>
                           <small>POSITIVE-EXCESS CENTROID</small>
                           <strong>θ {result.centroid.thetaDeg.toFixed(2)}° · φ {result.centroid.phiDeg.toFixed(2)}°</strong>
                           <strong>RA {result.centroid.reconstruction.raDeg.toFixed(2)}° · Dec {result.centroid.reconstruction.decDeg.toFixed(2)}°</strong>
-                          <em>selected DB → reconstruction {result.centroid.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
+                          <em>nearest template → reconstruction {result.centroid.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
                           <em>requested truth → reconstruction {result.centroid.requestedToReconstructedDeg.toFixed(2)}°</em>
                         </span>
                       </div>
                       <p>
-                        CEGenGRB → CELoc provisional pipeline · default CPL A=0.026, α=−1.07, Epeak=756.4 keV · source-only expected response. Displayed angular separations are diagnostics, not confidence intervals.
+                        {result.responseSemantics === "full-sample-expectation-approximation"
+                          ? "Updated three-template pipeline · inverse-angular-distance interpolation · source-only full-sample expectation. The C++ prefix-event implementation and official localization outputs still require parity checks."
+                          : "Explicit legacy baseline · previous single-template response and localization assets. It is not an automatic fallback."}
+                        {" "}Default CPL A=0.026, α=−1.07, Epeak=756.4 keV · displayed separations are diagnostics, not confidence intervals.
                       </p>
                     </>
                   );
@@ -6583,6 +6677,7 @@ export default function Home() {
               </button>
             </div>
           </section>
+
 
           <section className={`detector-section collapsible-panel ${collapsedRailPanels.detector ? "is-collapsed" : ""}`}>
             <div className="detector-section-header unified-panel-header">

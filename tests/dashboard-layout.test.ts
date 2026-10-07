@@ -114,10 +114,15 @@ test("test bursts accept detector-frame theta phi and expose both localization g
   assert.match(pageSource, /DETECTOR AZIMUTH · φ/);
   assert.match(pageSource, /ritabrataDirectionFromAngles\(requestedThetaDeg, requestedPhiDeg\)/);
   assert.match(pageSource, /localizerGrid === "2deg"/);
+  assert.match(pageSource, /NEXT_PUBLIC_RITO_V2_ASSET_BASE_URL/);
+  assert.match(pageSource, /RITABRATA_GRB_MAXIMUM_REQUESTED_THETA_DEG/);
+  assert.match(pageSource, /INTERPOLATED RESPONSE TEMPLATES/);
+  assert.match(pageSource, /selection\.separationDeg\.toFixed\(2\)/);
+  assert.match(pageSource, /selection\.weight \* 100/);
   assert.match(pageSource, /IMMUTABLE_2DEG_LOCALIZER_MANIFEST_URL/);
   assert.match(pageSource, /raw\.githubusercontent\.com\/francesco-basciani\/crystal-eye-simulator\/ecbbf60/);
-  assert.doesNotMatch(pageSource, /PUBLIC_BASE_PATH}\/data\/ritabrata-localizer-2deg/);
-  assert.match(pageSource, /selected DB → reconstruction/);
+  assert.doesNotMatch(pageSource, /PUBLIC_BASE_PATH}\/data\/ritabrata-localizer-2deg-v2/);
+  assert.match(pageSource, /nearest template → reconstruction/);
   assert.match(pageSource, /requested truth → reconstruction/);
 });
 

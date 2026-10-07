@@ -155,3 +155,28 @@ test("the asset constructor rejects incompatible frame metadata", () => {
     /invalid or incompatible/,
   );
 });
+
+test("updated embedded-direction localizer manifests are pinned and extend beyond 90 degrees", () => {
+  const updatedRoot = new URL(
+    "../scientific-assets/rito-updated-20260907/",
+    import.meta.url,
+  );
+  for (const [directoryName, expectedCount, expectedRootHash] of [
+    ["localizer-5deg", 1093, "6f79fd2c68da2c2df92e3aca94c63c68073b0b999e6a6876c1359966036ff0ee"],
+    ["localizer-2deg", 7143, "e77cb7800e497bfa5d375a0f0e1ac7b94e2121982c9b08114d9ad6a1aa5caf4e"],
+  ] as const) {
+    const bytes = readFileSync(new URL(`${directoryName}/ritabrata-localizer.manifest.json`, updatedRoot));
+    const updated = JSON.parse(bytes.toString("utf8"));
+    assert.equal(
+      createHash("sha256").update(bytes).digest("hex"),
+      APPROVED_LOCALIZER_MANIFEST_SHA256[
+        updated.assetVersion as keyof typeof APPROVED_LOCALIZER_MANIFEST_SHA256
+      ],
+    );
+    assert.equal(updated.templateCount, expectedCount);
+    assert.equal(updated.sourceFilesSha256[`temEdepPix${directoryName === "localizer-5deg" ? "5" : "2"}degNew.root`], expectedRootHash);
+    assert.ok(Math.max(...updated.templates.map((template: { thetaDeg: number }) => template.thetaDeg)) > 113);
+    assert.ok(Math.max(...updated.templates.map((template: { thetaDeg: number }) => template.thetaDeg)) < 116);
+    assert.equal(updated.rootParity.verified, false);
+  }
+});

@@ -1,0 +1,74 @@
+{
+  "purpose": "Historical Rito comparison display only; not per-burst uncertainty",
+  "width": 4096,
+  "height": 2048,
+  "mapping": "Image left RA 0, right 360; top Dec +90, bottom -90; ICRS",
+  "method": "Bilinear HEALPix sampling; first colored boundary from original contourf_hpx levels=15. Binary display masks retain original colored support, not probability levels.",
+  "maps": {
+    "gbuts_healpix_systematic.fit": {
+      "sha256": "fa07a0a83641b2c33198544f785766df037d54ef390ceba310ca5c1371990f4e",
+      "ordering": "NESTED",
+      "nside": 128,
+      "original_contour_levels": [
+        0.0,
+        3.0000000000000004e-05,
+        6.000000000000001e-05,
+        9.000000000000002e-05,
+        0.00012000000000000002,
+        0.00015000000000000001,
+        0.00018000000000000004,
+        0.00021000000000000004,
+        0.00024000000000000003,
+        0.00027000000000000006,
+        0.00030000000000000003,
+        0.00033000000000000005,
+        0.0003600000000000001,
+        0.00039000000000000005,
+        0.00042000000000000007
+      ],
+      "colored_threshold": 3.0000000000000004e-05,
+      "colored_texture_pixels": 199410
+    },
+    "bayestar_no_virgo.fits.gz": {
+      "sha256": "cb579993d81438afabe73aacf0c5112450514b798c7c5d96c503174a44b7c847",
+      "ordering": "NESTED",
+      "nside": 1024,
+      "original_contour_levels": [
+        0.0,
+        4e-06,
+        8e-06,
+        1.2e-05,
+        1.6e-05,
+        1.9999999999999998e-05,
+        2.4e-05,
+        2.8e-05,
+        3.2e-05,
+        3.6e-05,
+        3.9999999999999996e-05,
+        4.4e-05,
+        4.8e-05,
+        5.2e-05,
+        5.6e-05,
+        5.9999999999999995e-05,
+        6.4e-05
+      ],
+      "colored_threshold": 4e-06,
+      "colored_texture_pixels": 59243
+    }
+  },
+  "ce_reference": {
+    "ra_deg": 197.45,
+    "dec_deg": -23.38,
+    "radii_deg": [
+      1.45,
+      2.75
+    ],
+    "labels": [
+      "Illustrative 68%",
+      "Illustrative 95%"
+    ],
+    "source": "Rito supplied comparison; not validated event-specific KS containment",
+    "rasterization": "Analytic spherical disks sampled at texture pixel centers"
+  },
+  "texture_sha256": "f9c54d5c23b84d78e55b6e1913b3c790b125481bf94a0f0087b529354ef7ed36"
+}

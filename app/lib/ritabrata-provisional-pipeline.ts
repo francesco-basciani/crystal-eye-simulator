@@ -27,6 +27,8 @@ import {
 
 export const RITABRATA_PROVISIONAL_PIPELINE_VERSION =
   "ritabrata-cegengrb-to-celoc-provisional-v1" as const;
+export const UPDATED_GRB_PROVISIONAL_PIPELINE_VERSION =
+  "three-neighbour-expectation-to-celoc-provisional-v2" as const;
 
 const localizerAssetCache = new Map<string, Promise<LegacyKsAssetBundle>>();
 
@@ -79,11 +81,17 @@ export function bridgeGeneratedGrbToLegacyObservation(
 export type RitabrataPipelineAvailable = Readonly<{
   status: "available";
   validationStatus: "PROVISIONAL";
-  method: typeof RITABRATA_PROVISIONAL_PIPELINE_VERSION;
+  method:
+    | typeof RITABRATA_PROVISIONAL_PIPELINE_VERSION
+    | typeof UPDATED_GRB_PROVISIONAL_PIPELINE_VERSION;
   localizerRootParity: "PENDING_OFFICIAL_ROOT_OUTPUTS";
   requestedDirection: GeneratedGrbResponse["requestedDirection"];
   selectedDatabaseDirection: GeneratedGrbResponse["selectedDatabaseDirection"];
+  selectedDatabaseDirections: GeneratedGrbResponse["selectedDatabaseDirections"];
   quantizationErrorDeg: number;
+  interpolationMethod: GeneratedGrbResponse["interpolationMethod"];
+  responseSemantics: GeneratedGrbResponse["responseSemantics"];
+  containmentWarning: GeneratedGrbResponse["containmentWarning"];
   selectedDatabaseToReconstructedDeg: number;
   requestedToReconstructedDeg: number;
   spectrum: CutoffPowerLawParameters;
@@ -181,11 +189,17 @@ export function runRitabrataProvisionalPipelineFromAssets(input: Readonly<{
   return Object.freeze({
     status: "available",
     validationStatus: "PROVISIONAL",
-    method: RITABRATA_PROVISIONAL_PIPELINE_VERSION,
+    method: generation.response.responseSemantics === "full-sample-expectation-approximation"
+      ? UPDATED_GRB_PROVISIONAL_PIPELINE_VERSION
+      : RITABRATA_PROVISIONAL_PIPELINE_VERSION,
     localizerRootParity: "PENDING_OFFICIAL_ROOT_OUTPUTS",
     requestedDirection: generation.response.requestedDirection,
     selectedDatabaseDirection: generation.response.selectedDatabaseDirection,
+    selectedDatabaseDirections: generation.response.selectedDatabaseDirections,
     quantizationErrorDeg: generation.response.quantizationErrorDeg,
+    interpolationMethod: generation.response.interpolationMethod,
+    responseSemantics: generation.response.responseSemantics,
+    containmentWarning: generation.response.containmentWarning,
     selectedDatabaseToReconstructedDeg: rootSeparation(selectedRoot, reconstructedRoot),
     requestedToReconstructedDeg: rootSeparation(requestedRoot, reconstructedRoot),
     spectrum: generation.response.spectrum,

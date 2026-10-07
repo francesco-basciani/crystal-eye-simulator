@@ -49,6 +49,8 @@ GOOGLE_DRIVE_FILE_IDS = {
     "srcpos-2deg.txt": "1ZvcEVFJweJGIVwdwEAgkNyzh_Jhz_28t",
     "temEdepPix2deg.root": "1Jp_DSPS5ODZKN0c2XijFbbiqSPDUweTU",
     "upCal.txt": "1XRglTfOSB9SuOiGRF5okQrjMepl0MtcE",
+    "temEdepPix5degNew.root": "1IvIODfqCX5QEMPoDFKlyT0QiY8yWOwIv",
+    "temEdepPix2degNew.root": "1JdmTSKWk6Y3_4_hIsjmhEbVdDo-R61dX",
 }
 
 
@@ -99,6 +101,31 @@ def load_template_directions(path: Path) -> tuple[np.ndarray, list[dict[str, Any
     ]
     if len({template["templateId"] for template in templates}) != len(templates):
         raise ValueError("Integer-truncated ROOT template names are not unique.")
+    return directions, templates
+
+
+def load_embedded_template_directions(path: Path) -> tuple[np.ndarray, list[dict[str, Any]]]:
+    root_file = uproot.open(path)
+    tree = root_file["tLocInfo"]
+    arrays = tree.arrays(["theta", "phi"], library="np")
+    directions = np.column_stack((
+        np.asarray(arrays["theta"], dtype=np.float32),
+        np.asarray(arrays["phi"], dtype=np.float32),
+    ))
+    if directions.ndim != 2 or directions.shape[1] != 2 or directions.shape[0] <= 0:
+        raise ValueError(f"embedded tLocInfo must have shape (N, 2), got {directions.shape}.")
+    if not np.isfinite(directions).all() or np.any(directions[:, 0] < 0) or np.any(directions[:, 0] > 116):
+        raise ValueError("embedded tLocInfo contains an invalid direction.")
+    templates = [
+        {
+            "templateId": f"hEdepPix_{int(theta)}_{int(phi)}",
+            "thetaDeg": float(theta),
+            "phiDeg": float(phi),
+        }
+        for theta, phi in directions
+    ]
+    if len({template["templateId"] for template in templates}) != len(templates):
+        raise ValueError("Integer-truncated embedded ROOT template names are not unique.")
     return directions, templates
 
 
@@ -239,21 +266,42 @@ def main() -> None:
     parser.add_argument("input_dir", type=Path)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--grid", choices=("5deg", "2deg"), default="5deg")
+    parser.add_argument(
+        "--updated",
+        action="store_true",
+        help="read directions from tLocInfo in temEdepPix[25]degNew.root",
+    )
     arguments = parser.parse_args()
     input_dir = arguments.input_dir.resolve()
     output_dir = arguments.output_dir.resolve()
     direction_name = f"srcpos-{arguments.grid}.txt"
-    response_root_name = f"temEdepPix{arguments.grid}.root"
+    response_root_name = (
+        f"temEdepPix{arguments.grid}New.root"
+        if arguments.updated
+        else f"temEdepPix{arguments.grid}.root"
+    )
     fixture_names = ("sample-src-41-117.root", "sample-src-74-349.root")
-    optional_five_degree_files = (*fixture_names, "CMakeLists.txt") if arguments.grid == "5deg" else ()
-    source_names = (*REQUIRED_FILES, direction_name, response_root_name, *optional_five_degree_files)
+    optional_five_degree_files = (
+        (*fixture_names, "CMakeLists.txt")
+        if arguments.grid == "5deg" and not arguments.updated
+        else ()
+    )
+    source_names = (
+        (*REQUIRED_FILES, response_root_name)
+        if arguments.updated
+        else (*REQUIRED_FILES, direction_name, response_root_name, *optional_five_degree_files)
+    )
     missing = [name for name in source_names if not (input_dir / name).is_file()]
     if missing:
         raise SystemExit(f"Missing required input files: {', '.join(missing)}")
 
     source_hashes = {name: sha256(input_dir / name) for name in source_names}
     pixel_ids, pixel_vectors = load_pixel_positions(input_dir / "upCal.txt")
-    directions, templates = load_template_directions(input_dir / direction_name)
+    directions, templates = (
+        load_embedded_template_directions(input_dir / response_root_name)
+        if arguments.updated
+        else load_template_directions(input_dir / direction_name)
+    )
     energy_edges, effective_area = load_effective_area(input_dir / "allEffArea.root")
     response_name = "ritabrata-template-response.f32.bin"
     response_path = output_dir / response_name
@@ -276,7 +324,7 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     fixtures = (
         [load_sample(input_dir / name, energy_edges, pixel_ids) for name in fixture_names]
-        if arguments.grid == "5deg"
+        if arguments.grid == "5deg" and not arguments.updated
         else []
     )
     fixture_path = output_dir / "ritabrata-localizer-samples.json"
@@ -289,9 +337,13 @@ def main() -> None:
     manifest = {
         "schemaVersion": 1,
         "assetVersion": (
-            "ritabrata-standalone-celoc-v1"
-            if arguments.grid == "5deg"
-            else "ritabrata-standalone-celoc-2deg-v1"
+            f"ritabrata-standalone-celoc-{arguments.grid}-embedded-direction-v2"
+            if arguments.updated
+            else (
+                "ritabrata-standalone-celoc-v1"
+                if arguments.grid == "5deg"
+                else "ritabrata-standalone-celoc-2deg-v1"
+            )
         ),
         "geometryVersion": GEOMETRY_VERSION,
         "directionFrame": DIRECTION_FRAME,
@@ -325,7 +377,11 @@ def main() -> None:
         } if nonzero_flow_cells > 0 else {}),
         "sourceFilesSha256": source_hashes,
         "sourceFilesGoogleDriveIds": {
-            name: GOOGLE_DRIVE_FILE_IDS[name]
+            name: (
+                "1KWfWqGAIjIUJiX0Hd-gPsmexu1o54pV1"
+                if arguments.updated and name == "CELoc.cc"
+                else GOOGLE_DRIVE_FILE_IDS[name]
+            )
             for name in source_names
             if name in GOOGLE_DRIVE_FILE_IDS
         },

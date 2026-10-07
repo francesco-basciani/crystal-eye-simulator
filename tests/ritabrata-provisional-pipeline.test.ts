@@ -9,6 +9,8 @@ import {
   RITABRATA_GRB_APPROVED_GOLDEN_SHA256,
   RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
   RITABRATA_GRB_APPROVED_PROVENANCE_SHA256,
+  RITABRATA_GRB_V2_APPROVED_MANIFEST_SHA256,
+  RITABRATA_GRB_V2_APPROVED_PROVENANCE_SHA256,
   computeRitabrataGrbResponse,
   type RitabrataGrbGeneratorAssets,
 } from "../app/lib/ritabrata-grb-generator.ts";
@@ -114,5 +116,54 @@ test("the provisional vertical slice reports three separate angular metrics", ()
     assert.equal(result.centroid.selectedDatabaseToReconstructedDeg, 0);
     assert.equal(result.centroid.requestedToReconstructedDeg, 0);
     assert.equal(result.centroid.truthAngularErrorDeg, 0);
+  }
+});
+
+test("the updated vertical slice reports all interpolation neighbours and warnings", () => {
+  const directions = [
+    { sourceId: "a", thetaDeg: 15, phiDeg: 0, responseKey: "15_0" },
+    { sourceId: "b", thetaDeg: 25, phiDeg: 30, responseKey: "25_30" },
+    { sourceId: "c", thetaDeg: 20, phiDeg: 60, responseKey: "20_60" },
+  ];
+  const updatedAssets: RitabrataGrbGeneratorAssets = {
+    ...generatorAssets,
+    assetVersion: "cegengrb-three-neighbour-expectation-v2-candidate",
+    manifestSha256: RITABRATA_GRB_V2_APPROVED_MANIFEST_SHA256,
+    directions,
+    primaryCountsKernel: new Float32Array([10, 20, 30]),
+    pixelMeanKernel: new Float32Array(3 * 126).fill(1),
+    pixelVarianceKernel: new Float32Array(3 * 126).fill(1),
+    depositedEnergyMeanKernel: new Float32Array(3).fill(126),
+    depositedEnergyVarianceKernel: new Float32Array(3).fill(126),
+    provenanceSha256: RITABRATA_GRB_V2_APPROVED_PROVENANCE_SHA256,
+    rootParity: {
+      verified: false,
+      goldenFixtureId: "",
+      goldenOutputSha256: "",
+      assetProvenanceSha256: "",
+    },
+  };
+  const result = runRitabrataProvisionalPipelineFromAssets({
+    requestedThetaDeg: 20,
+    requestedPhiDeg: 30,
+    spectrum: { normalization: 1, spectralIndex: 0, peakEnergyKeV: 100 },
+    radialBoresight: [0, 1, 0],
+    truth: { raDeg: 0, decDeg: 90 },
+    detectorNormals: canonicalIds.map(() => [0, 1, 0] as const),
+    frameIndex: 1,
+    acquisitionTimeSeconds: 0.2,
+    generatorAssets: updatedAssets,
+    localizerAssets,
+  });
+  assert.equal(result.status, "available");
+  if (result.status === "available") {
+    assert.equal(result.selectedDatabaseDirections.length, 3);
+    assert.equal(result.interpolationMethod, "three-neighbour-inverse-angular-distance");
+    assert.equal(result.responseSemantics, "full-sample-expectation-approximation");
+    assert.equal(result.method, "three-neighbour-expectation-to-celoc-provisional-v2");
+    assert.ok(Math.abs(result.selectedDatabaseDirections.reduce(
+      (sum, selected) => sum + selected.weight,
+      0,
+    ) - 1) < 1e-12);
   }
 });

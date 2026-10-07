@@ -1,14 +1,17 @@
 import {
   RITABRATA_GRB_PIXEL_COUNT,
   RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
+  RITABRATA_GRB_V2_APPROVED_MANIFEST_SHA256,
   RITABRATA_GRB_SOURCE_AREA_CM2,
   selectNearestRitabrataGrbDirection,
+  selectThreeNearestRitabrataGrbDirections,
   type RitabrataGrbDatabaseDirection,
   type RitabrataGrbGeneratorAssets,
 } from "./ritabrata-grb-generator.ts";
 import { RITABRATA_DETECTOR_FRAME } from "./detector-local-frame-adapter.ts";
 
 type KernelName =
+  | "primaryCounts"
   | "pixelMean"
   | "pixelVariance"
   | "depositedEnergyMean"
@@ -33,7 +36,7 @@ type KernelDescriptor = Readonly<{
 }>;
 
 export type RitabrataGrbGeneratorManifest = Readonly<{
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   assetVersion: string;
   directionFrame: typeof RITABRATA_DETECTOR_FRAME;
   pixelCount: number;
@@ -44,7 +47,15 @@ export type RitabrataGrbGeneratorManifest = Readonly<{
   primaryEnergyBinEdgesKeV: readonly number[];
   depositedEnergyBinEdgesKeV: readonly number[];
   directions: readonly RitabrataGrbDatabaseDirection[];
-  kernels: Readonly<Record<KernelName, KernelDescriptor>>;
+  maximumRequestedThetaDeg?: number;
+  interpolation?: Readonly<{
+    neighborCount: number;
+    weighting: string;
+    exactMatch: string;
+    responseSemantics: string;
+  }>;
+  kernels: Readonly<Record<Exclude<KernelName, "primaryCounts">, KernelDescriptor> &
+    Partial<Record<"primaryCounts", KernelDescriptor>>>;
   provenanceSha256: string;
   rootParity: Readonly<{
     verified: boolean;
@@ -55,12 +66,13 @@ export type RitabrataGrbGeneratorManifest = Readonly<{
   }>;
 }>;
 
-const KERNEL_NAMES: readonly KernelName[] = [
+const V1_KERNEL_NAMES: readonly KernelName[] = [
   "pixelMean",
   "pixelVariance",
   "depositedEnergyMean",
   "depositedEnergyVariance",
 ];
+const V2_KERNEL_NAMES: readonly KernelName[] = ["primaryCounts", ...V1_KERNEL_NAMES];
 
 const manifestCache = new Map<string, Promise<Readonly<{
   manifest: RitabrataGrbGeneratorManifest;
@@ -79,7 +91,7 @@ function assertSha256(value: string): void {
 
 function assertManifest(manifest: RitabrataGrbGeneratorManifest): void {
   if (
-    manifest.schemaVersion !== 1 || !manifest.assetVersion.trim() ||
+    (manifest.schemaVersion !== 1 && manifest.schemaVersion !== 2) || !manifest.assetVersion.trim() ||
     manifest.directionFrame !== RITABRATA_DETECTOR_FRAME ||
     manifest.pixelCount !== RITABRATA_GRB_PIXEL_COUNT ||
     manifest.sourceAreaCm2 !== RITABRATA_GRB_SOURCE_AREA_CM2 ||
@@ -87,9 +99,20 @@ function assertManifest(manifest: RitabrataGrbGeneratorManifest): void {
     manifest.primaryEnergyBinEdgesKeV.length !== manifest.primaryEnergyBinCount + 1 ||
     manifest.depositedEnergyBinEdgesKeV.length !== manifest.depositedEnergyBinCount + 1
   ) throw new RangeError("GRB response-generator manifest is invalid or incompatible.");
+  if (
+    manifest.schemaVersion === 2 && (
+      manifest.maximumRequestedThetaDeg !== 113 ||
+      manifest.interpolation?.neighborCount !== 3 ||
+      manifest.interpolation.weighting !== "inverse-angular-distance-normalized" ||
+      manifest.interpolation.exactMatch !== "single-template-weight-one" ||
+      manifest.interpolation.responseSemantics !== "full-sample-expectation-approximation" ||
+      !manifest.kernels.primaryCounts
+    )
+  ) throw new RangeError("Updated GRB interpolation metadata is invalid.");
   assertSha256(manifest.provenanceSha256);
-  for (const name of KERNEL_NAMES) {
+  for (const name of manifest.schemaVersion === 2 ? V2_KERNEL_NAMES : V1_KERNEL_NAMES) {
     const descriptor = manifest.kernels[name];
+    if (!descriptor) throw new RangeError(`Missing ${name} kernel descriptor.`);
     if (
       descriptor.encoding !==
         "range-addressable-concatenated-gzip-members-float32-little-endian" ||
@@ -185,10 +208,19 @@ async function loadManifest(
       if (!response.ok) throw new Error(`Cannot load GRB generator manifest (${response.status}).`);
       const bytes = await response.arrayBuffer();
       const manifestSha256 = await sha256Hex(bytes);
-      if (manifestSha256 !== RITABRATA_GRB_APPROVED_MANIFEST_SHA256) {
+      if (
+        manifestSha256 !== RITABRATA_GRB_APPROVED_MANIFEST_SHA256 &&
+        manifestSha256 !== RITABRATA_GRB_V2_APPROVED_MANIFEST_SHA256
+      ) {
         throw new Error("GRB response-generator manifest SHA-256 mismatch.");
       }
       const manifest = JSON.parse(new TextDecoder().decode(bytes)) as RitabrataGrbGeneratorManifest;
+      const approvedManifestHash = manifest.schemaVersion === 2
+        ? RITABRATA_GRB_V2_APPROVED_MANIFEST_SHA256
+        : RITABRATA_GRB_APPROVED_MANIFEST_SHA256;
+      if (manifestSha256 !== approvedManifestHash) {
+        throw new Error("GRB response-generator schema does not match its trust root.");
+      }
       assertManifest(manifest);
       return Object.freeze({ manifest, resolvedUrl: response.url || key });
     })();
@@ -217,28 +249,51 @@ export async function loadRitabrataGrbGeneratorDirectionAssets(
   phiDeg: number,
 ): Promise<RitabrataGrbGeneratorAssets> {
   const { manifest, resolvedUrl } = await loadManifest(manifestUrl);
-  const selection = selectNearestRitabrataGrbDirection(thetaDeg, phiDeg, manifest.directions);
-  if (!selection) throw new RangeError("Requested GRB direction is invalid.");
-  const directionIndex = manifest.directions.indexOf(selection.direction);
-  const directionKey = `${cacheKey(manifestUrl)}#${directionIndex}`;
+  const selectedDirections = manifest.schemaVersion === 2
+    ? selectThreeNearestRitabrataGrbDirections(thetaDeg, phiDeg, manifest.directions)?.selections
+    : (() => {
+        const selection = selectNearestRitabrataGrbDirection(thetaDeg, phiDeg, manifest.directions);
+        return selection ? [{ ...selection, weight: 1 }] : undefined;
+      })();
+  if (!selectedDirections) throw new RangeError("Requested GRB direction is invalid.");
+  const directionIndices = selectedDirections.map((selection) =>
+    manifest.directions.indexOf(selection.direction));
+  const directionKey = `${cacheKey(manifestUrl)}#${directionIndices.join(",")}`;
   let pending = directionAssetCache.get(directionKey);
   if (!pending) {
     pending = (async () => {
-      const loaded = await Promise.all(KERNEL_NAMES.map((name) =>
-        loadKernelMember(resolvedUrl, manifest.kernels[name], directionIndex)));
+      const kernelNames = manifest.schemaVersion === 2 ? V2_KERNEL_NAMES : V1_KERNEL_NAMES;
+      const loadedByDirection = await Promise.all(directionIndices.map((directionIndex) =>
+        Promise.all(kernelNames.map((name) =>
+          loadKernelMember(resolvedUrl, manifest.kernels[name]!, directionIndex)))));
+      const merged = new Map<KernelName, Float32Array>();
+      kernelNames.forEach((name, kernelIndex) => {
+        const members = loadedByDirection.map((loaded) => loaded[kernelIndex]);
+        const length = members.reduce((sum, member) => sum + member.length, 0);
+        const values = new Float32Array(length);
+        let offset = 0;
+        for (const member of members) {
+          values.set(member, offset);
+          offset += member.length;
+        }
+        merged.set(name, values);
+      });
       return Object.freeze({
         assetVersion: manifest.assetVersion,
-        manifestSha256: RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
+        manifestSha256: manifest.schemaVersion === 2
+          ? RITABRATA_GRB_V2_APPROVED_MANIFEST_SHA256
+          : RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
         directionFrame: manifest.directionFrame,
         pixelCount: manifest.pixelCount,
         sourceAreaCm2: manifest.sourceAreaCm2,
         primaryEnergyBinEdgesKeV: Object.freeze([...manifest.primaryEnergyBinEdgesKeV]),
         depositedEnergyBinEdgesKeV: Object.freeze([...manifest.depositedEnergyBinEdgesKeV]),
-        directions: Object.freeze([selection.direction]),
-        pixelMeanKernel: loaded[0],
-        pixelVarianceKernel: loaded[1],
-        depositedEnergyMeanKernel: loaded[2],
-        depositedEnergyVarianceKernel: loaded[3],
+        directions: Object.freeze(selectedDirections.map((selection) => selection.direction)),
+        primaryCountsKernel: merged.get("primaryCounts"),
+        pixelMeanKernel: merged.get("pixelMean")!,
+        pixelVarianceKernel: merged.get("pixelVariance")!,
+        depositedEnergyMeanKernel: merged.get("depositedEnergyMean")!,
+        depositedEnergyVarianceKernel: merged.get("depositedEnergyVariance")!,
         provenanceSha256: manifest.provenanceSha256,
         rootParity: Object.freeze({
           verified: manifest.rootParity.verified,

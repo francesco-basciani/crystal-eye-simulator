@@ -12,6 +12,8 @@ import {
 
 export const RITABRATA_KS_PIXEL_COUNT = 126;
 export const RITABRATA_KS_GEOMETRY_VERSION = "CESimulation-V2R8-candidate" as const;
+/** Fail-closed support bound covering the supplied updated templates (max 115.312°). */
+export const RITABRATA_KS_MAX_TEMPLATE_THETA_DEG = 116;
 
 type NumericVector = ArrayLike<number>;
 
@@ -292,7 +294,8 @@ function validateInputs(
     }) ||
     assets.templates.some((template) =>
       template.templateId.trim() === "" || !Number.isFinite(template.thetaDeg) ||
-      template.thetaDeg < 0 || template.thetaDeg > 90 || !Number.isFinite(template.phiDeg)) ||
+      template.thetaDeg < 0 || template.thetaDeg > RITABRATA_KS_MAX_TEMPLATE_THETA_DEG ||
+      !Number.isFinite(template.phiDeg)) ||
     !finiteNonNegative(assets.templatePixelEnergyResponse) ||
     (assets.templatePixelUnscaledProjectionFlow !== undefined &&
       !finiteNonNegative(assets.templatePixelUnscaledProjectionFlow)) ||

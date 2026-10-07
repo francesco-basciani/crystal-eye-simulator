@@ -6,7 +6,11 @@ import {
   clearRitabrataGrbGeneratorAssetCache,
   loadRitabrataGrbGeneratorDirectionAssets,
 } from "../app/lib/ritabrata-grb-generator-assets.ts";
-import { RITABRATA_GRB_APPROVED_MANIFEST_SHA256 } from "../app/lib/ritabrata-grb-generator.ts";
+import {
+  RITABRATA_GRB_APPROVED_MANIFEST_SHA256,
+  RITABRATA_GRB_V2_APPROVED_MANIFEST_SHA256,
+  generateRitabrataGrbResponse,
+} from "../app/lib/ritabrata-grb-generator.ts";
 
 const directory = new URL("../public/data/ritabrata-grb-generator/", import.meta.url);
 const manifestBytes = readFileSync(new URL("ritabrata-grb-generator.manifest.json", directory));
@@ -93,6 +97,79 @@ test("the loader rejects a manifest outside the code-pinned trust root", async (
       ),
       /manifest SHA-256 mismatch/,
     );
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => error ? reject(error) : resolve()));
+    clearRitabrataGrbGeneratorAssetCache();
+  }
+});
+
+test("the v2 loader fetches five members for each of three nearest directions", async () => {
+  clearRitabrataGrbGeneratorAssetCache();
+  const v2Directory = new URL(
+    "../scientific-assets/rito-updated-20260907/generator/",
+    import.meta.url,
+  );
+  const v2ManifestBytes = readFileSync(new URL("cegengrb-v2.manifest.json", v2Directory));
+  const v2Manifest = JSON.parse(v2ManifestBytes.toString("utf8"));
+  const v2Files = new Map<string, Buffer>([
+    ["/cegengrb-v2.manifest.json", v2ManifestBytes],
+    ...Object.values(v2Manifest.kernels).map((descriptor) => {
+      const file = (descriptor as { file: string }).file;
+      return [`/${file}`, readFileSync(new URL(file, v2Directory))] as const;
+    }),
+  ]);
+  let requestCount = 0;
+  const server = createServer((request, response) => {
+    requestCount += 1;
+    const bytes = v2Files.get(request.url ?? "");
+    if (!bytes) return void response.writeHead(404).end();
+    const range = request.headers.range;
+    if (!range) {
+      response.writeHead(200, { "content-length": bytes.byteLength });
+      response.end(bytes);
+      return;
+    }
+    const match = /^bytes=(\d+)-(\d+)$/.exec(range);
+    assert.ok(match);
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+    const slice = bytes.subarray(start, end + 1);
+    response.writeHead(206, {
+      "content-range": `bytes ${start}-${end}/${bytes.byteLength}`,
+      "content-length": slice.byteLength,
+    });
+    response.end(slice);
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  try {
+    const address = server.address();
+    assert.ok(address && typeof address !== "string");
+    const assets = await loadRitabrataGrbGeneratorDirectionAssets(
+      `http://127.0.0.1:${address.port}/cegengrb-v2.manifest.json`,
+      40,
+      120,
+    );
+    assert.equal(assets.manifestSha256, RITABRATA_GRB_V2_APPROVED_MANIFEST_SHA256);
+    assert.equal(assets.directions.length, 3);
+    assert.equal(assets.primaryCountsKernel?.length, 3 * 100);
+    assert.equal(assets.pixelMeanKernel.length, 3 * 100 * 126);
+    const generated = generateRitabrataGrbResponse(
+      40,
+      120,
+      { normalization: 0.026, spectralIndex: -1.07, peakEnergyKeV: 756.4 },
+      assets,
+    );
+    assert.equal(generated.status, "available");
+    if (generated.status === "available") {
+      assert.equal(generated.method, "cegengrb-three-neighbour-expectation-cpl-v2");
+      assert.equal(generated.response.selectedDatabaseDirections.length, 3);
+      assert.equal(generated.response.responseSemantics, "full-sample-expectation-approximation");
+    }
+    assert.equal(requestCount, 16, "one manifest plus 3 directions × 5 kernels");
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => error ? reject(error) : resolve()));

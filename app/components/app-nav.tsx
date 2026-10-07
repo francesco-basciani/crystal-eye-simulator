@@ -2,6 +2,7 @@ const PUBLIC_BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? "";
 
 const links = [
   { href: "/", label: "SIMULATOR" },
+  { href: "/sky-localization/", label: "SKY LOCALIZATION" },
   { href: "/ephemeris/", label: "EPHEMERIS" },
   { href: "/photon-history/", label: "PHOTON HISTORY" },
   { href: "/event-history/", label: "GRB EVENTS" },

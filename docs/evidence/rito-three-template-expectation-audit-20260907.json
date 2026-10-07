@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "status": "PROVISIONAL",
+  "purpose": "Quantify the expectation-level web approximation against the supplied C++ prefix-event construction without executing C++.",
+  "source": {
+    "file": "temDataSet5degNew.root",
+    "byteLength": 949681528,
+    "sha256": "52cddade7195f9f1c7d03659f19599f116c56a03f2120684b39ec20eb1f14d01"
+  },
+  "software": {
+    "python": "3.12.2",
+    "numpy": "2.4.0",
+    "awkward": "2.13.0",
+    "uproot": "5.7.2"
+  },
+  "spectrum": {
+    "normalization": 0.026,
+    "spectralIndex": -1.07,
+    "peakEnergyKeV": 756.4
+  },
+  "cases": [
+    {
+      "requestedDirection": {
+        "thetaDeg": 40.0,
+        "phiDeg": 120.0
+      },
+      "selectedTemplates": [
+        {
+          "thetaDeg": 42.1875,
+          "phiDeg": 117.5510025024414,
+          "separationDeg": 2.7156102604885843,
+          "weight": 0.4160091567716742,
+          "treeEntries": 32303,
+          "prefixEntries": 13438
+        },
+        {
+          "thetaDeg": 36.5625,
+          "phiDeg": 117.20899963378906,
+          "separationDeg": 3.847150290934703,
+          "weight": 0.29365079322437554,
+          "treeEntries": 33497,
+          "prefixEntries": 9836
+        },
+        {
+          "thetaDeg": 42.1875,
+          "phiDeg": 124.89800262451172,
+          "separationDeg": 3.8910192878006056,
+          "weight": 0.29034005000395025,
+          "treeEntries": 32401,
+          "prefixEntries": 9407
+        }
+      ],
+      "prefixTotalCountsPerSecond": 3863.3770523700373,
+      "expectationTotalCountsPerSecond": 3841.2698439640994,
+      "relativeL2Difference": 0.054806118139018055,
+      "normalizedResponseShapeAngleDeg": 3.1226877598699243,
+      "maximumAbsolutePixelDifferenceOverPrefixPeak": 0.07942779346657339
+    },
+    {
+      "requestedDirection": {
+        "thetaDeg": 110.0,
+        "phiDeg": 120.0
+      },
+      "selectedTemplates": [
+        {
+          "thetaDeg": 109.68699645996094,
+          "phiDeg": 120.0,
+          "separationDeg": 0.313003540040067,
+          "weight": 0.8870636998403573,
+          "treeEntries": 19369,
+          "prefixEntries": 17181
+        },
+        {
+          "thetaDeg": 109.68699645996094,
+          "phiDeg": 114.78299713134766,
+          "separationDeg": 4.917003264647228,
+          "weight": 0.05646815007982135,
+          "treeEntries": 19287,
+          "prefixEntries": 1089
+        },
+        {
+          "thetaDeg": 109.68699645996094,
+          "phiDeg": 125.21700286865234,
+          "separationDeg": 4.917003264647228,
+          "weight": 0.05646815007982135,
+          "treeEntries": 19237,
+          "prefixEntries": 1086
+        }
+      ],
+      "prefixTotalCountsPerSecond": 1914.9211092790727,
+      "expectationTotalCountsPerSecond": 1913.2556372649708,
+      "relativeL2Difference": 0.03562235698926306,
+      "normalizedResponseShapeAngleDeg": 2.025967819511406,
+      "maximumAbsolutePixelDifferenceOverPrefixPeak": 0.03927716495192035
+    },
+    {
+      "requestedDirection": {
+        "thetaDeg": 45.0,
+        "phiDeg": 33.0
+      },
+      "selectedTemplates": [
+        {
+          "thetaDeg": 47.8125,
+          "phiDeg": 33.33330154418945,
+          "separationDeg": 2.822832454829801,
+          "weight": 0.4012887532260378,
+          "treeEntries": 31226,
+          "prefixEntries": 12530
+        },
+        {
+          "thetaDeg": 42.1875,
+          "phiDeg": 29.387800216674805,
+          "separationDeg": 3.7560065927589017,
+          "weight": 0.30158917147496045,
+          "treeEntries": 32239,
+          "prefixEntries": 9722
+        },
+        {
+          "thetaDeg": 42.1875,
+          "phiDeg": 36.73469924926758,
+          "separationDeg": 3.8124764550890706,
+          "weight": 0.29712207529900186,
+          "treeEntries": 32102,
+          "prefixEntries": 9538
+        }
+      ],
+      "prefixTotalCountsPerSecond": 3715.5269182835877,
+      "expectationTotalCountsPerSecond": 3722.4437950096235,
+      "relativeL2Difference": 0.056181091049815154,
+      "normalizedResponseShapeAngleDeg": 3.2180316954145907,
+      "maximumAbsolutePixelDifferenceOverPrefixPeak": 0.09872448164101642
+    },
+    {
+      "requestedDirection": {
+        "thetaDeg": 80.0,
+        "phiDeg": 250.0
+      },
+      "selectedTemplates": [
+        {
+          "thetaDeg": 81.5625,
+          "phiDeg": 250.0,
+          "separationDeg": 1.5625000000001257,
+          "weight": 0.6016053127050089,
+          "treeEntries": 23292,
+          "prefixEntries": 14012
+        },
+        {
+          "thetaDeg": 75.9375,
+          "phiDeg": 248.4510040283203,
+          "separationDeg": 4.335659583198604,
+          "weight": 0.2168086038729469,
+          "treeEntries": 24592,
+          "prefixEntries": 5331
+        },
+        {
+          "thetaDeg": 81.5625,
+          "phiDeg": 255.0,
+          "separationDeg": 5.176653867889619,
+          "weight": 0.18158608342204421,
+          "treeEntries": 23205,
+          "prefixEntries": 4213
+        }
+      ],
+      "prefixTotalCountsPerSecond": 2561.091289751424,
+      "expectationTotalCountsPerSecond": 2581.9974465100818,
+      "relativeL2Difference": 0.053724033108045605,
+      "normalizedResponseShapeAngleDeg": 3.0080260021008383,
+      "maximumAbsolutePixelDifferenceOverPrefixPeak": 0.09622060763388189
+    }
+  ],
+  "limitations": [
+    "The comparison reconstructs documented C++ operations from ROOT data; it is not executable-level parity.",
+    "Spectral integrals use this script's adaptive Simpson quadrature rather than ROOT TF1::Integral.",
+    "Four fixed directions are diagnostic and do not characterize the full field of view."
+  ]
+}

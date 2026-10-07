@@ -17,6 +17,10 @@ export const APPROVED_LOCALIZER_MANIFEST_SHA256 = Object.freeze({
     "74b3b64c196089cbe81ae3b2725315b0054900d4f34bb4ad7918d4e93f11ce98",
   "ritabrata-standalone-celoc-2deg-v1":
     "c81131bba54231bbd06505b100c4700293879a1421d4f8b901c0cacaadff3538",
+  "ritabrata-standalone-celoc-5deg-embedded-direction-v2":
+    "35a5ec42eecb87cdf2e0e4a69cf811ea68b649c977b74e85281eec5129dd7619",
+  "ritabrata-standalone-celoc-2deg-embedded-direction-v2":
+    "d55e6f5d8dddf6827d7527cdbd3642cb674c37604cdd20f5d71c277f6f269dda",
 } as const);
 
 export type RitabrataLocalizerManifest = Readonly<{

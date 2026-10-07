@@ -6117,6 +6117,12 @@ button {
   gap: 3px;
 }
 
+.localizer-selectors {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
 .localizer-grid-selector button {
   min-width: 28px;
   padding: 4px 5px;
@@ -6181,6 +6187,23 @@ button {
   color: #86aab7;
   font-size: 6px;
   line-height: 1.3;
+}
+
+.ritabrata-neighbour-list strong {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 5px;
+}
+
+.ritabrata-neighbour-list strong em {
+  flex: 0 0 auto;
+  color: #72cce4;
+}
+
+.ritabrata-pipeline-grid .ritabrata-containment-warning {
+  margin-top: 2px;
+  color: #ffc857;
 }
 
 .localization-comparison-dialog {
