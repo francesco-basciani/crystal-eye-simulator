@@ -1,0 +1,88 @@
+/* Extra class specificity keeps shared navigation readable across legacy pages. */
+.navigation.navigation:global(.app-nav) {
+  position: relative;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 5px;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.navigation.navigation a,
+.navigation.navigation .dataButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 38px;
+  min-height: 38px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #b9cbd9;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  letter-spacing: 0;
+  text-transform: none;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.navigation.navigation a:hover,
+.navigation.navigation .dataButton:hover {
+  color: #edf7ff;
+  background: #173046;
+  border-color: #35536b;
+}
+.navigation.navigation a[aria-current="page"],
+.navigation.navigation .dataButton[aria-current="true"] {
+  color: #a1e4ff;
+  background: #133047;
+  border-color: #417592;
+}
+.navigation.navigation a:focus-visible,
+.navigation.navigation .dataButton:focus-visible {
+  outline: 2px solid #8fdbfa;
+  outline-offset: 2px;
+}
+.dropdown { position: relative; }
+.navigation.navigation .menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 70;
+  width: 198px;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid #35536b;
+  border-radius: 10px;
+  background: #0b1a28;
+  box-shadow: 0 12px 32px #0008;
+}
+.navigation.navigation .menu[hidden] { display: none; }
+.navigation.navigation .menu li { margin: 0; padding: 0; }
+.navigation.navigation .menu a {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+}
+.chevronOpen { transform: rotate(180deg); }
+@media (max-width: 620px) {
+  .navigation.navigation:global(.app-nav) { width: 100%; gap: 3px; }
+  .navigation.navigation a,
+  .navigation.navigation .dataButton { padding-inline: 10px; font-size: 13px; }
+}

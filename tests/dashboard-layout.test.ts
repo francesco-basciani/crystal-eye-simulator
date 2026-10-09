@@ -41,15 +41,15 @@ test("adaptive analysis and reconstruction belong beside the visible 3D stage", 
   );
   assert.match(
     pageSource.slice(rightPanelStart, rightPanelEnd),
-    /TEST BURST CONFIGURATION[\s\S]*DETECTOR RESPONSE[\s\S]*<AdaptiveAnalysisPanel[\s\S]*DATA &amp; ARCHIVE STATUS/,
+    /Detector response[\s\S]*Generate burst[\s\S]*<AdaptiveAnalysisPanel[\s\S]*DATA &amp; ARCHIVE STATUS/,
   );
   assert.match(analysisPanelSource, /PHOTON STREAM · 0\.2 S ACQUISITION/);
   assert.doesNotMatch(pageSource, /<SignalChart|TRANSIENT DETECTED|GRB candidate/);
   assert.match(pageSource, /SYNTHETIC SOURCE ACTIVE/);
-  assert.match(pageSource, /"Crystal Eye Simulator"/);
-  assert.match(pageSource, /"Orbital Observation"/);
-  assert.match(pageSource, /"CANONICAL ECI ORBIT · SYNTHETIC PHOTON SIMULATION"/);
-  assert.match(pageSource, /"CANONICAL ECI ORBIT · REFERENCE MODE"/);
+  assert.match(pageSource, /"Satellite top view"/);
+  assert.match(pageSource, /"Orbital view"/);
+  assert.match(pageSource, /"PARAMETRIC SATELLITE SCENARIO"/);
+  assert.match(pageSource, /"CANONICAL ECI REPLAY"/);
 });
 
 test("the right-hand planar map preserves the configurator aspect and geometry", () => {
@@ -95,8 +95,8 @@ test("rails separate observation context from injection and science response", (
   const rightRail = pageSource.slice(rightPanelStart, rightPanelEnd);
 
   assert.match(leftRail, /OBSERVATION CONTEXT[\s\S]*<div className="left-sensor-slot">[\s\S]*CELESTIAL INTERFERENCE/);
-  assert.doesNotMatch(leftRail, /TEST BURST CONFIGURATION|DETECTOR RESPONSE|<AdaptiveAnalysisPanel/);
-  assert.match(rightRail, /INJECTION &amp; SCIENCE RESPONSE[\s\S]*TEST BURST CONFIGURATION[\s\S]*DETECTOR RESPONSE[\s\S]*<AdaptiveAnalysisPanel/);
+  assert.doesNotMatch(leftRail, /Generate burst|Detector response|<AdaptiveAnalysisPanel/);
+  assert.match(rightRail, /INJECTION &amp; SCIENCE RESPONSE[\s\S]*Detector response[\s\S]*Generate burst[\s\S]*<AdaptiveAnalysisPanel/);
   assert.match(pageSource, /useState<SensorViewMode>\("geometry"\)/);
   assert.match(
     pageSource,
@@ -109,21 +109,18 @@ test("rails separate observation context from injection and science response", (
 });
 
 test("test bursts accept detector-frame theta phi and expose both localization grids", () => {
-  assert.match(pageSource, /DETECTOR θ \/ φ/);
-  assert.match(pageSource, /DETECTOR ZENITH · θ/);
-  assert.match(pageSource, /DETECTOR AZIMUTH · φ/);
+  assert.match(pageSource, /Detector \(θ \/ φ\)/);
+  assert.match(pageSource, /Detector zenith · θ/);
+  assert.match(pageSource, /Detector azimuth · φ/);
   assert.match(pageSource, /ritabrataDirectionFromAngles\(requestedThetaDeg, requestedPhiDeg\)/);
   assert.match(pageSource, /localizerGrid === "2deg"/);
   assert.match(pageSource, /NEXT_PUBLIC_RITO_V2_ASSET_BASE_URL/);
   assert.match(pageSource, /RITABRATA_GRB_MAXIMUM_REQUESTED_THETA_DEG/);
-  assert.match(pageSource, /INTERPOLATED RESPONSE TEMPLATES/);
-  assert.match(pageSource, /selection\.separationDeg\.toFixed\(2\)/);
-  assert.match(pageSource, /selection\.weight \* 100/);
+  assert.doesNotMatch(pageSource, /className="ritabrata-pipeline-panel/);
+  assert.match(pageSource, /<form[\s\S]*Method settings[\s\S]*<\/form>/);
   assert.match(pageSource, /IMMUTABLE_2DEG_LOCALIZER_MANIFEST_URL/);
   assert.match(pageSource, /raw\.githubusercontent\.com\/francesco-basciani\/crystal-eye-simulator\/ecbbf60/);
   assert.doesNotMatch(pageSource, /PUBLIC_BASE_PATH}\/data\/ritabrata-localizer-2deg-v2/);
-  assert.match(pageSource, /nearest template → reconstruction/);
-  assert.match(pageSource, /requested truth → reconstruction/);
 });
 
 test("rail window headings share one visible type hierarchy", () => {
@@ -226,7 +223,7 @@ test("provisional GRB reconstruction notification links to a fail-closed event a
 
 test("topbar simulation control is prominent and shares the panel mode transition", () => {
   assert.match(pageSource, /className={`acquisition-mode-button \$\{simulatorMode\}`}/);
-  assert.match(pageSource, /"STOP SIMULATION"[\s\S]*"START SIMULATION"/);
+  assert.match(pageSource, /"Stop and reset"[\s\S]*"Start simulation"/);
   assert.match(pageSource, /const changeSimulatorMode = useCallback/);
   assert.match(pageSource, /settingsRef\.current\.simulatorMode = mode;[\s\S]*setSimulatorMode\(mode\);[\s\S]*resetSimulation\(\);/);
   assert.match(pageSource, /onModeChange={changeSimulatorMode}/);

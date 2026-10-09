@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppNav } from "../components/app-nav";
+import { AppHeader } from "../components/app-header";
 import { GrbSkyLocalization } from "../components/grb-sky-localization";
 import { loadSkyLocalizationHistory } from "../lib/sky-localization-archive";
 import { SKY_BENCHMARK_EXAMPLES } from "../lib/sky-benchmark-examples";
@@ -75,9 +75,10 @@ export default function SkyLocalizationPage() {
   };
   const visibleEvents = [...SKY_BENCHMARK_EXAMPLES, ...events];
   return <main className={styles.page}>
+    <AppHeader current="/sky-localization/" />
     <header className="data-page-header">
       <div><small>CRYSTAL EYE · SKY LOCALIZATION</small><h1>GRB sky localization</h1></div>
-      <AppNav current="/sky-localization/" />
+
     </header>
     <div className={styles.content}>
       <GrbSkyLocalization events={selected ? [selected] : []} showEventControls={false} />

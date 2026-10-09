@@ -29,7 +29,7 @@ import {
 } from "react";
 import * as THREE from "three";
 import { Body, Illumination } from "astronomy-engine";
-import { AppNav } from "./components/app-nav";
+import { AppHeader } from "./components/app-header";
 import { saveSkyLocalizationEvent } from "./lib/sky-localization-archive";
 import {
   createSkyLocalizationEvent,
@@ -2133,6 +2133,8 @@ function GlobeScene({
 
   return (
     <div className="globe-scene" ref={mountRef} aria-label="Three-dimensional orbital simulation">
+      <header className="orbital-view-header">
+        <h2>{cameraMode === "orbit" ? "Orbital view" : "Satellite top view"}</h2>
       <div className="scene-hud scene-hud-top">
         <span className="hud-tag"><CircleDot size={12} /> {scenarioMode === "canonical" ? "CANONICAL ECI REPLAY" : "PARAMETRIC SATELLITE SCENARIO"}</span>
         <span>{altitude.toFixed(1)} km</span>
@@ -2143,16 +2145,17 @@ function GlobeScene({
           className={cameraMode === "orbit" ? "active" : ""}
           onClick={() => onCameraModeChange("orbit")}
         >
-          ORBIT
+          Orbit
         </button>
         <button
           type="button"
           className={cameraMode === "satellite" ? "active" : ""}
           onClick={() => onCameraModeChange("satellite")}
         >
-          SATELLITE TOP VIEW
+          Satellite
         </button>
       </div>
+      </header>
       <label className="system-zoom-control">
         <span>
           <b>SYSTEM ZOOM</b>
@@ -2824,11 +2827,11 @@ function SensorView({
     <section className="sensor-view" aria-label="Instantaneous Crystal Eye field of view">
       <div className="sensor-view-header">
         <div>
-          <small>CRYSTAL EYE VIEW</small>
+          <small>Crystal Eye view</small>
           <strong>
             {mode === "geometry"
-              ? "Earth · satellite · Sun · Moon"
-              : `Instantaneous FOV · ${effectiveFov.toFixed(0)}°`}
+              ? "Orbital geometry"
+              : `Field of view · ${effectiveFov.toFixed(0)}°`}
           </strong>
         </div>
         <span><i /> LIVE</span>
@@ -4530,7 +4533,7 @@ export default function Home() {
   const [burstNotificationVisible, setBurstNotificationVisible] =
     useState(false);
   const [burstArchiveError, setBurstArchiveError] = useState<string | null>(null);
-  const [ritabrataRuntime, setRitabrataRuntime] = useState<RitabrataRuntimeDisplay>({
+  const [, setRitabrataRuntime] = useState<RitabrataRuntimeDisplay>({
     status: "idle",
   });
   const [localizerGrid, setLocalizerGrid] = useState<LocalizerGrid>("5deg");
@@ -5930,16 +5933,6 @@ export default function Home() {
     telemetry.sunSeparation < effectiveMountFov / 2 && telemetry.sunNoise > 0;
   const mountedMoonInFov =
     telemetry.moonSeparation < effectiveMountFov / 2 && telemetry.moonNoise > 0;
-  const changeTimeWarp = useCallback((direction: -1 | 1) => {
-    setSpeed((current) => {
-      if (direction < 0) {
-        return [...TIME_WARP_PRESETS].reverse().find((preset) => preset < current) ??
-          TIME_WARP_PRESETS[0];
-      }
-      return TIME_WARP_PRESETS.find((preset) => preset > current) ??
-        TIME_WARP_PRESETS[TIME_WARP_PRESETS.length - 1];
-    });
-  }, []);
   const setPhysicalTimeWarp = useCallback((value: number) => {
     setSpeed(Math.round(THREE.MathUtils.clamp(value, MIN_TIME_WARP, MAX_TIME_WARP)));
   }, []);
@@ -5977,87 +5970,48 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <img
-            className="brand-logo"
-            src={`${PUBLIC_BASE_PATH}/crystal-eye-logo.jpeg`}
-            alt="Crystal Eye"
-            width={760}
-            height={558}
-          />
-          <div className="brand-copy">
-            <div className="eyebrow">GSSI · VISION DIGITAL TWIN</div>
-            <strong>ORBITAL PHOTON SIMULATOR</strong>
-          </div>
-        </div>
-        <AppNav current="/" />
-        <div className="mission-status">
-          <button
-            type="button"
-            className={`acquisition-mode-button ${simulatorMode}`}
-            aria-pressed={simulatorMode === "simulation"}
-            onClick={() => changeSimulatorMode(
-              simulatorMode === "simulation" ? "reference" : "simulation",
-            )}
-          >
-            {simulatorMode === "simulation"
-              ? "STOP SIMULATION"
-              : "START SIMULATION"}
-          </button>
-          <button
-            type="button"
-            className="placement-settings-button"
-            onClick={() => setConfigurationView("hub")}
-          >
-            <SlidersHorizontal size={14} />
-            CONFIGURATION
-          </button>
-          <div className="header-metric">
-            <small>MISSION ELAPSED</small>
-            <strong>{formatTime(telemetry.elapsed)}</strong>
-          </div>
-          <div className="header-metric celestial-time">
-            <label htmlFor="topbar-ephemeris-utc">SIMULATED DATE AND TIME · UTC</label>
-            <input
-              id="topbar-ephemeris-utc"
-              type="datetime-local"
-              step="1"
-              min="2033-01-01T00:00:00"
-              max="2033-03-01T23:50:39"
-              value={new Date(telemetry.simulatedDate).toISOString().slice(0, 19)}
-              disabled={!ephemerisProfile}
-              aria-invalid={Boolean(ephemerisError)}
-              onChange={(event) => setEphemerisUtc(event.target.value)}
-            />
-          </div>
-          <div className="time-warp-controls" aria-label="Simulation playback controls">
-            <button
-              type="button"
-              onClick={() => setPaused((value) => !value)}
-              aria-label={paused ? "Resume simulation" : "Pause simulation"}
-              aria-pressed={paused}
-            >
-              {paused ? <Play size={13} /> : <Pause size={13} />}
+      <AppHeader current="/">
+        <div className="mission-status simulation-toolbar">
+          <div className="simulation-primary-actions">
+            <button type="button" className={`acquisition-mode-button ${simulatorMode}`}
+              onClick={() => changeSimulatorMode(simulatorMode === "simulation" ? "reference" : "simulation")}
+              title={simulatorMode === "simulation" ? "End the run and reset to reference replay" : "Start a new simulation run"}>
+              {simulatorMode === "simulation" ? "Stop and reset" : "Start simulation"}
             </button>
-            <button type="button" onClick={() => changeTimeWarp(-1)} aria-label="Slower time warp">−</button>
-            <div className="time-warp-presets" aria-label="Time warp presets">
-              {TIME_WARP_PRESETS.map((preset) => (
-                <button
-                  type="button"
-                  key={preset}
-                  className={speed === preset ? "active" : ""}
-                  aria-pressed={speed === preset}
-                  onClick={() => setPhysicalTimeWarp(preset)}
-                >
-                  {preset}×
-                </button>
-              ))}
-            </div>
-            <button type="button" onClick={() => changeTimeWarp(1)} aria-label="Faster time warp">+</button>
+            {simulatorMode === "simulation" && (
+            <button type="button" className="playback-button" onClick={() => setPaused(value => !value)}
+              aria-label={paused ? "Resume playback" : "Pause playback"} aria-pressed={paused}>
+              {paused ? <Play size={16} /> : <Pause size={16} />}{paused ? "Resume" : "Pause"}
+            </button>
+            )}
+            <span className="simulation-mode-label">{simulatorMode === "simulation" ? "Simulation" : "Reference replay"}{paused ? " · paused" : ""}</span>
+          </div>
+          <div className="simulation-secondary-actions">
+            <label className="playback-speed">Speed
+              <select aria-label="Playback speed" value={speed} onChange={event => setPhysicalTimeWarp(Number(event.target.value))}>
+                {!TIME_WARP_PRESETS.some(preset => preset === speed) && <option value={speed}>{speed}×</option>}
+                {TIME_WARP_PRESETS.map(preset => <option key={preset} value={preset}>{preset}×</option>)}
+              </select>
+            </label>
+            <details className="time-settings">
+              <summary>Time &amp; date</summary>
+              <div className="time-settings-content">
+                <label htmlFor="topbar-ephemeris-utc">Simulated UTC</label>
+                <input id="topbar-ephemeris-utc" type="datetime-local" step="1"
+                  min="2033-01-01T00:00:00" max="2033-03-01T23:50:39"
+                  value={new Date(telemetry.simulatedDate).toISOString().slice(0, 19)}
+                  disabled={!ephemerisProfile} aria-invalid={Boolean(ephemerisError)}
+                  onChange={event => setEphemerisUtc(event.target.value)} />
+                <p>Elapsed <strong>{formatTime(telemetry.elapsed)}</strong></p>
+                {ephemerisError && <p role="alert">{ephemerisError}</p>}
+              </div>
+            </details>
+            <button type="button" className="placement-settings-button" onClick={() => setConfigurationView("hub")}>
+              <SlidersHorizontal size={16} />Configuration
+            </button>
           </div>
         </div>
-      </header>
+      </AppHeader>
 
       {configurationView === "hub" && (
         <ConfigurationHub
@@ -6256,27 +6210,6 @@ export default function Home() {
             systemZoom={systemZoom}
             onSystemZoomChange={setSystemZoom}
           />
-          <div className="stage-title">
-            <span className="eyebrow">
-              {simulatorMode === "simulation"
-                ? orbitScenarioMode === "canonical"
-                  ? "CANONICAL ECI ORBIT · SYNTHETIC PHOTON SIMULATION"
-                  : "PARAMETRIC ECI ORBIT · SYNTHETIC PHOTON SIMULATION"
-                : orbitScenarioMode === "canonical"
-                  ? "CANONICAL ECI ORBIT · REFERENCE MODE"
-                  : "PARAMETRIC ECI ORBIT · REFERENCE MODE"}
-            </span>
-            <h2>
-              {simulatorMode === "simulation"
-                ? "Crystal Eye Simulator"
-                : "Orbital Observation"}
-              <em>
-                {orbitScenarioMode === "canonical"
-                  ? ` ${telemetry.altitudeKm.toFixed(1)} km`
-                  : ` ${orbitAltitudeKm.toFixed(0)} km · ${orbitInclinationDeg.toFixed(0)}°`}
-              </em>
-            </h2>
-          </div>
           <div
             className={`grb-alert ${showBurstNotification ? "visible" : ""}`}
             role="status"
@@ -6360,330 +6293,11 @@ export default function Home() {
             <strong>Configure, observe, and reconstruct</strong>
           </div>
 
-          <form
-            className={`burst-inline-panel collapsible-panel ${collapsedRailPanels.burst ? "is-collapsed" : ""}`}
-            onSubmit={(event) => {
-              event.preventDefault();
-              injectTestBurst();
-            }}
-          >
-            <div className="burst-inline-header unified-panel-header">
-              <div>
-                <small>TEST BURST CONFIGURATION</small>
-                <strong>
-                  {testBurstDraft.coordinateMode === "detector"
-                    ? "Detector-frame source · ROOT θ/φ"
-                    : "Equatorial source · current epoch"}
-                </strong>
-              </div>
-              <div className="panel-header-actions">
-                <button type="button" className="panel-header-action" onClick={aimTestBurstAtBoresight}>
-                  AIM BORESIGHT
-                </button>
-                <button
-                  type="button"
-                  className="panel-collapse-button"
-                  aria-expanded={!collapsedRailPanels.burst}
-                  aria-label={`${collapsedRailPanels.burst ? "Expand" : "Collapse"} test burst configuration`}
-                  onClick={() => setCollapsedRailPanels((current) => ({
-                    ...current,
-                    burst: !current.burst,
-                  }))}
-                >
-                  <ChevronDown size={15} />
-                </button>
-              </div>
-            </div>
-
-            <div className="collapsible-panel-body burst-panel-body">
-              <div className="burst-coordinate-mode" role="group" aria-label="Burst coordinate frame">
-                <button
-                  type="button"
-                  className={testBurstDraft.coordinateMode === "equatorial" ? "is-active" : ""}
-                  aria-pressed={testBurstDraft.coordinateMode === "equatorial"}
-                  onClick={() => setTestBurstDraft((current) => ({
-                    ...current,
-                    coordinateMode: "equatorial",
-                  }))}
-                >
-                  RA / DEC
-                </button>
-                <button
-                  type="button"
-                  className={testBurstDraft.coordinateMode === "detector" ? "is-active" : ""}
-                  aria-pressed={testBurstDraft.coordinateMode === "detector"}
-                  onClick={() => setTestBurstDraft((current) => ({
-                    ...current,
-                    coordinateMode: "detector",
-                  }))}
-                >
-                  DETECTOR θ / φ
-                </button>
-              </div>
-              <div className="burst-inline-fields burst-coordinate-fields">
-                {testBurstDraft.coordinateMode === "equatorial" ? (
-                  <>
-                    <label>
-                      <span>RIGHT ASCENSION · RA</span>
-                      <div>
-                        <input
-                          type="number"
-                          min="0"
-                          max="360"
-                          step="0.001"
-                          value={testBurstDraft.raDeg}
-                          onChange={(event) => setTestBurstDraft((current) => ({
-                            ...current,
-                            raDeg: Number(event.target.value),
-                          }))}
-                        />
-                        <em>deg</em>
-                      </div>
-                    </label>
-                    <label>
-                      <span>DECLINATION · DEC</span>
-                      <div>
-                        <input
-                          type="number"
-                          min="-90"
-                          max="90"
-                          step="0.001"
-                          value={testBurstDraft.decDeg}
-                          onChange={(event) => setTestBurstDraft((current) => ({
-                            ...current,
-                            decDeg: Number(event.target.value),
-                          }))}
-                        />
-                        <em>deg</em>
-                      </div>
-                    </label>
-                  </>
-                ) : (
-                  <>
-                    <label>
-                      <span>DETECTOR ZENITH · θ</span>
-                      <div>
-                        <input
-                          type="number"
-                          min="0"
-                          max={RITABRATA_GRB_MAXIMUM_REQUESTED_THETA_DEG}
-                          step="0.001"
-                          value={testBurstDraft.detectorThetaDeg}
-                          onChange={(event) => setTestBurstDraft((current) => ({
-                            ...current,
-                            detectorThetaDeg: Number(event.target.value),
-                          }))}
-                        />
-                        <em>deg</em>
-                      </div>
-                    </label>
-                    <label>
-                      <span>DETECTOR AZIMUTH · φ</span>
-                      <div>
-                        <input
-                          type="number"
-                          min="0"
-                          max="360"
-                          step="0.001"
-                          value={testBurstDraft.detectorPhiDeg}
-                          onChange={(event) => setTestBurstDraft((current) => ({
-                            ...current,
-                            detectorPhiDeg: Number(event.target.value),
-                          }))}
-                        />
-                        <em>deg</em>
-                      </div>
-                    </label>
-                  </>
-                )}
-              </div>
-
-              <div className="burst-inline-fields burst-response-fields">
-                <label>
-                  <span>PEAK IMPACT</span>
-                  <div>
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="1"
-                      value={testBurstDraft.intensity}
-                      onChange={(event) => setTestBurstDraft((current) => ({
-                        ...current,
-                        intensity: Number(event.target.value),
-                      }))}
-                    />
-                    <em>%</em>
-                  </div>
-                </label>
-                <label>
-                  <span>FOOTPRINT</span>
-                  <div>
-                    <input
-                      type="number"
-                      min="1"
-                      max="60"
-                      step="1"
-                      value={testBurstDraft.spreadPixels}
-                      onChange={(event) => setTestBurstDraft((current) => ({
-                        ...current,
-                        spreadPixels: Number(event.target.value),
-                      }))}
-                    />
-                    <em>px</em>
-                  </div>
-                </label>
-                <label>
-                  <span>DURATION</span>
-                  <div>
-                    <input
-                      type="number"
-                      min="0.2"
-                      max="10"
-                      step="0.2"
-                      value={testBurstDraft.durationSeconds}
-                      onChange={(event) => setTestBurstDraft((current) => ({
-                        ...current,
-                        durationSeconds: Number(event.target.value),
-                      }))}
-                    />
-                    <em>s</em>
-                  </div>
-                </label>
-              </div>
-
-              <div className="burst-inline-scale">
-                <span>0</span>
-                <i />
-                <span>100</span>
-              </div>
-
-              <div className="burst-inline-actions">
-                <button type="button" className="random-grb-mini" onClick={() => injectGRB()}>
-                  <Sparkles size={12} /> RANDOM GRB
-                </button>
-                <button type="submit" className="inject-test-inline">
-                  <Sparkles size={13} /> INJECT TEST BURST
-                </button>
-              </div>
-            </div>
-          </form>
-
-          <section className="ritabrata-pipeline-panel collapsible-panel" aria-live="polite">
-            <div className="unified-panel-header">
-              <div>
-                <small>PROVISIONAL GRB LOCALIZATION</small>
-                <strong>{grbPipelineVersion === "updated" ? "Three-template" : "Legacy single-template"} GRB response → CELoc {localizerGrid === "2deg" ? "2°" : "5°"}</strong>
-              </div>
-              <div className="localizer-selectors">
-                <div className="localizer-grid-selector" role="group" aria-label="GRB response pipeline">
-                  <button type="button" className={grbPipelineVersion === "updated" ? "is-active" : ""}
-                    aria-pressed={grbPipelineVersion === "updated"}
-                    onClick={() => setGrbPipelineVersion("updated")}>UPDATED</button>
-                  <button type="button" className={grbPipelineVersion === "legacy" ? "is-active" : ""}
-                    aria-pressed={grbPipelineVersion === "legacy"}
-                    onClick={() => setGrbPipelineVersion("legacy")}>LEGACY</button>
-                </div>
-                <div className="localizer-grid-selector" role="group" aria-label="KS template grid">
-                  <button
-                    type="button"
-                    className={localizerGrid === "5deg" ? "is-active" : ""}
-                    aria-pressed={localizerGrid === "5deg"}
-                    onClick={() => setLocalizerGrid("5deg")}
-                  >5°</button>
-                  <button
-                    type="button"
-                    className={localizerGrid === "2deg" ? "is-active" : ""}
-                    aria-pressed={localizerGrid === "2deg"}
-                    onClick={() => setLocalizerGrid("2deg")}
-                  >2°</button>
-                </div>
-              </div>
-            </div>
-            <div className="ritabrata-pipeline-body">
-              {ritabrataRuntime.status === "idle" && (
-                <p>Inject a configured or random GRB to run the source-response and localization pipeline.</p>
-              )}
-              {ritabrataRuntime.status === "loading" && (
-                <p>
-                  GRB #{ritabrataRuntime.burstId} · {grbPipelineVersion === "updated"
-                    ? "loading the three nearest response templates…"
-                    : "loading the explicitly selected legacy single-template baseline…"}
-                </p>
-              )}
-              {ritabrataRuntime.status === "complete" &&
-                ritabrataRuntime.result.status === "unavailable" && (
-                  <p>GRB #{ritabrataRuntime.burstId} · pipeline unavailable · {ritabrataRuntime.result.reason}</p>
-                )}
-              {ritabrataRuntime.status === "complete" &&
-                ritabrataRuntime.result.status === "available" && (() => {
-                  const result = ritabrataRuntime.result;
-                  return (
-                    <>
-                      <div className="ritabrata-pipeline-grid">
-                        <span>
-                          <small>REQUESTED DETECTOR DIRECTION</small>
-                          <strong>θ {result.requestedDirection.thetaDeg.toFixed(2)}° · φ {result.requestedDirection.phiDeg.toFixed(2)}°</strong>
-                        </span>
-                        <span className="ritabrata-neighbour-list">
-                          <small>{result.selectedDatabaseDirections.length > 1
-                            ? "INTERPOLATED RESPONSE TEMPLATES"
-                            : "SELECTED RESPONSE TEMPLATE"}</small>
-                          {result.selectedDatabaseDirections.map((selection, index) => (
-                            <strong key={`${selection.direction.sourceId}-${index}`}>
-                              {index + 1}. θ {selection.direction.thetaDeg.toFixed(2)}° · φ {selection.direction.phiDeg.toFixed(2)}°
-                              <em>{selection.separationDeg.toFixed(2)}° · weight {(selection.weight * 100).toFixed(1)}%</em>
-                            </strong>
-                          ))}
-                          {result.containmentWarning && (
-                            <em className="ritabrata-containment-warning">
-                              {result.containmentWarning === "outside-neighbour-triangle"
-                                ? "requested direction lies outside the nearest-template triangle"
-                                : "nearest-template triangle is degenerate"}
-                            </em>
-                          )}
-                        </span>
-                        <span>
-                          <small>TEMPLATE / KS RECONSTRUCTION</small>
-                          <strong>θ {result.ritabrata.thetaDeg.toFixed(2)}° · φ {result.ritabrata.phiDeg.toFixed(2)}°</strong>
-                          <strong>RA {result.ritabrata.raDeg.toFixed(2)}° · Dec {result.ritabrata.decDeg.toFixed(2)}°</strong>
-                          <em>nearest template → reconstruction {result.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
-                          <em>requested truth → reconstruction {result.requestedToReconstructedDeg.toFixed(2)}°</em>
-                        </span>
-                        <span>
-                          <small>POSITIVE-EXCESS CENTROID</small>
-                          <strong>θ {result.centroid.thetaDeg.toFixed(2)}° · φ {result.centroid.phiDeg.toFixed(2)}°</strong>
-                          <strong>RA {result.centroid.reconstruction.raDeg.toFixed(2)}° · Dec {result.centroid.reconstruction.decDeg.toFixed(2)}°</strong>
-                          <em>nearest template → reconstruction {result.centroid.selectedDatabaseToReconstructedDeg.toFixed(2)}°</em>
-                          <em>requested truth → reconstruction {result.centroid.requestedToReconstructedDeg.toFixed(2)}°</em>
-                        </span>
-                      </div>
-                      <p>
-                        {result.responseSemantics === "full-sample-expectation-approximation"
-                          ? "Updated three-template pipeline · inverse-angular-distance interpolation · source-only full-sample expectation. The C++ prefix-event implementation and official localization outputs still require parity checks."
-                          : "Explicit legacy baseline · previous single-template response and localization assets. It is not an automatic fallback."}
-                        {" "}Default CPL A=0.026, α=−1.07, Epeak=756.4 keV · displayed separations are diagnostics, not confidence intervals.
-                      </p>
-                    </>
-                  );
-                })()}
-              <button
-                type="button"
-                className="localization-comparison-launch"
-                onClick={() => setLocalizationComparisonOpen(true)}
-              >
-                OPEN LOCALIZATION COMPARISON
-                <ChevronRight size={14} />
-              </button>
-            </div>
-          </section>
-
-
           <section className={`detector-section collapsible-panel ${collapsedRailPanels.detector ? "is-collapsed" : ""}`}>
             <div className="detector-section-header unified-panel-header">
               <div>
-                <small>DETECTOR RESPONSE</small>
-                <strong>Configured planar pixel map · actual expected response / 0.2 s</strong>
+                <small>Expected counts · 0.2 s bins</small>
+                <strong>Detector response</strong>
               </div>
               <div className="panel-header-actions">
                 <button
@@ -6731,6 +6345,216 @@ export default function Home() {
               />
             </div>
           </section>
+
+          <form
+            className={`burst-inline-panel collapsible-panel ${collapsedRailPanels.burst ? "is-collapsed" : ""}`}
+            onSubmit={(event) => {
+              event.preventDefault();
+              injectTestBurst();
+            }}
+          >
+            <div className="burst-inline-header unified-panel-header">
+              <div>
+                <small>Burst source</small>
+                <strong>
+                  Generate burst
+                </strong>
+              </div>
+              <div className="panel-header-actions">
+                <button
+                  type="button"
+                  className="panel-collapse-button"
+                  aria-expanded={!collapsedRailPanels.burst}
+                  aria-label={`${collapsedRailPanels.burst ? "Expand" : "Collapse"} test burst configuration`}
+                  onClick={() => setCollapsedRailPanels((current) => ({
+                    ...current,
+                    burst: !current.burst,
+                  }))}
+                >
+                  <ChevronDown size={15} />
+                </button>
+              </div>
+            </div>
+
+            <div className="collapsible-panel-body burst-panel-body">
+              <div className="burst-step-heading"><strong>Direction</strong><button type="button" onClick={aimTestBurstAtBoresight}>Use detector axis</button></div>
+              <div className="burst-coordinate-mode" role="group" aria-label="Burst coordinate frame">
+                <button
+                  type="button"
+                  className={testBurstDraft.coordinateMode === "equatorial" ? "is-active" : ""}
+                  aria-pressed={testBurstDraft.coordinateMode === "equatorial"}
+                  onClick={() => setTestBurstDraft((current) => ({
+                    ...current,
+                    coordinateMode: "equatorial",
+                  }))}
+                >
+                  Sky (RA / Dec)
+                </button>
+                <button
+                  type="button"
+                  className={testBurstDraft.coordinateMode === "detector" ? "is-active" : ""}
+                  aria-pressed={testBurstDraft.coordinateMode === "detector"}
+                  onClick={() => setTestBurstDraft((current) => ({
+                    ...current,
+                    coordinateMode: "detector",
+                  }))}
+                >
+                  Detector (θ / φ)
+                </button>
+              </div>
+              <div className="burst-inline-fields burst-coordinate-fields">
+                {testBurstDraft.coordinateMode === "equatorial" ? (
+                  <>
+                    <label>
+                      <span>Right ascension · RA</span>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="360"
+                          step="0.001"
+                          value={testBurstDraft.raDeg}
+                          onChange={(event) => setTestBurstDraft((current) => ({
+                            ...current,
+                            raDeg: Number(event.target.value),
+                          }))}
+                        />
+                        <em>deg</em>
+                      </div>
+                    </label>
+                    <label>
+                      <span>Declination · Dec</span>
+                      <div>
+                        <input
+                          type="number"
+                          min="-90"
+                          max="90"
+                          step="0.001"
+                          value={testBurstDraft.decDeg}
+                          onChange={(event) => setTestBurstDraft((current) => ({
+                            ...current,
+                            decDeg: Number(event.target.value),
+                          }))}
+                        />
+                        <em>deg</em>
+                      </div>
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label>
+                      <span>Detector zenith · θ</span>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          max={RITABRATA_GRB_MAXIMUM_REQUESTED_THETA_DEG}
+                          step="0.001"
+                          value={testBurstDraft.detectorThetaDeg}
+                          onChange={(event) => setTestBurstDraft((current) => ({
+                            ...current,
+                            detectorThetaDeg: Number(event.target.value),
+                          }))}
+                        />
+                        <em>deg</em>
+                      </div>
+                    </label>
+                    <label>
+                      <span>Detector azimuth · φ</span>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          max="360"
+                          step="0.001"
+                          value={testBurstDraft.detectorPhiDeg}
+                          onChange={(event) => setTestBurstDraft((current) => ({
+                            ...current,
+                            detectorPhiDeg: Number(event.target.value),
+                          }))}
+                        />
+                        <em>deg</em>
+                      </div>
+                    </label>
+                  </>
+                )}
+              </div>
+
+              <div className="burst-inline-fields burst-response-fields">
+                <label>
+                  <span>Intensity</span>
+                  <div>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={testBurstDraft.intensity}
+                      onChange={(event) => setTestBurstDraft((current) => ({
+                        ...current,
+                        intensity: Number(event.target.value),
+                      }))}
+                    />
+                    <em>%</em>
+                  </div>
+                </label>
+
+                <label>
+                  <span>Duration</span>
+                  <div>
+                    <input
+                      type="number"
+                      min="0.2"
+                      max="10"
+                      step="0.2"
+                      value={testBurstDraft.durationSeconds}
+                      onChange={(event) => setTestBurstDraft((current) => ({
+                        ...current,
+                        durationSeconds: Number(event.target.value),
+                      }))}
+                    />
+                    <em>s</em>
+                  </div>
+                </label>
+              </div>
+
+              <details className="burst-advanced"><summary>Advanced signal settings</summary><div className="burst-inline-fields">                <label>
+                  <span>Footprint</span>
+                  <div>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      step="1"
+                      value={testBurstDraft.spreadPixels}
+                      onChange={(event) => setTestBurstDraft((current) => ({
+                        ...current,
+                        spreadPixels: Number(event.target.value),
+                      }))}
+                    />
+                    <em>px</em>
+                  </div>
+                </label></div><p>Footprint sets the number of illuminated pixels in the injected signal.</p></details>
+
+            <details className="localization-settings"><summary>Method settings</summary>
+              <div className="localizer-selectors">
+                <label>Response model<select aria-label="GRB response pipeline" value={grbPipelineVersion} onChange={event => setGrbPipelineVersion(event.target.value as "updated" | "legacy")}><option value="updated">Three-template</option><option value="legacy">Legacy single-template</option></select></label>
+                <label>KS template grid<select aria-label="KS template grid" value={localizerGrid} onChange={event => setLocalizerGrid(event.target.value as "2deg" | "5deg")}><option value="5deg">5°</option><option value="2deg">2°</option></select></label>
+              </div>
+            </details>
+
+              <div className="burst-inline-actions">
+                <button type="submit" className="inject-test-inline" disabled={!backgroundProfile}>
+                  <Sparkles size={16} /> Generate burst
+                </button>
+                <button type="button" className="random-grb-mini" disabled={!backgroundProfile} onClick={() => injectGRB()}>
+                  <Sparkles size={16} /> Generate random burst
+                </button>
+              </div>
+              <p className="burst-action-help">Random uses an automatically chosen direction and signal.</p>
+              {!backgroundProfile && <p role="status" className="burst-action-help">{backgroundProfileError ? "Detector data unavailable. Check Data & archive status below." : "Loading detector data…"}</p>}
+            </div>
+          </form>
 
           <AdaptiveAnalysisPanel
             points={analysisPoints}

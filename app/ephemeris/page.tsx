@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AppNav } from "../components/app-nav";
+import { AppHeader } from "../components/app-header";
 import {
   ECI_EPHEMERIS_END_MS,
   ECI_EPHEMERIS_START_MS,
@@ -72,12 +72,13 @@ export default function EphemerisPage() {
 
   return (
     <main className="data-page">
-      <header className="data-page-header">
+      <AppHeader current="/ephemeris/" />
+    <header className="data-page-header">
         <div>
           <span className="eyebrow">CRYSTAL EYE · CANONICAL INPUT DATA</span>
           <h1>ECI EPHEMERIS</h1>
         </div>
-        <AppNav current="/ephemeris/" />
+
       </header>
 
       <section className="data-toolbar" aria-label="Ephemeris filters">

@@ -33,8 +33,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run tests
+        run: npm test
+
       - name: Build static site
+        env:
+          NEXT_PUBLIC_RITO_V2_ASSET_BASE_URL: /crystal-eye-simulator/data/rito-updated-20260907
         run: npm run build:pages
+
+      - name: Include updated scientific assets
+        run: cp -R scientific-assets/rito-updated-20260907 out/data/rito-updated-20260907
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v4

@@ -2,7 +2,7 @@
 
 import { ChevronRight, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppNav } from "../components/app-nav";
+import { AppHeader } from "../components/app-header";
 import {
   BURST_COORDINATE_EPOCH,
   BURST_COORDINATE_FRAME,
@@ -229,12 +229,13 @@ export default function EventHistoryPage() {
 
   return (
     <main className="data-page">
-      <header className="data-page-header">
+      <AppHeader current="/event-history/" />
+    <header className="data-page-header">
         <div>
           <span className="eyebrow">CRYSTAL EYE · LOCAL EVENT ARCHIVE</span>
           <h1>GRB EVENTS</h1>
         </div>
-        <AppNav current="/event-history/" />
+
       </header>
 
       <section className="data-toolbar" aria-label="GRB event history filters">

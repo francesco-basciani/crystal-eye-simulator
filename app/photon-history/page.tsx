@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppNav } from "../components/app-nav";
+import { AppHeader } from "../components/app-header";
 import {
   openPhotonRepository,
   type PhotonCursor,
@@ -98,12 +98,13 @@ export default function PhotonHistoryPage() {
 
   return (
     <main className="data-page">
-      <header className="data-page-header">
+      <AppHeader current="/photon-history/" />
+    <header className="data-page-header">
         <div>
           <span className="eyebrow">CRYSTAL EYE · LOCAL ACQUISITION DATA</span>
           <h1>PHOTON HISTORY</h1>
         </div>
-        <AppNav current="/photon-history/" />
+
       </header>
 
       <section className="data-toolbar" aria-label="Photon history filters">
